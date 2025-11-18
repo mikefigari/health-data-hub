@@ -210,3 +210,8 @@ __marimo__/
 
 config/dev.env
 config/prod.env
+
+# Project-specific ignores
+config/*.env
+config/strava_tokens.json
+config/*tokens*.json
