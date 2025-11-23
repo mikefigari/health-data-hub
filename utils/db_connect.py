@@ -1,10 +1,15 @@
 import os
+from pathlib import Path
+
 import psycopg2
 from dotenv import load_dotenv
 
+
 def get_connection():
-    # Load environment variables from config/dev.env
-    env_path = os.path.join(os.path.dirname(__file__), "..", "config", "dev.env")
+    """
+    Return a Postgres connection using settings from config/dev.env.
+    """
+    env_path = Path(__file__).resolve().parents[1] / "config" / "dev.env"
     load_dotenv(env_path)
 
     conn = psycopg2.connect(
@@ -12,6 +17,6 @@ def get_connection():
         port=os.getenv("DB_PORT"),
         dbname=os.getenv("DB_NAME"),
         user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD")
+        password=os.getenv("DB_PASSWORD"),
     )
     return conn

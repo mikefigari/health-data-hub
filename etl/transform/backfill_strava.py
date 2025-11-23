@@ -1,19 +1,25 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from etl.extract.strava_api import (
-    get_all_strava_activities,
-    get_activity_streams,
-)
-from .insert_workout import get_db_connection, insert_workout_metadata
+from dotenv import load_dotenv
+
+from utils.db_connect import get_connection
+from etl.extract.strava_api import get_all_strava_activities, get_activity_streams
+from .insert_workout import insert_workout_metadata
+
+# Ensure environment is available for DB/Strava
+load_dotenv(Path(__file__).resolve().parents[2] / "config" / "dev.env")
+
+AFTER_2022 = int(datetime(2022, 1, 1, tzinfo=timezone.utc).timestamp())
 
 
 def backfill_metadata():
     """
     Pull all Strava activities and insert any that are missing in workouts_raw.
     """
-    activities = get_all_strava_activities()
+    activities = get_all_strava_activities(after=AFTER_2022)
 
-    conn = get_db_connection()
+    conn = get_connection()
     cur = conn.cursor()
     cur.execute(
         "SELECT external_id FROM workouts_raw WHERE source = %s;",
@@ -59,7 +65,7 @@ def insert_stream_samples(workout_id, streams):
     """
     Insert aligned second-level stream data for a workout.
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cur = conn.cursor()
 
     try:
@@ -126,7 +132,7 @@ def _samples_exist(workout_id):
     """
     Return True if at least one sample row already exists.
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute(
@@ -143,7 +149,7 @@ def backfill_streams():
     """
     Fetch stream data for workouts missing samples.
     """
-    conn = get_db_connection()
+    conn = get_connection()
     cur = conn.cursor()
     cur.execute(
         """

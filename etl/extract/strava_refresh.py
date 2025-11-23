@@ -1,13 +1,15 @@
 import json
-import requests
 import os
+from pathlib import Path
+
+import requests
 from dotenv import load_dotenv
 
-load_dotenv("config/dev.env")
+load_dotenv(Path(__file__).resolve().parents[2] / "config" / "dev.env")
 
 CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
 CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
-TOKEN_FILE = "config/strava_tokens.json"
+TOKEN_FILE = Path(__file__).resolve().parents[2] / "config" / "strava_tokens.json"
 
 
 def refresh_access_token():

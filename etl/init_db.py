@@ -1,4 +1,8 @@
+from dotenv import load_dotenv
+
 from utils.db_connect import get_connection
+
+load_dotenv("config/dev.env")
 
 def initialize_database():
     with open("db/schema.sql", "r") as f:
