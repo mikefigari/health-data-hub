@@ -1,5 +1,11 @@
+from pathlib import Path
+
+from dotenv import load_dotenv
+
 from utils.db_connect import get_connection
 from etl.transform.build_workout_summary import build_summary_for
+
+load_dotenv(Path(__file__).resolve().parents[2] / "config" / "dev.env")
 
 def build_all_summaries():
     conn = get_connection()

@@ -1,5 +1,9 @@
 import requests
+from pathlib import Path
+from dotenv import load_dotenv
 from .strava_refresh import refresh_access_token
+
+load_dotenv(Path(__file__).resolve().parents[2] / "config" / "dev.env")
 
 BASE_URL = "https://www.strava.com/api/v3"
 
@@ -13,7 +17,7 @@ def _auth_headers():
 # -----------------------------------------------------------
 # Fetch recent activities (metadata only)
 # -----------------------------------------------------------
-def get_recent_activities(per_page=10, page=1, limit=None):
+def get_recent_activities(per_page=10, page=1, after=None, limit=None):
     """
     Returns a list of recent Strava activities (paged).
     Accepts legacy `limit` for compatibility.
@@ -23,6 +27,8 @@ def get_recent_activities(per_page=10, page=1, limit=None):
 
     headers = _auth_headers()
     params = {"per_page": per_page, "page": page}
+    if after is not None:
+        params["after"] = after
     url = f"{BASE_URL}/athlete/activities"
 
     response = requests.get(url, headers=headers, params=params)
@@ -34,7 +40,7 @@ def get_recent_activities(per_page=10, page=1, limit=None):
     return response.json()
 
 
-def get_all_strava_activities():
+def get_all_strava_activities(after=None):
     """
     Fetch the full history of Strava activities, paging in batches of 100.
     """
@@ -42,7 +48,7 @@ def get_all_strava_activities():
     page = 1
 
     while True:
-        batch = get_recent_activities(per_page=100, page=page)
+        batch = get_recent_activities(per_page=100, page=page, after=after)
         if not batch:
             break
 

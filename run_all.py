@@ -1,7 +1,11 @@
+from dotenv import load_dotenv
+
 from etl.init_db import initialize_database
 from etl.transform.backfill_strava import backfill_all
 from etl.transform.build_all_summaries import build_all_summaries
 from etl.transform.update_tss import update_tss
+
+load_dotenv("config/dev.env")
 
 
 def main():

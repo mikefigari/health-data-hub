@@ -1,14 +1,16 @@
 import http.server
+import json
+import os
 import socketserver
 import webbrowser
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
 import requests
-import os
-from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
-import json
 
 # Load environment variables
-load_dotenv("config/dev.env")
+load_dotenv(Path(__file__).resolve().parents[2] / "config" / "dev.env")
 
 CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
 CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
@@ -50,7 +52,8 @@ class OAuthHandler(http.server.SimpleHTTPRequestHandler):
         tokens = response.json()
 
         # Save tokens locally
-        with open("config/strava_tokens.json", "w") as f:
+        token_path = Path(__file__).resolve().parents[2] / "config" / "strava_tokens.json"
+        with open(token_path, "w") as f:
             json.dump(tokens, f, indent=4)
 
         # Return confirmation to the browser
