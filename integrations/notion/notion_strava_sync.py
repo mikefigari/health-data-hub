@@ -186,6 +186,35 @@ def sync_to_notion(since: date | None = None):
 
     print("Sync complete.")
 
+# -------------------------------------------------------------------
+# Polling for newest workout only
+# -------------------------------------------------------------------
+
+def sync_single_newest():
+    """
+    Sync ONLY the newest workout in notion_workouts_view.
+    This is called right after new Strava ingestion.
+    """
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute(
+        """
+        SELECT *
+        FROM notion_workouts_view
+        ORDER BY workout_date DESC
+        LIMIT 1
+        """
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if row:
+        notion = Client(auth=NOTION_TOKEN)
+        upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
+        print(f"[Notion] Synced newest workout: {row['name']}")
+
 
 # -------------------------------------------------------------------
 # Run single test sync
