@@ -67,8 +67,7 @@ def build_summary_for(workout_id):
             start_time,
             total_elevation_gain,
             has_heartrate,
-            timezone,
-            inserted_at
+            timezone
         )
         VALUES
             (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
