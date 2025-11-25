@@ -1,11 +1,19 @@
+import sys
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-from etl.init_db import initialize_database
-from etl.transform.backfill_strava import backfill_all
-from etl.transform.build_all_summaries import build_all_summaries
-from etl.transform.update_tss import update_tss
+# Ensure absolute imports work from any execution directory
+PROJECT_PARENT = Path(__file__).resolve().parents[1]
+if str(PROJECT_PARENT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_PARENT))
 
-load_dotenv("config/dev.env")
+from health_data_hub.etl.init_db import initialize_database  # noqa: E402
+from health_data_hub.etl.transform.backfill_strava import backfill_all  # noqa: E402
+from health_data_hub.etl.transform.build_all_summaries import build_all_summaries  # noqa: E402
+from health_data_hub.etl.transform.update_tss import update_tss  # noqa: E402
+
+load_dotenv(PROJECT_PARENT / "health_data_hub" / "config" / "dev.env")
 
 
 def main():
