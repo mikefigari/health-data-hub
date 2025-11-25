@@ -1,10 +1,29 @@
-from pathlib import Path
+"""
+Build a single workout summary row into workout_summary by
+reading data from workouts_raw.
+"""
 
+import sys
+from pathlib import Path
 from dotenv import load_dotenv
 
-from utils.db_connect import get_connection
+# -------------------------------------------------------------------
+# Ensure health_data_hub package resolves from ANY working directory
+# -------------------------------------------------------------------
 
-load_dotenv(Path(__file__).resolve().parents[2] / "config" / "dev.env")
+# Path to .../Programming/
+PROJECT_PARENT = Path(__file__).resolve().parents[3]
+
+if str(PROJECT_PARENT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_PARENT))
+
+# Now imports work everywhere
+from health_data_hub.utils.db_connect import get_connection
+
+# Load dev.env from health_data_hub/config
+ENV_PATH = PROJECT_PARENT / "health_data_hub" / "config" / "dev.env"
+load_dotenv(ENV_PATH)
+
 
 def build_summary_for(workout_id):
     conn = get_connection()
@@ -45,7 +64,6 @@ def build_summary_for(workout_id):
         conn.close()
         return
 
-    # Insert into workout_summary
     sql = """
         INSERT INTO workout_summary (
             workout_id,
