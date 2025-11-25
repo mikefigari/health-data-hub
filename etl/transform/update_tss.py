@@ -1,94 +1,114 @@
+"""
+Compute NP, IF, and TSS for all workouts using workout_samples
+and update workout_summary.
+
+This version:
+  • Uses identical math to your old external TSS calculator
+  • Uses effective FTP from ftp_history per workout date
+  • Works from VSCode, BAT, Task Scheduler, CLI
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
 import numpy as np
 from dotenv import load_dotenv
 
-from utils.db_connect import get_connection
+# -------------------------------------------------------------------
+# Ensure absolute imports work from ANY execution environment
+# -------------------------------------------------------------------
 
-# Load env (DB settings)
-load_dotenv("config/dev.env")
+# Path to .../Programming/
+PROJECT_PARENT = Path(__file__).resolve().parents[3]
+
+if str(PROJECT_PARENT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_PARENT))
+
+# Load dotenv before imports that need connection settings
+load_dotenv(PROJECT_PARENT / "health_data_hub" / "config" / "dev.env")
+
+# Now safe to import project modules
+from health_data_hub.utils.db_connect import get_connection  # noqa: E402
 
 
 # ------------------------------------------------------------
-# Core math – match your old TSS calculator exactly
+# TSS Computation — exact match to your original calculator
 # ------------------------------------------------------------
 
 def compute_np_if_tss(watts, ftp_watts):
     """
-    Compute NP, IF, TSS from a list of per-second watts and FTP.
-
-    This reproduces your old script:
-
-        - 30 second rolling mean
-        - raise to 4th power
-        - mean of 4th powers
-        - 4th-root = NP
-        - duration_hours = len(watts) / 3600
-        - TSS = (NP**2 * duration_hours) / (FTP**2) * 100
+    Compute NP, IF, and TSS using:
+      • 30 second rolling average
+      • raise to 4th power
+      • mean of rolling 4th
+      • NP = mean_4th ** 0.25
+      • duration_hours = len(watts) / 3600
+      • TSS = (NP**2 * duration_hours) / (FTP**2) * 100
     """
     if not watts or ftp_watts is None or ftp_watts <= 0:
         return None, None, None
 
     arr = np.array(watts, dtype=float)
 
-    # Need at least 30 seconds for a 30-second rolling window
     if arr.size < 30:
         return None, None, None
 
-    # 30-second rolling average, equivalent to pandas .rolling(30).mean() (valid windows only)
+    # 30-second rolling mean (valid windows only)
     kernel = np.ones(30, dtype=float) / 30.0
-    rolling_avg = np.convolve(arr, kernel, mode="valid")  # length = N - 29
+    rolling_avg = np.convolve(arr, kernel, mode="valid")
 
-    # 4th power and mean
     rolling_avg_4th = rolling_avg ** 4
     mean_4th = rolling_avg_4th.mean()
 
     if np.isnan(mean_4th):
         return None, None, None
 
-    np_val = mean_4th ** 0.25  # normalized power
-
-    # Duration in hours – your data is 1 row per second
+    np_val = mean_4th ** 0.25
     duration_hours = arr.size / 3600.0
 
     if_val = np_val / ftp_watts
-    tss_val = (np_val ** 2 * duration_hours) / (ftp_watts ** 2) * 100.0
+    tss_val = (np_val ** 2 * duration_hours) / (ftp_watts ** 2) * 100
 
     return float(np_val), float(if_val), float(tss_val)
 
 
 # ------------------------------------------------------------
-# DB updater
+# Main updater
 # ------------------------------------------------------------
 
 def update_tss():
     """
-    Recompute NP, IF, TSS for all workouts using:
-      - samples from workout_samples (1 Hz power)
-      - FTP from ftp_history effective on workout date
-      - NP/TSS formulas identical to your old TSS calculator
+    Recompute NP/IF/TSS for all workouts and update workout_summary.
     """
+
     conn = get_connection()
     cur = conn.cursor()
 
-    # Ensure we actually have FTP history
+    # -----------------------------------------------
+    # Ensure FTP exists
+    # -----------------------------------------------
     cur.execute("SELECT COUNT(*) FROM ftp_history;")
-    ftp_count = cur.fetchone()[0]
-    if ftp_count == 0:
-        print("No FTP history found; skipping TSS update.")
+    if cur.fetchone()[0] == 0:
+        print("No FTP history found. TSS update skipped.")
         cur.close()
         conn.close()
         return
 
-    print("Updating NP/IF/TSS for all workouts using ftp_history and samples...")
+    print("Updating NP/IF/TSS using ftp_history and workout_samples...")
 
-    # Get each workout and its effective FTP
+        # -----------------------------------------------
+    # Fetch each workout with effective FTP
+    # -----------------------------------------------
     cur.execute(
         """
         SELECT
             ws.workout_id,
+            wr.elapsed_s AS duration_seconds,
             ftp.ftp_watts
         FROM workout_summary ws
         JOIN workouts_raw wr
-          ON ws.workout_id = wr.id
+          ON wr.id = ws.workout_id
         CROSS JOIN LATERAL (
             SELECT ftp_watts
             FROM ftp_history
@@ -96,9 +116,11 @@ def update_tss():
             ORDER BY effective_from DESC
             LIMIT 1
         ) AS ftp
+        ORDER BY ws.workout_id;
         """
     )
     workouts = cur.fetchall()
+
 
     sample_cur = conn.cursor()
     update_cur = conn.cursor()
@@ -107,20 +129,26 @@ def update_tss():
     skipped_no_samples = 0
     skipped_too_short = 0
 
-    for workout_id, ftp_watts in workouts:
-        # Fetch per-second watts for this workout
+    # -----------------------------------------------
+    # Process each workout
+    # -----------------------------------------------
+    for workout_id, duration_seconds, ftp_watts in workouts:
+
+        # Fetch per-second watts
         sample_cur.execute(
-            """
-            SELECT watts
-            FROM workout_samples
-            WHERE workout_id = %s
-              AND watts IS NOT NULL
-            ORDER BY ts
-            """,
-            (workout_id,),
-        )
-        watts_rows = sample_cur.fetchall()
-        watts = [row[0] for row in watts_rows]
+    """
+    SELECT watts
+    FROM workout_samples
+    WHERE workout_id = %s
+      AND watts IS NOT NULL
+    ORDER BY ts_seconds
+    """,
+    (workout_id,),
+)
+
+
+
+        watts = [row[0] for row in sample_cur.fetchall()]
 
         if not watts:
             skipped_no_samples += 1
@@ -143,6 +171,7 @@ def update_tss():
             """,
             (np_val, if_val, tss_val, workout_id),
         )
+
         updated += 1
 
     conn.commit()
@@ -154,11 +183,15 @@ def update_tss():
 
     print(
         f"TSS update complete. "
-        f"Updated {updated} workouts. "
-        f"Skipped {skipped_no_samples} (no samples), "
-        f"{skipped_too_short} (too short / invalid)."
+        f"Updated {updated}. "
+        f"Skipped {skipped_no_samples} (no samples). "
+        f"Skipped {skipped_too_short} (too short/invalid)."
     )
 
+
+# ------------------------------------------------------------
+# Entrypoint
+# ------------------------------------------------------------
 
 if __name__ == "__main__":
     update_tss()

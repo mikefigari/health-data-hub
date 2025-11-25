@@ -1,21 +1,37 @@
+from __future__ import annotations
+
+"""
+Sync workout data from Postgres into a Notion database.
+
+Sources:
+- Postgres view: notion_workouts_view
+Targets:
+- Notion database: NOTION_WORKOUT_DB_ID
+"""
+
+import os
+import sys
 from datetime import date
 from pathlib import Path
-import os
 
+from dotenv import load_dotenv
 from notion_client import Client
 from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
-
-from utils.db_connect import get_connection
-
 
 # -------------------------------------------------------------------
-# Config
+# Path and environment bootstrapping
 # -------------------------------------------------------------------
 
-DRY_RUN = False  # True = print only, False = write to Notion
+# File location: .../Programming/health_data_hub/integrations/notion/notion_strava_sync.py
+PROJECT_PARENT = Path(__file__).resolve().parents[3]   # .../Programming
+PROJECT_ROOT = PROJECT_PARENT / "health_data_hub"
 
-ENV_PATH = Path(__file__).resolve().parents[2] / "config" / "dev.env"
+if str(PROJECT_PARENT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_PARENT))
+
+from health_data_hub.utils.db_connect import get_connection  # noqa: E402
+
+ENV_PATH = PROJECT_ROOT / "config" / "dev.env"
 load_dotenv(ENV_PATH)
 
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
@@ -24,17 +40,18 @@ NOTION_WORKOUT_DB_ID = os.getenv("NOTION_WORKOUT_DB_ID")
 if NOTION_TOKEN is None or NOTION_WORKOUT_DB_ID is None:
     raise RuntimeError("NOTION_TOKEN or NOTION_WORKOUT_DB_ID not set in dev.env")
 
+DRY_RUN = False  # True prints only, False writes to Notion
 
 # -------------------------------------------------------------------
 # Helpers
 # -------------------------------------------------------------------
 
-def safe_round(value, digits=0):
+def safe_round(value, digits: int = 0):
     if value is None:
         return None
     try:
         return round(float(value), digits)
-    except:
+    except Exception:
         return None
 
 
@@ -43,15 +60,16 @@ def seconds_to_minutes(seconds):
         return None
     try:
         return round(seconds / 60)
-    except:
+    except Exception:
         return None
 
 
-def determine_tag(row):
+def determine_tag(row: dict) -> str:
     """
-    Peloton vs Outdoor based solely on elevation gain.
-    Peloton → Elevation == 0
-    Outdoor → Elevation > 0
+    Tag source device based on elevation.
+
+    If elevation is zero, assume Peloton.
+    If elevation is positive or missing, assume Garmin.
     """
     elevation = row.get("elevation_meters")
 
@@ -60,12 +78,11 @@ def determine_tag(row):
 
     if elevation == 0:
         return "Peloton Bike"
-    else:
-        return "Garmin Edge 530"
 
+    return "Garmin Edge 530"
 
 # -------------------------------------------------------------------
-# Database fetch
+# Database fetch helpers
 # -------------------------------------------------------------------
 
 def fetch_workouts_since(since_date: date):
@@ -85,6 +102,25 @@ def fetch_workouts_since(since_date: date):
     finally:
         conn.close()
 
+
+def fetch_summary_row(workout_id: int):
+    """
+    Return a single summary row from notion_workouts_view for the given workout id.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM notion_workouts_view
+                WHERE workout_id = %s
+                """,
+                (workout_id,),
+            )
+            return cur.fetchone()
+    finally:
+        conn.close()
 
 # -------------------------------------------------------------------
 # Notion property mapping
@@ -107,14 +143,14 @@ def build_properties(row: dict) -> dict:
         "Normalized Power": {"number": row.get("normalized_power")},
         "TSS": {"number": safe_round(row.get("tss"), 0)},
 
-        # Distance + Elevation
+        # Distance and elevation
         "Distance": {"number": row.get("distance_miles")},
         "Elevation": {"number": row.get("elevation_meters")},
 
-        # Duration (minutes)
+        # Duration in minutes
         "Duration": {"number": seconds_to_minutes(row.get("duration_seconds"))},
 
-        # KJ
+        # Kilojoules
         "Kj": {"number": safe_round(row.get("kj"), 0)},
 
         # Date
@@ -124,9 +160,8 @@ def build_properties(row: dict) -> dict:
         "Tags": {"multi_select": [{"name": tag_value}]},
     }
 
-
 # -------------------------------------------------------------------
-# Notion Upsert Logic
+# Notion upsert logic
 # -------------------------------------------------------------------
 
 def upsert_workout(notion: Client, database_id: str, row: dict):
@@ -137,10 +172,10 @@ def upsert_workout(notion: Client, database_id: str, row: dict):
         print(f"[DRY RUN] Would sync workout {workout_id}: {name}")
         return
 
-    # Look for existing page with matching Workout ID
+    # First, search for an existing page that has a matching Workout ID property
     search_results = notion.search(
         query=str(workout_id),
-        filter={"value": "page", "property": "object"}
+        filter={"value": "page", "property": "object"},
     )
 
     page_id = None
@@ -163,9 +198,8 @@ def upsert_workout(notion: Client, database_id: str, row: dict):
         )
         print(f"Created workout {workout_id}: {name}")
 
-
 # -------------------------------------------------------------------
-# Main Sync
+# Bulk sync by date
 # -------------------------------------------------------------------
 
 def sync_to_notion(since: date | None = None):
@@ -187,38 +221,59 @@ def sync_to_notion(since: date | None = None):
     print("Sync complete.")
 
 # -------------------------------------------------------------------
-# Polling for newest workout only
+# Sync newest workout (legacy, still available)
 # -------------------------------------------------------------------
 
 def sync_single_newest():
     """
-    Sync ONLY the newest workout in notion_workouts_view.
-    This is called right after new Strava ingestion.
+    Sync only the newest workout in notion_workouts_view.
+    This remains for manual use, but the poller should call sync_specific_workout instead.
     """
     conn = get_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM notion_workouts_view
+                ORDER BY workout_date DESC
+                LIMIT 1
+                """
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
 
-    cur.execute(
-        """
-        SELECT *
-        FROM notion_workouts_view
-        ORDER BY workout_date DESC
-        LIMIT 1
-        """
-    )
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
+    if not row:
+        print("[Notion] No workouts found to sync.")
+        return
 
-    if row:
-        notion = Client(auth=NOTION_TOKEN)
-        upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
-        print(f"[Notion] Synced newest workout: {row['name']}")
-
+    notion = Client(auth=NOTION_TOKEN)
+    upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
+    print(f"[Notion] Synced newest workout: {row.get('name')}")
 
 # -------------------------------------------------------------------
-# Run single test sync
+# Sync specific workout id (used by poll_strava)
+# -------------------------------------------------------------------
+
+def sync_specific_workout(workout_id: int):
+    """
+    Sync exactly one workout, identified by its workout_id.
+    Intended for use by poll_strava after inserting and summarizing a new workout.
+    """
+    row = fetch_summary_row(workout_id)
+
+    if not row:
+        raise ValueError(f"No summary row found for workout_id {workout_id}")
+
+    notion = Client(auth=NOTION_TOKEN)
+    upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
+    print(f"[Notion] Synced specific workout: {row.get('name')} (ID {workout_id})")
+
+# -------------------------------------------------------------------
+# Main entry for manual runs
 # -------------------------------------------------------------------
 
 if __name__ == "__main__":
-    sync_to_notion(date(2025, 11, 20))
+    # Example manual sync starting at a given date
+    sync_to_notion(date(2025, 11, 23))

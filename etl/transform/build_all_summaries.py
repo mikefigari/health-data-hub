@@ -1,17 +1,30 @@
+"""
+Backfill all workout summaries by scanning workouts_raw and generating
+a summary for each row using build_summary_for().
+"""
+
+import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
+# -------------------------------------------------------------------
+# Ensure health_data_hub package resolves from ANY working directory
+# -------------------------------------------------------------------
 
-from utils.db_connect import get_connection
-from etl.transform.build_workout_summary import build_summary_for
+PROJECT_PARENT = Path(__file__).resolve().parents[3]
 
-load_dotenv(Path(__file__).resolve().parents[2] / "config" / "dev.env")
+if str(PROJECT_PARENT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_PARENT))
+
+print(">>> sys.path patched:", PROJECT_PARENT)
+
+from health_data_hub.utils.db_connect import get_connection
+from health_data_hub.etl.transform.build_workout_summary import build_summary_for
+
 
 def build_all_summaries():
     conn = get_connection()
     cur = conn.cursor()
 
-    # Get all workouts in workouts_raw
     cur.execute("SELECT id FROM workouts_raw ORDER BY start_time;")
     ids = [row[0] for row in cur.fetchall()]
 
@@ -24,3 +37,7 @@ def build_all_summaries():
         build_summary_for(wid)
 
     print("Summary build complete.")
+
+
+if __name__ == "__main__":
+    build_all_summaries()
