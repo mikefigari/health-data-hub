@@ -1,6 +1,13 @@
+import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from utils.db_connect import get_connection
+# Ensure absolute package imports work from any cwd
+PROJECT_PARENT = Path(__file__).resolve().parents[3]
+if str(PROJECT_PARENT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_PARENT))
+
+from health_data_hub.utils.db_connect import get_connection  # noqa: E402
 
 
 def _parse_strava_time(iso_str: str):

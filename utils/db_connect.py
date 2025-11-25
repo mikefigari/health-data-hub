@@ -1,22 +1,13 @@
-import os
-from pathlib import Path
-
-import psycopg2
-from dotenv import load_dotenv
-
+from psycopg2 import connect
+from health_data_hub.config.settings import (
+    DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+)
 
 def get_connection():
-    """
-    Return a Postgres connection using settings from config/dev.env.
-    """
-    env_path = Path(__file__).resolve().parents[1] / "config" / "dev.env"
-    load_dotenv(env_path)
-
-    conn = psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT"),
-        dbname=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
+    return connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD,
     )
-    return conn

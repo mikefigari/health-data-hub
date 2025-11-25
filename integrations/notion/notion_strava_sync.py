@@ -9,38 +9,22 @@ Targets:
 - Notion database: NOTION_WORKOUT_DB_ID
 """
 
-import os
-import sys
 from datetime import date
-from pathlib import Path
-
-from dotenv import load_dotenv
 from notion_client import Client
 from psycopg2.extras import RealDictCursor
 
-# -------------------------------------------------------------------
-# Path and environment bootstrapping
-# -------------------------------------------------------------------
+from health_data_hub.utils.db_connect import get_connection
+from health_data_hub.config.settings import (
+    NOTION_TOKEN,
+    NOTION_WORKOUT_DB_ID,
+)
 
-# File location: .../Programming/health_data_hub/integrations/notion/notion_strava_sync.py
-PROJECT_PARENT = Path(__file__).resolve().parents[3]   # .../Programming
-PROJECT_ROOT = PROJECT_PARENT / "health_data_hub"
+# Optional explicit validation (good practice)
+if not NOTION_TOKEN or not NOTION_WORKOUT_DB_ID:
+    raise RuntimeError("Missing Notion configuration in environment.")
 
-if str(PROJECT_PARENT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_PARENT))
+DRY_RUN = False
 
-from health_data_hub.utils.db_connect import get_connection  # noqa: E402
-
-ENV_PATH = PROJECT_ROOT / "config" / "dev.env"
-load_dotenv(ENV_PATH)
-
-NOTION_TOKEN = os.getenv("NOTION_TOKEN")
-NOTION_WORKOUT_DB_ID = os.getenv("NOTION_WORKOUT_DB_ID")
-
-if NOTION_TOKEN is None or NOTION_WORKOUT_DB_ID is None:
-    raise RuntimeError("NOTION_TOKEN or NOTION_WORKOUT_DB_ID not set in dev.env")
-
-DRY_RUN = False  # True prints only, False writes to Notion
 
 # -------------------------------------------------------------------
 # Helpers

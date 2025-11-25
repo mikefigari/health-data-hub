@@ -1,14 +1,23 @@
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-from utils.db_connect import get_connection
-from etl.extract.strava_api import get_all_strava_activities, get_activity_streams
-from .insert_workout import insert_workout_metadata
+# Ensure absolute package imports work from any cwd
+PROJECT_PARENT = Path(__file__).resolve().parents[3]
+if str(PROJECT_PARENT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_PARENT))
+
+from health_data_hub.utils.db_connect import get_connection  # noqa: E402
+from health_data_hub.etl.extract.strava_api import (  # noqa: E402
+    get_all_strava_activities,
+    get_activity_streams,
+)
+from health_data_hub.etl.load.insert_workout import insert_workout_metadata  # noqa: E402
 
 # Ensure environment is available for DB/Strava
-load_dotenv(Path(__file__).resolve().parents[2] / "config" / "dev.env")
+load_dotenv(PROJECT_PARENT / "health_data_hub" / "config" / "dev.env")
 
 AFTER_2022 = int(datetime(2022, 1, 1, tzinfo=timezone.utc).timestamp())
 

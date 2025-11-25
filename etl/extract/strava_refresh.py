@@ -1,44 +1,49 @@
+"""
+Refresh Strava OAuth access token using stored refresh token.
+"""
+
 import json
-import os
 from pathlib import Path
-
 import requests
-from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parents[2] / "config" / "dev.env")
+from health_data_hub.config.settings import (
+    STRAVA_CLIENT_ID,
+    STRAVA_CLIENT_SECRET,
+)
 
-CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
-CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
-TOKEN_FILE = Path(__file__).resolve().parents[2] / "config" / "strava_tokens.json"
+# Where we persist the rotating Strava tokens
+TOKEN_FILE = Path(__file__).resolve().parents[2] / "health_data_hub" / "config" / "strava_tokens.json"
 
 
-def refresh_access_token():
-    # Read existing tokens
-    with open(TOKEN_FILE, "r") as f:
-        tokens = json.load(f)
+def refresh_access_token() -> str:
+    """
+    Refresh the OAuth access token and return it.
+    """
+    if not TOKEN_FILE.exists():
+        raise FileNotFoundError(f"Missing Strava token file: {TOKEN_FILE}")
 
-    refresh_token = tokens["refresh_token"]
+    with TOKEN_FILE.open("r") as f:
+        data = json.load(f)
 
-    # Request new token
+    refresh_token = data.get("refresh_token")
+    if not refresh_token:
+        raise RuntimeError("Strava refresh_token missing in strava_tokens.json")
+
     response = requests.post(
         "https://www.strava.com/oauth/token",
         data={
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
+            "client_id": STRAVA_CLIENT_ID,
+            "client_secret": STRAVA_CLIENT_SECRET,
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
         },
     )
 
-    new_tokens = response.json()
+    response.raise_for_status()
+    tokens = response.json()
 
-    # Save new token data
-    with open(TOKEN_FILE, "w") as f:
-        json.dump(new_tokens, f, indent=4)
+    # Persist new tokens
+    with TOKEN_FILE.open("w") as f:
+        json.dump(tokens, f, indent=2)
 
-    print("Token refreshed successfully.")
-    return new_tokens["access_token"]
-
-
-if __name__ == "__main__":
-    refresh_access_token()
+    return tokens["access_token"]
