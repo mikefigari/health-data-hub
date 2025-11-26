@@ -82,7 +82,7 @@ def poll_once():
             continue
 
         if last_sync is None or act_dt > last_sync:
-            print(f"→ New workout: {act['name']} @ {act_dt}")
+            print(f"New workout: {act['name']} @ {act_dt}")
 
             # 1) Insert workouts_raw
             wid = insert_workout(act)

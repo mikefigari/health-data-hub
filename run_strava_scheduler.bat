@@ -14,7 +14,9 @@ python --version >> "%~dp0poller_debug.log" 2>&1
 where python >> "%~dp0poller_debug.log" 2>&1
 
 echo Running poll_strava... >> "%~dp0poller_debug.log"
-python -m health_data_hub.integrations.poll_strava >> "%~dp0poller_debug.log" 2>&1
+
+rem Run as a module, unbuffered, so logs flush immediately
+python -u -m health_data_hub.integrations.poll_strava >> "%~dp0poller_debug.log" 2>&1
 
 echo Poller exited. >> "%~dp0poller_debug.log"
 echo %date% %time% >> "%~dp0poller_debug.log"
