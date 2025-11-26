@@ -8,6 +8,9 @@ and exposes all configuration in a stable, importable module.
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+BASE_DIR = Path(__file__).resolve().parents[1]   # health_data_hub/health_data_hub
+CONFIG_DIR = BASE_DIR / "config"
+TOKEN_FILE = CONFIG_DIR / "strava_tokens.json"
 
 
 # -------------------------------------------------------------

@@ -41,6 +41,7 @@ def _compute_np_if_tss(
         return None, None, None
 
     np_val = float(mean_4th ** 0.25)
+    np_val = round(np_val) if np_val is not None else None
     if not ftp_watts or ftp_watts <= 0:
         return np_val, None, None
 
@@ -51,6 +52,7 @@ def _compute_np_if_tss(
     tss = float(
         (duration_seconds * np_val * intensity_factor) / (ftp_watts * 3600.0) * 100.0
     )
+    tss = round(tss)
 
     return np_val, intensity_factor, tss
 

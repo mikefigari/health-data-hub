@@ -10,7 +10,9 @@ import requests
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv(Path(__file__).resolve().parents[2] / "config" / "dev.env")
+from health_data_hub.config.settings import TOKEN_FILE
+token_path = TOKEN_FILE
+
 
 CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
 CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
