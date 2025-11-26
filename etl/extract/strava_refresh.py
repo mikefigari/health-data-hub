@@ -3,16 +3,17 @@ Refresh Strava OAuth access token using stored refresh token.
 """
 
 import json
-from pathlib import Path
 import requests
-
+from pathlib import Path
 from health_data_hub.config.settings import (
     STRAVA_CLIENT_ID,
     STRAVA_CLIENT_SECRET,
+    TOKEN_FILE,
 )
 
 # Where we persist the rotating Strava tokens
-TOKEN_FILE = Path(__file__).resolve().parents[2] / "health_data_hub" / "config" / "strava_tokens.json"
+from health_data_hub.config.settings import TOKEN_FILE
+
 
 
 def refresh_access_token() -> str:
