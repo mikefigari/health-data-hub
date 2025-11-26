@@ -215,3 +215,7 @@ config/prod.env
 config/*.env
 config/strava_tokens.json
 config/*tokens*.json
+
+
+health_data_hub/integrations/poller_debug.log
+health_data_hub/**/*.log
