@@ -3,7 +3,9 @@ Insert or update Oura daily activity records.
 """
 
 from typing import List, Dict, Any
-from psycopg import Connection
+import psycopg2
+from typing import List, Dict, Any
+
 
 
 SQL = """

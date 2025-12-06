@@ -4,9 +4,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Ensure absolute imports work from any execution directory
-PROJECT_PARENT = Path(__file__).resolve().parents[1]
-if str(PROJECT_PARENT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_PARENT))
+PROJECT_ROOT = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 
 from health_data_hub.etl.init_db import initialize_database  # noqa: E402
 from health_data_hub.etl.transform.backfill_strava import backfill_all  # noqa: E402
