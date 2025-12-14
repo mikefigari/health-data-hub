@@ -39,7 +39,7 @@ DO UPDATE SET
 """
 
 
-def insert_oura_activity(conn: Connection, rows: List[Dict[str, Any]]) -> int:
+def insert_oura_activity(conn, rows: List[Dict[str, Any]]) -> int:
     if not rows:
         return 0
 
