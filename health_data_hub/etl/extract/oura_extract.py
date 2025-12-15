@@ -6,6 +6,10 @@ that match your Postgres schemas.
 
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
+from psycopg2.extras import Json
+
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -55,8 +59,10 @@ def extract_sleep_records(sleep_json: Dict[str, Any]) -> List[Dict[str, Any]]:
             "avg_breath": row.get("average_breath"),
 
             "sleep_phase_5_min": row.get("sleep_phase_5_min"),
-
+            
             "raw_json": row
+
+
         })
 
     return results
@@ -96,7 +102,8 @@ def extract_readiness_records(sleep_json: Dict[str, Any]) -> List[Dict[str, Any]
             "r_resting_hr": contributors.get("resting_heart_rate"),
             "r_sleep_balance": contributors.get("sleep_balance"),
 
-            "raw_json": r
+            "raw_json": row
+
         })
 
     return results
@@ -192,6 +199,7 @@ def extract_activity_records(activity_json: Dict[str, Any]) -> List[Dict[str, An
             "met_min_high": row.get("met_min_high"),
 
             "raw_json": row
+
         })
 
     return results
