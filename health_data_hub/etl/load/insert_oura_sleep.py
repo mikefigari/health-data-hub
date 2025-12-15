@@ -4,7 +4,9 @@ Insert or update Oura sleep records.
 
 from typing import List, Dict, Any
 import psycopg2
-from typing import List, Dict, Any
+from psycopg2.extras import Json
+
+
 
 
 
@@ -56,7 +58,15 @@ def insert_oura_sleep(conn, rows: List[Dict[str, Any]]) -> int:
     if not rows:
         return 0
 
+    safe_rows = []
+    for r in rows:
+        safe = r.copy()
+        safe["raw_json"] = Json(r["raw_json"])
+        safe_rows.append(safe)
+
     with conn.cursor() as cur:
-        cur.executemany(SQL, rows)
+        cur.executemany(SQL, safe_rows)
+
     conn.commit()
-    return len(rows)
+    return len(safe_rows)
+
