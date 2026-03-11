@@ -9,6 +9,7 @@ Workflow:
 """
 
 import time
+import traceback
 from datetime import datetime, timezone
 
 from health_data_hub.utils.db_connect import get_connection
@@ -61,11 +62,11 @@ def poll_once():
     last_sync = get_last_synced_activity_time()
     print(f"[Poll] Last DB sync timestamp: {last_sync}")
 
-    # Refresh Strava OAuth token
-    refresh_access_token()
+    print("[Poll] Refreshing Strava OAuth token...")
+    access_token = refresh_access_token()
 
-    # Fetch recent activities
-    activities = get_recent_activities(limit=30)
+    print("[Poll] Fetching recent activities...")
+    activities = get_recent_activities(access_token, limit=30)
 
     for act in activities:
         act["_dt"] = parse_strava_ts(act.get("start_date_local"))
@@ -90,7 +91,7 @@ def poll_once():
 
             # 2) Insert workout_samples
             try:
-                streams = get_activity_streams(act["id"])
+                streams = get_activity_streams(access_token, act["id"])
             except Exception as e:
                 print(f"[STRAVA] Stream fetch failed for activity {act['id']}: {e}")
                 streams = None
@@ -131,6 +132,7 @@ def poll_loop():
             poll_once()
         except Exception as e:
             print(f"[ERROR] Poll cycle failed: {e}")
+            traceback.print_exc()
 
         print(f"Sleeping {POLL_INTERVAL} seconds...\n")
         time.sleep(POLL_INTERVAL)
