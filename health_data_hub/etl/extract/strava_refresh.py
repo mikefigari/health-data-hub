@@ -3,7 +3,7 @@ Refresh Strava OAuth access token using the stored refresh token.
 """
 
 import json
-from pathlib import Path
+import os
 import requests
 
 from health_data_hub.config.settings import (
@@ -16,25 +16,47 @@ TOKEN_URL = "https://www.strava.com/oauth/token"
 
 
 def _load_token_file():
-    """Load the current token payload."""
+    """Load the current token payload safely."""
     if not TOKEN_FILE.exists():
         raise FileNotFoundError(f"Missing Strava token file: {TOKEN_FILE}")
 
-    with open(TOKEN_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    text = TOKEN_FILE.read_text(encoding="utf-8").strip()
+
+    if not text:
+        raise RuntimeError(
+            f"Token file is empty: {TOKEN_FILE}. "
+            "Re-run the Strava OAuth authorization flow."
+        )
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"Token file contains invalid JSON: {TOKEN_FILE}"
+        ) from e
+
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Token file did not contain a JSON object: {TOKEN_FILE}")
+
+    return data
 
 
 def _save_token_file(tokens):
-    """Persist refreshed tokens."""
-    with open(TOKEN_FILE, "w", encoding="utf-8") as f:
+    """Persist refreshed tokens atomically to avoid file corruption."""
+    temp_file = TOKEN_FILE.with_suffix(".json.tmp")
+
+    with open(temp_file, "w", encoding="utf-8") as f:
         json.dump(tokens, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+
+    temp_file.replace(TOKEN_FILE)
 
 
 def refresh_access_token():
     """
     Refresh the Strava access token and return the new token.
     """
-
     token_data = _load_token_file()
 
     refresh_token = token_data.get("refresh_token")
@@ -70,5 +92,4 @@ def refresh_access_token():
         raise RuntimeError(f"No access_token returned from Strava: {tokens}")
 
     _save_token_file(tokens)
-
     return access_token
