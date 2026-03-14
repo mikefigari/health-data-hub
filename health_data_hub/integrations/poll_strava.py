@@ -13,7 +13,7 @@ import traceback
 from datetime import datetime, timezone
 
 from health_data_hub.utils.db_connect import get_connection
-from health_data_hub.etl.extract.strava_refresh import refresh_access_token
+from health_data_hub.etl.extract.strava_refresh import get_valid_access_token
 from health_data_hub.etl.extract.strava_api import (
     get_recent_activities,
     get_activity_streams,
@@ -63,7 +63,7 @@ def poll_once():
     print(f"[Poll] Last DB sync timestamp: {last_sync}")
 
     print("[Poll] Refreshing Strava OAuth token...")
-    access_token = refresh_access_token()
+    access_token = get_valid_access_token()
 
     print("[Poll] Fetching recent activities...")
     activities = get_recent_activities(access_token, limit=30)

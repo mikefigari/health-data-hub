@@ -1,9 +1,14 @@
 """
-Refresh Strava OAuth access token using the stored refresh token.
+Strava OAuth token management.
+
+Loads the stored token, returns the current access token if still valid,
+and only calls the Strava refresh endpoint when the token is within
+5 minutes of expiry. Strava tokens are valid for 6 hours.
 """
 
 import json
 import os
+import time
 import requests
 
 from health_data_hub.config.settings import (
@@ -13,6 +18,7 @@ from health_data_hub.config.settings import (
 )
 
 TOKEN_URL = "https://www.strava.com/oauth/token"
+_EXPIRY_BUFFER_SECONDS = 300  # refresh if less than 5 min remaining
 
 
 def _load_token_file():
@@ -53,11 +59,26 @@ def _save_token_file(tokens):
     temp_file.replace(TOKEN_FILE)
 
 
-def refresh_access_token():
+def get_valid_access_token():
     """
-    Refresh the Strava access token and return the new token.
+    Return a valid Strava access token.
+
+    Reuses the stored token if it has more than 5 minutes remaining.
+    Only calls the Strava refresh endpoint when the token is expired
+    or about to expire. Strava tokens are valid for ~6 hours, so under
+    normal operation this refreshes roughly once every 6 hours instead
+    of on every 5-minute poll cycle.
     """
     token_data = _load_token_file()
+
+    expires_at = token_data.get("expires_at")
+    access_token = token_data.get("access_token")
+
+    if access_token and expires_at and time.time() < expires_at - _EXPIRY_BUFFER_SECONDS:
+        print("[Token] Stored token still valid, skipping refresh.")
+        return access_token
+
+    print("[Token] Token expired or expiring soon, refreshing...")
 
     refresh_token = token_data.get("refresh_token")
     if not refresh_token:
@@ -71,11 +92,6 @@ def refresh_access_token():
     }
 
     response = requests.post(TOKEN_URL, data=payload, timeout=30)
-
-    print(f"[DEBUG refresh] status={response.status_code}")
-    print(f"[DEBUG refresh] content-type={response.headers.get('Content-Type')}")
-    print(f"[DEBUG refresh] body={response.text[:500]!r}")
-
     response.raise_for_status()
 
     try:
@@ -83,13 +99,13 @@ def refresh_access_token():
     except ValueError as e:
         raise RuntimeError(
             f"Refresh response was not valid JSON. "
-            f"Status={response.status_code}, "
-            f"Body={response.text[:500]!r}"
+            f"Status={response.status_code}, Body={response.text[:500]!r}"
         ) from e
 
-    access_token = tokens.get("access_token")
-    if not access_token:
+    new_token = tokens.get("access_token")
+    if not new_token:
         raise RuntimeError(f"No access_token returned from Strava: {tokens}")
 
     _save_token_file(tokens)
-    return access_token
+    print("[Token] Token refreshed and saved.")
+    return new_token
