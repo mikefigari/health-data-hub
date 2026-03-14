@@ -8,6 +8,7 @@ Workflow:
     4. Sync that workout to Notion
 """
 
+import logging
 import time
 import traceback
 from datetime import datetime, timezone
@@ -22,6 +23,8 @@ from health_data_hub.etl.load.insert_workout import insert_workout_metadata as i
 from health_data_hub.etl.load.insert_workout_samples import insert_workout_samples
 from health_data_hub.etl.transform.build_workout_summary import build_summary_for
 from health_data_hub.integrations.notion.notion_strava_sync import sync_specific_workout
+
+logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 300  # 5 minutes
 
@@ -57,15 +60,15 @@ def get_last_synced_activity_time():
 # -------------------------------------------------------------------
 
 def poll_once():
-    print("\n=== Poll cycle start ===\n")
+    logger.info("=== Poll cycle start ===")
 
     last_sync = get_last_synced_activity_time()
-    print(f"[Poll] Last DB sync timestamp: {last_sync}")
+    logger.info("Last DB sync timestamp: %s", last_sync)
 
-    print("[Poll] Refreshing Strava OAuth token...")
+    logger.info("Checking Strava OAuth token...")
     access_token = refresh_access_token()
 
-    print("[Poll] Fetching recent activities...")
+    logger.info("Fetching recent activities...")
     activities = get_recent_activities(access_token, limit=30)
 
     for act in activities:
@@ -83,58 +86,60 @@ def poll_once():
             continue
 
         if last_sync is None or act_dt > last_sync:
-            print(f"New workout: {act['name']} @ {act_dt}")
+            logger.info("New workout: %s @ %s", act["name"], act_dt)
 
             # 1) Insert workouts_raw
             wid = insert_workout(act)
-            print(f"[DB] Inserted raw workout id = {wid}")
+            logger.info("Inserted raw workout id=%s", wid)
 
             # 2) Insert workout_samples
             try:
                 streams = get_activity_streams(access_token, act["id"])
             except Exception as e:
-                print(f"[STRAVA] Stream fetch failed for activity {act['id']}: {e}")
+                logger.warning("Stream fetch failed for activity %s: %s", act["id"], e)
                 streams = None
 
             try:
                 insert_workout_samples(wid, streams)
             except Exception as e:
-                print(f"[DB] Sample insert failed for {wid}: {e}")
+                logger.error("Sample insert failed for workout %s: %s", wid, e)
 
             # 3) Build summary row
             try:
                 build_summary_for(wid)
-                print(f"[DB] Summary built for workout {wid}")
+                logger.info("Summary built for workout %s", wid)
             except Exception as e:
-                print(f"[DB] Summary build failed for {wid}: {e}")
+                logger.error("Summary build failed for workout %s: %s", wid, e)
 
             # 4) Sync to Notion
             try:
                 sync_specific_workout(wid)
-                print(f"[Notion] Synced workout {wid}")
+                logger.info("Notion sync complete for workout %s", wid)
             except Exception as e:
-                print(f"[Notion] Sync failed for {wid}: {e}")
+                logger.error("Notion sync failed for workout %s: %s", wid, e)
 
             found_new = True
 
     if not found_new:
-        print("[Poll] No new workouts found.")
+        logger.info("No new workouts found.")
 
-    print("\n=== Poll cycle complete ===\n")
+    logger.info("=== Poll cycle complete ===")
 
 
 def poll_loop():
-    print("=== Strava Poller Started ===")
-    print(f"Polling every {POLL_INTERVAL} seconds...\n")
+    from health_data_hub.utils.logging_config import setup_logging
+    setup_logging()
+
+    logger.info("=== Strava Poller Started ===")
+    logger.info("Polling every %s seconds", POLL_INTERVAL)
 
     while True:
         try:
             poll_once()
         except Exception as e:
-            print(f"[ERROR] Poll cycle failed: {e}")
-            traceback.print_exc()
+            logger.error("Poll cycle failed: %s", e, exc_info=True)
 
-        print(f"Sleeping {POLL_INTERVAL} seconds...\n")
+        logger.info("Sleeping %s seconds...", POLL_INTERVAL)
         time.sleep(POLL_INTERVAL)
 
 
