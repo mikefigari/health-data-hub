@@ -72,10 +72,6 @@ def refresh_access_token():
 
     response = requests.post(TOKEN_URL, data=payload, timeout=30)
 
-    print(f"[DEBUG refresh] status={response.status_code}")
-    print(f"[DEBUG refresh] content-type={response.headers.get('Content-Type')}")
-    print(f"[DEBUG refresh] body={response.text[:500]!r}")
-
     response.raise_for_status()
 
     try:

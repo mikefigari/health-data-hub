@@ -1,36 +1,31 @@
-import sys
-from pathlib import Path
+"""
+Full ETL pipeline for initial setup or recovery.
 
-from dotenv import load_dotenv
+Run this once when setting up a new environment, or after a gap in
+polling to backfill missing data.
 
-# Ensure absolute imports work from any execution directory
-PROJECT_ROOT = Path(__file__).resolve().parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+Steps:
+    1. Initialize DB schema (idempotent)
+    2. Backfill all Strava workouts and stream samples
+    3. Build workout summaries (NP, IF, TSS) for all workouts
+"""
 
-
-from health_data_hub.etl.init_db import initialize_database  # noqa: E402
-from health_data_hub.etl.transform.backfill_strava import backfill_all  # noqa: E402
-from health_data_hub.etl.transform.build_all_summaries import build_all_summaries  # noqa: E402
-from health_data_hub.etl.transform.update_tss import update_tss  # noqa: E402
-
-load_dotenv(PROJECT_PARENT / "health_data_hub" / "config" / "dev.env")
+from health_data_hub.etl.init_db import initialize_database
+from health_data_hub.etl.transform.backfill_strava import backfill_all
+from health_data_hub.etl.transform.build_all_summaries import build_all_summaries
 
 
 def main():
-    print("Initializing DB schema...")
+    print("Step 1: Initializing DB schema...")
     initialize_database()
 
-    print("Running full Strava ETL backfill...")
+    print("\nStep 2: Running Strava backfill...")
     backfill_all()
 
-    print("Building workout summaries...")
+    print("\nStep 3: Building workout summaries...")
     build_all_summaries()
 
-    print("Computing TSS for all workouts...")
-    update_tss()
-
-    print("All ETL steps complete.")
+    print("\nAll ETL steps complete.")
 
 
 if __name__ == "__main__":
