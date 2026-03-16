@@ -6,12 +6,14 @@ managed by systemd. Replaces the separate scheduler.py (Strava) and
 run_oura_scheduler.bat (Oura) used on the Windows main PC.
 
 Jobs:
-    - Strava:  every 5 minutes (configurable via STRAVA_POLL_INTERVAL_MIN)
-    - Oura:    daily at a configurable hour (OURA_POLL_HOUR, default 7 AM)
+    - Strava:              every 5 minutes (configurable via STRAVA_POLL_INTERVAL_MIN)
+    - Oura:                daily at a configurable hour (OURA_POLL_HOUR, default 7 AM)
+    - Notion Daily State:  daily at a configurable hour (NOTION_DAILY_STATE_POLL_HOUR, default 8 AM)
 
 Environment variables (set in dev.env / prod.env):
-    STRAVA_POLL_INTERVAL_MIN   Minutes between Strava polls (default: 5)
-    OURA_POLL_HOUR             Hour of day for Oura poll, 0-23 (default: 7)
+    STRAVA_POLL_INTERVAL_MIN        Minutes between Strava polls (default: 5)
+    OURA_POLL_HOUR                  Hour of day for Oura poll, 0-23 (default: 7)
+    NOTION_DAILY_STATE_POLL_HOUR    Hour of day for Notion Daily State poll, 0-23 (default: 8)
 """
 
 import logging
@@ -31,6 +33,7 @@ logger = logging.getLogger(__name__)
 from apscheduler.schedulers.blocking import BlockingScheduler
 from health_data_hub.integrations.poll_strava import poll_once
 from health_data_hub.integrations.oura.poll_oura import poll_oura
+from health_data_hub.integrations.notion.poll_notion_daily_state import poll_notion_daily_state
 
 # -------------------------------------------------------------------
 # Configuration
@@ -38,6 +41,7 @@ from health_data_hub.integrations.oura.poll_oura import poll_oura
 
 STRAVA_INTERVAL_MIN = int(os.getenv("STRAVA_POLL_INTERVAL_MIN", "5"))
 OURA_POLL_HOUR = int(os.getenv("OURA_POLL_HOUR", "7"))
+NOTION_DAILY_STATE_POLL_HOUR = int(os.getenv("NOTION_DAILY_STATE_POLL_HOUR", "8"))
 
 
 # -------------------------------------------------------------------
@@ -58,6 +62,15 @@ def run_oura():
             logger.warning("Oura poll completed with errors (exit_code=%d)", exit_code)
     except Exception:
         logger.error("Oura poll cycle failed", exc_info=True)
+
+
+def run_notion_daily_state():
+    try:
+        exit_code = poll_notion_daily_state(days_back=30)
+        if exit_code != 0:
+            logger.warning("Notion daily state poll completed with errors (exit_code=%d)", exit_code)
+    except Exception:
+        logger.error("Notion daily state poll cycle failed", exc_info=True)
 
 
 # -------------------------------------------------------------------
@@ -85,10 +98,21 @@ scheduler.add_job(
     max_instances=1,
 )
 
+scheduler.add_job(
+    run_notion_daily_state,
+    trigger="cron",
+    hour=NOTION_DAILY_STATE_POLL_HOUR,
+    minute=30,
+    id="notion_daily_state_poller",
+    name="Notion daily state poller",
+    max_instances=1,
+)
+
 logger.info(
-    "Unified scheduler starting — Strava every %d min, Oura daily at %02d:00",
+    "Unified scheduler starting — Strava every %d min, Oura daily at %02d:00, Notion daily state daily at %02d:30",
     STRAVA_INTERVAL_MIN,
     OURA_POLL_HOUR,
+    NOTION_DAILY_STATE_POLL_HOUR,
 )
 
 try:

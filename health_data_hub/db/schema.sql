@@ -186,9 +186,13 @@ CREATE TABLE IF NOT EXISTS daily_physical_state (
     notes            TEXT,
     source           TEXT,
     entry_confidence TEXT,
+    notion_page_id   TEXT,
     created_at       TIMESTAMPTZ DEFAULT NOW(),
     updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE daily_physical_state
+    ADD COLUMN IF NOT EXISTS notion_page_id TEXT;
 
 
 -- ============================================================
