@@ -148,6 +148,23 @@ def build_properties(row: dict) -> dict:
 # Notion upsert logic
 # -------------------------------------------------------------------
 
+def _find_page_id(notion: Client, database_id: str, workout_id: int):
+    """
+    Look up an existing Notion page by Workout ID property using a
+    database filter. More reliable than notion.search() which does
+    full-text matching and can return wrong results.
+    """
+    response = notion.databases.query(
+        database_id=database_id,
+        filter={
+            "property": "Workout ID",
+            "number": {"equals": workout_id},
+        },
+    )
+    results = response.get("results", [])
+    return results[0]["id"] if results else None
+
+
 def upsert_workout(notion: Client, database_id: str, row: dict):
     workout_id = row["workout_id"]
     name = row.get("name") or "Untitled workout"
@@ -156,20 +173,7 @@ def upsert_workout(notion: Client, database_id: str, row: dict):
         print(f"[DRY RUN] Would sync workout {workout_id}: {name}")
         return
 
-    # First, search for an existing page that has a matching Workout ID property
-    search_results = notion.search(
-        query=str(workout_id),
-        filter={"value": "page", "property": "object"},
-    )
-
-    page_id = None
-    for result in search_results.get("results", []):
-        props = result.get("properties", {})
-        workout_prop = props.get("Workout ID", {})
-        if "number" in workout_prop and workout_prop["number"] == workout_id:
-            page_id = result["id"]
-            break
-
+    page_id = _find_page_id(notion, database_id, workout_id)
     props = build_properties(row)
 
     if page_id:
