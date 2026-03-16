@@ -1,13 +1,6 @@
-import sys
 from datetime import datetime, timedelta
-from pathlib import Path
 
-# Ensure absolute package imports work from any cwd
-PROJECT_PARENT = Path(__file__).resolve().parents[3]
-if str(PROJECT_PARENT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_PARENT))
-
-from health_data_hub.utils.db_connect import get_connection  # noqa: E402
+from health_data_hub.utils.db_connect import get_connection
 
 
 def _parse_strava_time(iso_str: str):
@@ -160,11 +153,11 @@ def insert_workout_metadata(activity: dict) -> int:
         raw_file_path,
     )
 
-    cur.execute(sql, values)
-    new_id = cur.fetchone()[0]
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    return new_id
+    try:
+        cur.execute(sql, values)
+        new_id = cur.fetchone()[0]
+        conn.commit()
+        return new_id
+    finally:
+        cur.close()
+        conn.close()
