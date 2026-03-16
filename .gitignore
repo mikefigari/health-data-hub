@@ -225,4 +225,5 @@ health_data_hub/integrations/oura/sample_payloads/
 
 health_data_hub/config/strava_tokens.json
 health_data_hub/config/oura_tokens.json
+health_data_hub/config/mfp_cookies.txt
 
