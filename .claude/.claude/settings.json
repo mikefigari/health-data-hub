@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/figar/Documents/PARA Personal/01 Projects/Programming/health_data_hub/**)",
+      "Bash(venv/Scripts/python -c \"import psycopg2; conn = psycopg2.connect\\(dbname=''health'', user=''postgres'', host=''localhost'', port=5432\\); cur = conn.cursor\\(\\); cur.execute\\(\"\"SELECT column_name, data_type, character_maximum_length, is_nullable, column_default FROM information_schema.columns WHERE table_name = ''daily_physical_state'' ORDER BY ordinal_position\"\"\\); print\\(''\\\\n''.join\\(str\\(row\\) for row in cur.fetchall\\(\\)\\)\\); conn.close\\(\\)\")",
+      "Bash(find '/c/Users/figar/Documents/PARA Personal/01 Projects/Programming/health_data_hub' -type f -name *.sql)",
+      "Bash(venv/Scripts/python -c \"import psycopg2; conn = psycopg2.connect\\(dbname=''health'', user=''postgres'', host=''localhost'', port=5432, password=''Vr3TUekJy38dHqNj''\\); cur = conn.cursor\\(\\); cur.execute\\(\"\"SELECT column_name, data_type, character_maximum_length, is_nullable, column_default FROM information_schema.columns WHERE table_name = ''daily_physical_state'' ORDER BY ordinal_position\"\"\\); rows = cur.fetchall\\(\\); [print\\(row\\) for row in rows]; conn.close\\(\\)\")",
+      "Bash(find 'c:/Users/figar/Documents/PARA Personal/01 Projects/Programming/health_data_hub/health_data_hub/etl/transform' -type f -name *.py)",
+      "Bash(find 'c:/Users/figar/Documents/PARA Personal/01 Projects/Programming/health_data_hub' -name *schema* -o -name *init* -type f)",
+      "Bash(grep -E \"\\\\.\\(py|sql\\)$\")",
+      "Bash(find '/c/Users/figar/Documents/PARA Personal/01 Projects/Programming/health_data_hub/health_data_hub/etl' -type f -name *.py)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:python-myfitnesspal.readthedocs.io)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch"
+    ]
+  }
+}

@@ -23,7 +23,7 @@ from health_data_hub.utils.db_connect import get_connection
 
 
 _QUERY = """
-WITH date_series AS (
+WITH RECURSIVE date_series AS (
     SELECT generate_series(%(start_date)s::date, %(end_date)s::date, interval '1 day')::date AS day
 ),
 sleep AS (
@@ -145,6 +145,51 @@ nutrition AS (
         logged_complete
     FROM nutrition_daily
     WHERE day BETWEEN %(start_date)s AND %(end_date)s
+),
+daily_tss_lookback AS (
+    -- Generate a date series from 42 days before start_date through end_date,
+    -- then left-join workout_summary to sum TSS per day (rest days get 0).
+    SELECT
+        gs.day,
+        COALESCE(SUM(ws.tss_power), 0.0) AS daily_tss
+    FROM generate_series(
+        %(start_date)s::date - interval '42 days',
+        %(end_date)s::date,
+        interval '1 day'
+    ) AS gs(day)
+    LEFT JOIN workout_summary ws ON DATE(ws.start_time) = gs.day
+    GROUP BY gs.day
+),
+ema_calc AS (
+    -- Recursive CTE: seed with the first lookback day, then iterate forward
+    -- computing CTL (42-day EMA) and ATL (7-day EMA).
+    SELECT
+        day,
+        daily_tss,
+        daily_tss AS ctl,
+        daily_tss AS atl
+    FROM daily_tss_lookback
+    WHERE day = %(start_date)s::date - interval '42 days'
+
+    UNION ALL
+
+    SELECT
+        tl.day,
+        tl.daily_tss,
+        ec.ctl + (tl.daily_tss - ec.ctl) / 42.0 AS ctl,
+        ec.atl + (tl.daily_tss - ec.atl) / 7.0  AS atl
+    FROM ema_calc ec
+    JOIN daily_tss_lookback tl ON tl.day = ec.day + interval '1 day'
+),
+pmc AS (
+    -- Filter to the export window and compute TSB = CTL - ATL.
+    SELECT
+        day,
+        ROUND(ctl::numeric, 1) AS ctl,
+        ROUND(atl::numeric, 1) AS atl,
+        ROUND((ctl - atl)::numeric, 1) AS tsb
+    FROM ema_calc
+    WHERE day BETWEEN %(start_date)s AND %(end_date)s
 )
 SELECT
     d.day,
@@ -207,7 +252,8 @@ SELECT
         'sodium_mg',      nu.sodium_mg,
         'goal_calories',  nu.goal_calories,
         'logged_complete', nu.logged_complete
-    ) AS nutrition
+    ) AS nutrition,
+    json_build_object('ctl', pm.ctl, 'atl', pm.atl, 'tsb', pm.tsb) AS performance_management
 FROM date_series d
 LEFT JOIN sleep       sl ON sl.day      = d.day
 LEFT JOIN readiness   re ON re.day      = d.day
@@ -216,6 +262,7 @@ LEFT JOIN hr_agg      hr ON hr.sleep_id = sl.sleep_id
 LEFT JOIN workouts    wo ON wo.day      = d.day
 LEFT JOIN phys        ph ON ph.day      = d.day
 LEFT JOIN nutrition   nu ON nu.day      = d.day
+LEFT JOIN pmc         pm ON pm.day      = d.day
 ORDER BY d.day DESC;
 """
 
@@ -226,16 +273,33 @@ def _default(obj):
     raise TypeError(f"Not JSON serializable: {type(obj)}")
 
 
-def export_daily_json(start_date: date, end_date: date) -> list[dict]:
-    """Return one dict per calendar day covering start_date..end_date inclusive."""
+def export_daily_json(start_date: date, end_date: date) -> dict:
+    """Return a dict with 'days' (per-day rows) and 'window_summary' (PMC summary)."""
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(_QUERY, {"start_date": start_date, "end_date": end_date})
             rows = cur.fetchall()
-        return json.loads(json.dumps([dict(r) for r in rows], default=_default))
     finally:
         conn.close()
+
+    days = json.loads(json.dumps([dict(r) for r in rows], default=_default))
+
+    pmc_rows = [r for r in days if r.get("performance_management", {}).get("ctl") is not None]
+    if pmc_rows:
+        # rows are ORDER BY day DESC, so pmc_rows[0] is most recent, pmc_rows[-1] is oldest
+        window_summary = {
+            "ctl_start":   pmc_rows[-1]["performance_management"]["ctl"],
+            "ctl_end":     pmc_rows[0]["performance_management"]["ctl"],
+            "ctl_change":  round(pmc_rows[0]["performance_management"]["ctl"] - pmc_rows[-1]["performance_management"]["ctl"], 1),
+            "tsb_min":     min(p["performance_management"]["tsb"] for p in pmc_rows),
+            "tsb_max":     max(p["performance_management"]["tsb"] for p in pmc_rows),
+            "tsb_current": pmc_rows[0]["performance_management"]["tsb"],
+        }
+    else:
+        window_summary = None
+
+    return {"days": days, "window_summary": window_summary}
 
 
 if __name__ == "__main__":

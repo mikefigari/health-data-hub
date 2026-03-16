@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venv/Scripts/python -m pytest --version)",
+      "Bash(venv/Scripts/python -c \"import psycopg2; from health_data_hub.config import settings; print\\(''DB_HOST:'', settings.DB_HOST\\); print\\(''DB_PORT:'', settings.DB_PORT\\); print\\(''DB_NAME:'', settings.DB_NAME\\); print\\(''DB_USER:'', settings.DB_USER\\)\")",
+      "Bash(venv/Scripts/pip install:*)",
+      "Bash(venv/Scripts/python -c \":*)"
+    ]
+  }
+}
