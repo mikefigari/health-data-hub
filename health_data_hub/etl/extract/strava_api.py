@@ -32,12 +32,35 @@ def get_recent_activities(access_token: str, limit: int = 10):
         headers=_auth_headers(access_token),
         timeout=30,
     )
-
-    print(f"[DEBUG activities] status={response.status_code}")
-    print(f"[DEBUG activities] body={response.text[:500]!r}")
-
     response.raise_for_status()
     return _safe_json(response, "Recent activities request")
+
+
+def get_all_strava_activities(access_token: str, after: int = None):
+    """Fetch all activities via pagination. Returns a flat list."""
+    activities = []
+    page = 1
+
+    while True:
+        params = f"per_page=200&page={page}"
+        if after:
+            params += f"&after={after}"
+
+        response = requests.get(
+            f"{BASE_URL}/athlete/activities?{params}",
+            headers=_auth_headers(access_token),
+            timeout=30,
+        )
+        response.raise_for_status()
+        batch = _safe_json(response, f"Activities page {page}")
+
+        if not batch:
+            break
+
+        activities.extend(batch)
+        page += 1
+
+    return activities
 
 
 def get_activity_streams(access_token: str, activity_id: int):
@@ -47,9 +70,6 @@ def get_activity_streams(access_token: str, activity_id: int):
         headers=_auth_headers(access_token),
         timeout=30,
     )
-
-    print(f"[DEBUG streams] status={response.status_code}")
-    print(f"[DEBUG streams] body={response.text[:500]!r}")
 
     response.raise_for_status()
     return _safe_json(response, f"Streams request for activity {activity_id}")
