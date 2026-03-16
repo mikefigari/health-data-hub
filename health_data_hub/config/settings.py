@@ -63,5 +63,14 @@ STRAVA_SCOPE = os.getenv("STRAVA_SCOPE")
 
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 NOTION_WORKOUT_DB_ID = os.getenv("NOTION_WORKOUT_DB_ID")
+NOTION_DAILY_STATE_DB_ID = os.getenv("NOTION_DAILY_STATE_DB_ID")
 
 OURA_PERSONAL_ACCESS_TOKEN = os.getenv("OURA_PERSONAL_ACCESS_TOKEN")
+
+
+# -------------------------------------------------------------
+# MyFitnessPal Configuration
+# -------------------------------------------------------------
+
+MFP_USERNAME = os.getenv("MFP_USERNAME")
+MFP_COOKIE_FILE = CONFIG_DIR / "mfp_cookies.txt"

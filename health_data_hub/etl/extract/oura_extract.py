@@ -185,17 +185,17 @@ def extract_activity_records(activity_json: Dict[str, Any]) -> List[Dict[str, An
             "day": row.get("day"),
 
             "steps": row.get("steps"),
-            "cal_total": row.get("cal_total") or row.get("total_calories"),
-            "cal_active": row.get("cal_active") or row.get("active_calories"),
+            "cal_total": row.get("total_calories"),
+            "cal_active": row.get("active_calories"),
 
-            "inactive_sec": row.get("inactive_time"),
+            "inactive_sec": row.get("sedentary_time"),
             "low_activity_sec": row.get("low_activity_time"),
             "medium_activity_sec": row.get("medium_activity_time"),
             "high_activity_sec": row.get("high_activity_time"),
 
-            "met_min_low": row.get("met_min_low"),
-            "met_min_medium": row.get("met_min_medium"),
-            "met_min_high": row.get("met_min_high"),
+            "met_min_low": row.get("low_activity_met_minutes"),
+            "met_min_medium": row.get("medium_activity_met_minutes"),
+            "met_min_high": row.get("high_activity_met_minutes"),
 
             "raw_json": row
 

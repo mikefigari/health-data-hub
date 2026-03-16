@@ -186,7 +186,39 @@ CREATE TABLE IF NOT EXISTS daily_physical_state (
     notes            TEXT,
     source           TEXT,
     entry_confidence TEXT,
+    notion_page_id   TEXT,
     created_at       TIMESTAMPTZ DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE daily_physical_state
+    ADD COLUMN IF NOT EXISTS notion_page_id TEXT;
+
+
+-- ------------------------------------------------------------
+-- Daily nutrition totals (MyFitnessPal)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS nutrition_daily (
+    day              DATE PRIMARY KEY,
+    -- Actual daily totals
+    calories         INT,
+    protein_g        FLOAT,
+    carbs_g          FLOAT,
+    fat_g            FLOAT,
+    fiber_g          FLOAT,
+    sugar_g          FLOAT,
+    sodium_mg        FLOAT,
+    -- Goal values (from MFP daily goals)
+    goal_calories    INT,
+    goal_protein_g   FLOAT,
+    goal_carbs_g     FLOAT,
+    goal_fat_g       FLOAT,
+    -- Meal breakdown (JSONB — queryable but avoids separate table)
+    meals_json       JSONB,
+    -- Metadata
+    source           TEXT DEFAULT 'myfitnesspal',
+    logged_complete  BOOLEAN,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
 
