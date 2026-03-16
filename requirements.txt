@@ -4,3 +4,4 @@ python-dotenv
 notion-client
 numpy
 apscheduler
+pytest
