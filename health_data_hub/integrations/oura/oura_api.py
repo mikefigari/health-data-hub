@@ -1,66 +1,40 @@
-import os
+"""
+Oura API client. Auth token sourced from centralized settings,
+which respects the HEALTH_ENV environment variable (dev/prod).
+"""
+
 import requests
-from pathlib import Path
-from dotenv import load_dotenv
 
-ENV_PATH = Path(__file__).resolve().parents[2] / "config" / "dev.env"
-load_dotenv(ENV_PATH, override=True)
-
-
-# ---------------------------------------------------------------------------
-# Auth helper
-# ---------------------------------------------------------------------------
-
-def get_oura_auth_header():
-    token = os.getenv("OURA_PERSONAL_ACCESS_TOKEN")
-    if not token:
-        raise Exception("Missing OURA_PERSONAL_ACCESS_TOKEN in dev.env")
-    return {"Authorization": f"Bearer {token}"}
-
-
-# ---------------------------------------------------------------------------
-# Base URL
-# ---------------------------------------------------------------------------
+from health_data_hub.config.settings import OURA_PERSONAL_ACCESS_TOKEN
 
 BASE_URL = "https://api.ouraring.com/v2/usercollection"
 
 
-# ---------------------------------------------------------------------------
-# Generic GET helper
-# ---------------------------------------------------------------------------
+def _auth_header():
+    if not OURA_PERSONAL_ACCESS_TOKEN:
+        raise RuntimeError(
+            "Missing OURA_PERSONAL_ACCESS_TOKEN. "
+            "Check your environment config file."
+        )
+    return {"Authorization": f"Bearer {OURA_PERSONAL_ACCESS_TOKEN}"}
+
 
 def _get(endpoint: str, params: dict):
-    headers = get_oura_auth_header()
-    url = f"{BASE_URL}/{endpoint}"
-    resp = requests.get(url, headers=headers, params=params)
+    response = requests.get(
+        f"{BASE_URL}/{endpoint}",
+        headers=_auth_header(),
+        params=params,
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()
 
-    resp.raise_for_status()
-    return resp.json()
-
-
-# ---------------------------------------------------------------------------
-# Sleep
-# ---------------------------------------------------------------------------
 
 def fetch_sleep(start_date: str, end_date: str):
-    """
-    Fetch sleep data.
-    """
-    return _get("sleep", {
-        "start_date": start_date,
-        "end_date": end_date
-    })
+    """Fetch sleep records for the given date range."""
+    return _get("sleep", {"start_date": start_date, "end_date": end_date})
 
-
-# ---------------------------------------------------------------------------
-# Daily Activity (steps, calories, inactivity, etc.)
-# ---------------------------------------------------------------------------
 
 def fetch_activity(start_date: str, end_date: str):
-    """
-    Fetch daily activity summary.
-    """
-    return _get("daily_activity", {
-        "start_date": start_date,
-        "end_date": end_date
-    })
+    """Fetch daily activity summaries for the given date range."""
+    return _get("daily_activity", {"start_date": start_date, "end_date": end_date})
