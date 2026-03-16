@@ -1,19 +1,12 @@
-import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
+from health_data_hub.utils.db_connect import get_connection
 
-# Ensure absolute package imports work from any cwd
-PROJECT_PARENT = Path(__file__).resolve().parents[2]
-if str(PROJECT_PARENT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_PARENT))
+SCHEMA_FILE = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
 
-from health_data_hub.utils.db_connect import get_connection  # noqa: E402
-
-load_dotenv("config/dev.env")
 
 def initialize_database():
-    with open("db/schema.sql", "r") as f:
+    with open(SCHEMA_FILE, "r") as f:
         schema_sql = f.read()
 
     conn = get_connection()
