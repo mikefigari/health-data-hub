@@ -13,17 +13,19 @@ from datetime import date
 from notion_client import Client
 from psycopg2.extras import RealDictCursor
 
+import os
+
 from health_data_hub.utils.db_connect import get_connection
 from health_data_hub.config.settings import (
     NOTION_TOKEN,
     NOTION_WORKOUT_DB_ID,
 )
 
-# Optional explicit validation (good practice)
 if not NOTION_TOKEN or not NOTION_WORKOUT_DB_ID:
     raise RuntimeError("Missing Notion configuration in environment.")
 
-DRY_RUN = False
+# Set NOTION_DRY_RUN=1 in your env file to log without writing to Notion.
+DRY_RUN = os.getenv("NOTION_DRY_RUN", "0") == "1"
 
 
 # -------------------------------------------------------------------

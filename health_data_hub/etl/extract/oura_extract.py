@@ -6,7 +6,6 @@ that match your Postgres schemas.
 
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
-from psycopg2.extras import Json
 
 
 
