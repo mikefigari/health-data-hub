@@ -5,10 +5,13 @@ from workouts_raw and workout_samples.
 Computes NP, IF, and TSS at insert time using FTP history.
 """
 
+import logging
 from typing import Iterable, Optional, Tuple
 import numpy as np
 
 from health_data_hub.utils.db_connect import get_connection
+
+logger = logging.getLogger(__name__)
 
 
 # -------------------------------------------------------------------
@@ -69,26 +72,11 @@ def build_summary_for(workout_id: int) -> None:
         cur.execute(
             """
             SELECT
-                distance_m,
-                moving_s,
-                elapsed_s,
-                avg_speed,
-                max_speed,
-                avg_cadence,
-                avg_hr,
-                max_hr,
-                avg_watts,
-                max_watts,
-                weighted_average_watts,
-                kj,
-                device_watts,
-                source,
-                sport_type,
-                title,
-                start_time,
-                total_elevation_gain,
-                has_heartrate,
-                timezone
+                distance_m, moving_s, elapsed_s, avg_speed, max_speed,
+                avg_cadence, avg_hr, max_hr, avg_watts, max_watts,
+                weighted_average_watts, kj, device_watts, source,
+                sport_type, title, start_time, total_elevation_gain,
+                has_heartrate, timezone
             FROM workouts_raw
             WHERE id = %s
             """,
@@ -97,40 +85,23 @@ def build_summary_for(workout_id: int) -> None:
 
         row = cur.fetchone()
         if not row:
-            print(f"No raw data for workout {workout_id}, skipping.")
+            logger.warning("No raw data for workout %s, skipping.", workout_id)
             return
 
         (
-            distance_m,
-            moving_s,
-            elapsed_s,
-            avg_speed,
-            max_speed,
-            avg_cadence,
-            avg_hr,
-            max_hr,
-            avg_watts,
-            max_watts,
-            weighted_average_watts,
-            kj,
-            device_watts,
-            source,
-            sport_type,
-            title,
-            start_time,
-            total_elevation_gain,
-            has_heartrate,
-            timezone,
+            distance_m, moving_s, elapsed_s, avg_speed, max_speed,
+            avg_cadence, avg_hr, max_hr, avg_watts, max_watts,
+            weighted_average_watts, kj, device_watts, source,
+            sport_type, title, start_time, total_elevation_gain,
+            has_heartrate, timezone,
         ) = row
 
-        # Fetch FTP history
+        # Fetch FTP for workout date
         ftp_watts = None
-
         if start_time:
             cur.execute(
                 """
-                SELECT ftp_watts
-                FROM ftp_history
+                SELECT ftp_watts FROM ftp_history
                 WHERE effective_from <= %s::date
                 ORDER BY effective_from DESC
                 LIMIT 1
@@ -143,24 +114,14 @@ def build_summary_for(workout_id: int) -> None:
 
         if ftp_watts is None:
             cur.execute(
-                """
-                SELECT ftp_watts
-                FROM ftp_history
-                ORDER BY effective_from DESC
-                LIMIT 1
-                """
+                "SELECT ftp_watts FROM ftp_history ORDER BY effective_from DESC LIMIT 1"
             )
             ftp_row = cur.fetchone()
             ftp_watts = ftp_row[0] if ftp_row else None
 
         # Fetch watt samples
         cur.execute(
-            """
-            SELECT watts
-            FROM workout_samples
-            WHERE workout_id = %s
-            ORDER BY ts_seconds
-            """,
+            "SELECT watts FROM workout_samples WHERE workout_id = %s ORDER BY ts_seconds",
             (workout_id,),
         )
         watts_series = [r[0] for r in cur.fetchall()]
@@ -169,7 +130,8 @@ def build_summary_for(workout_id: int) -> None:
             watts_series, ftp_watts, moving_s
         )
 
-        sql = """
+        cur.execute(
+            """
             INSERT INTO workout_summary (
                 workout_id, distance_m, moving_s, elapsed_s,
                 avg_speed, max_speed, avg_cadence, avg_hr, max_hr,
@@ -178,11 +140,8 @@ def build_summary_for(workout_id: int) -> None:
                 total_elevation_gain, has_heartrate, timezone,
                 np_watts, intensity_factor, tss_power
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                    %s,%s,%s)
-            ON CONFLICT (workout_id) DO UPDATE
-            SET
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (workout_id) DO UPDATE SET
                 distance_m = EXCLUDED.distance_m,
                 moving_s = EXCLUDED.moving_s,
                 elapsed_s = EXCLUDED.elapsed_s,
@@ -205,41 +164,23 @@ def build_summary_for(workout_id: int) -> None:
                 np_watts = EXCLUDED.np_watts,
                 intensity_factor = EXCLUDED.intensity_factor,
                 tss_power = EXCLUDED.tss_power,
-                inserted_at = NOW();
-        """
-
-        cur.execute(
-            sql,
+                inserted_at = NOW()
+            """,
             (
-                workout_id,
-                distance_m,
-                moving_s,
-                elapsed_s,
-                avg_speed,
-                max_speed,
-                avg_cadence,
-                avg_hr,
-                max_hr,
-                avg_watts,
-                max_watts,
-                weighted_average_watts,
-                kj,
-                device_watts,
-                sport_type,
-                title,
-                start_time,
-                total_elevation_gain,
-                has_heartrate,
-                timezone,
-                np_watts,
-                intensity_factor,
-                tss_power,
+                workout_id, distance_m, moving_s, elapsed_s,
+                avg_speed, max_speed, avg_cadence, avg_hr, max_hr,
+                avg_watts, max_watts, weighted_average_watts, kj,
+                device_watts, sport_type, title, start_time,
+                total_elevation_gain, has_heartrate, timezone,
+                np_watts, intensity_factor, tss_power,
             ),
         )
 
         conn.commit()
-
-        print(f"Summary built for {workout_id}: NP={np_watts}, IF={intensity_factor}, TSS={tss_power}")
+        logger.info(
+            "Summary built for workout %s: NP=%s, IF=%s, TSS=%s",
+            workout_id, np_watts, intensity_factor, tss_power,
+        )
 
     finally:
         cur.close()
@@ -247,11 +188,13 @@ def build_summary_for(workout_id: int) -> None:
 
 
 # -------------------------------------------------------------------
-# CLI entrypoint MUST be at the bottom
+# CLI entrypoint
 # -------------------------------------------------------------------
 
 if __name__ == "__main__":
     import sys
+    from health_data_hub.utils.logging_config import setup_logging
+    setup_logging()
 
     if len(sys.argv) != 2:
         print("Usage: python -m health_data_hub.etl.transform.build_workout_summary <workout_id>")
