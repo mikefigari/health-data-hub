@@ -17,8 +17,8 @@ VALUES (
 )
 ON CONFLICT (sleep_id, timestamp)
 DO UPDATE SET
-    bpm = EXCLUDED.bpm,
-    hrv_rmssd = EXCLUDED.hrv_rmssd,
+    bpm = COALESCE(EXCLUDED.bpm, oura_hr_samples.bpm),
+    hrv_rmssd = COALESCE(EXCLUDED.hrv_rmssd, oura_hr_samples.hrv_rmssd),
     source = EXCLUDED.source,
     raw_json = EXCLUDED.raw_json;
 """
