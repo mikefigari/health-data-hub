@@ -251,7 +251,8 @@ SELECT
         'sugar_g',        nu.sugar_g,
         'sodium_mg',      nu.sodium_mg,
         'goal_calories',  nu.goal_calories,
-        'logged_complete', nu.logged_complete
+        'logged_complete', nu.logged_complete,
+        'weight_kg',      nu.weight_kg
     ) AS nutrition,
     json_build_object('ctl', pm.ctl, 'atl', pm.atl, 'tsb', pm.tsb) AS performance_management
 FROM date_series d

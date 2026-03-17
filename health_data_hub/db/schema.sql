@@ -218,9 +218,13 @@ CREATE TABLE IF NOT EXISTS nutrition_daily (
     -- Metadata
     source           TEXT DEFAULT 'myfitnesspal',
     logged_complete  BOOLEAN,
+    weight_kg        NUMERIC(5,2),
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE nutrition_daily
+    ADD COLUMN IF NOT EXISTS weight_kg NUMERIC(5,2);
 
 
 -- ============================================================

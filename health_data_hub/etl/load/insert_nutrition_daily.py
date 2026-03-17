@@ -11,12 +11,13 @@ SQL = """
 INSERT INTO nutrition_daily
     (day, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg,
      goal_calories, goal_protein_g, goal_carbs_g, goal_fat_g,
-     meals_json, source, logged_complete, created_at, updated_at)
+     meals_json, source, logged_complete, weight_kg, created_at, updated_at)
 VALUES (
     %(day)s, %(calories)s, %(protein_g)s, %(carbs_g)s, %(fat_g)s,
     %(fiber_g)s, %(sugar_g)s, %(sodium_mg)s,
     %(goal_calories)s, %(goal_protein_g)s, %(goal_carbs_g)s, %(goal_fat_g)s,
-    %(meals_json)s, %(source)s, %(logged_complete)s, %(created_at)s, %(updated_at)s
+    %(meals_json)s, %(source)s, %(logged_complete)s, %(weight_kg)s,
+    %(created_at)s, %(updated_at)s
 )
 ON CONFLICT (day) DO UPDATE SET
     calories        = EXCLUDED.calories,
@@ -33,6 +34,7 @@ ON CONFLICT (day) DO UPDATE SET
     meals_json      = EXCLUDED.meals_json,
     source          = EXCLUDED.source,
     logged_complete = EXCLUDED.logged_complete,
+    weight_kg       = COALESCE(EXCLUDED.weight_kg, nutrition_daily.weight_kg),
     updated_at      = NOW();
 """
 

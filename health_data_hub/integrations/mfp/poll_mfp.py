@@ -42,16 +42,45 @@ def poll_mfp(days_back: int = 7) -> int:
 
     today = date.today()
     dates = [today - timedelta(days=i) for i in range(days_back)]
-    logger.info("Fetching %d days: %s to %s", days_back, dates[-1], dates[0])
+    lower_bound = dates[-1]
+    logger.info("Fetching %d days: %s to %s", days_back, lower_bound, dates[0])
+
+    # Fetch weight measurements for the entire window in one request
+    weight_by_date: dict[date, float] = {}
+    try:
+        weight_by_date = client.get_measurements(
+            measurement="Weight",
+            lower_bound=lower_bound,
+            upper_bound=today,
+        )
+        logger.debug("Fetched %d weight measurements", len(weight_by_date))
+    except Exception as e:
+        logger.warning("Could not fetch weight measurements: %s — continuing without weight", e)
 
     rows = []
     for target_date in dates:
         try:
             day_obj = client.get_date(target_date.year, target_date.month, target_date.day)
-            row = extract_daily_nutrition(day_obj, target_date)
+            weight_kg = weight_by_date.get(target_date)
+            row = extract_daily_nutrition(day_obj, target_date, weight_kg=weight_kg)
             if row is not None:
                 rows.append(row)
-                logger.debug("Fetched %s: %s kcal", target_date, row.get("calories"))
+                logger.debug("Fetched %s: %s kcal, weight=%s kg", target_date, row.get("calories"), weight_kg)
+            elif weight_kg is not None:
+                # Weight logged but no nutrition — still worth storing the weight
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc)
+                rows.append({
+                    "day": target_date,
+                    "calories": None, "protein_g": None, "carbs_g": None,
+                    "fat_g": None, "fiber_g": None, "sugar_g": None, "sodium_mg": None,
+                    "goal_calories": None, "goal_protein_g": None,
+                    "goal_carbs_g": None, "goal_fat_g": None,
+                    "meals_json": None, "source": "myfitnesspal",
+                    "logged_complete": False, "weight_kg": weight_kg,
+                    "created_at": now, "updated_at": now,
+                })
+                logger.debug("No nutrition for %s but weight logged: %s kg", target_date, weight_kg)
             else:
                 logger.debug("No data logged for %s — skipping", target_date)
         except (json.JSONDecodeError, KeyError) as e:

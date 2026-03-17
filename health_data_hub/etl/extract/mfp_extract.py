@@ -10,7 +10,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 
-def extract_daily_nutrition(day_obj: Any, target_date: date) -> dict | None:
+def extract_daily_nutrition(day_obj: Any, target_date: date, weight_kg: float | None = None) -> dict | None:
     """
     Convert an MFP Day object into a row dict for nutrition_daily.
 
@@ -59,6 +59,7 @@ def extract_daily_nutrition(day_obj: Any, target_date: date) -> dict | None:
             "goal_carbs_g": goals.get("carbohydrates"),
             "goal_fat_g": goals.get("fat"),
             "meals_json": meals_json if meals_json else None,
+            "weight_kg": weight_kg,
             "source": "myfitnesspal",
             "logged_complete": getattr(day_obj, "complete", None),
             "created_at": now,
