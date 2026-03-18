@@ -203,7 +203,7 @@ function buildPageProperties(context, analysis, mode) {
   if (mode === 'daily') {
     // ⚠ Verify these exact property names match your Notion DB
     props['Daily Physical State'] = relationProp(dpsPageId ? [dpsPageId] : []);
-    props['Daily Fitness Log']    = relationProp(workoutPageIds ?? []);
+    props['Daily Fitness']        = relationProp(workoutPageIds ?? []);
   }
 
   return props;
