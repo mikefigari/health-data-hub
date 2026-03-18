@@ -1,12 +1,25 @@
 /**
  * postReport.mjs
  *
- * Creates a new page in the Health Intelligence Notion database containing:
- *   - Structured properties (Title, Report Type, Date, Status, relations)
- *   - The full Claude analysis rendered as Notion blocks (heading_2, paragraph,
- *     bulleted_list_item) via parseMarkdownToBlocks()
+ * Creates a new page in the Health Intelligence Notion database.
  *
- * On Notion API failure: saves the raw analysis to ./failed_reports/[date]-[mode].md
+ * Actual DB property schema (as provided):
+ *   Title                  title
+ *   Report Type            select        ("Daily" | "Weekly")
+ *   Created Date           date
+ *   Key Insight            rich_text     ← synthesis section from analysis
+ *   Anomalies/Flags        rich_text     ← flags section from analysis
+ *   Action Items           rich_text     ← left blank; no action-item section in prompts
+ *   Raw Prompt             rich_text     ← context summary sent to Claude
+ *   PZ                     relation      ← NOTION_POWERZONE_DB_ID
+ *   Daily Physical...      relation      ← NOTION_DAILY_STATE_DB_ID (daily only)
+ *                                           ⚠ Full property name assumed:
+ *                                           "Daily Physical State" — verify in Notion
+ *   Daily Fitness...       relation      ← NOTION_WORKOUT_DB_ID (daily only)
+ *                                           ⚠ Full property name assumed:
+ *                                           "Daily Fitness Log" — verify in Notion
+ *
+ * On Notion API failure: saves raw analysis to ./failed_reports/[date]-[mode].md
  */
 
 import { Client as NotionClient } from '@notionhq/client';
@@ -21,11 +34,9 @@ const FAILED_REPORTS_DIR = join(__dirname, '..', '..', '..', 'failed_reports');
 // ── Title helpers ─────────────────────────────────────────────────────────
 
 function formatDailyTitle(isoDate) {
-  const d = new Date(`${isoDate}T12:00:00Z`);  // noon UTC avoids timezone edge cases
+  const d = new Date(`${isoDate}T12:00:00Z`);
   const monthDay = d.toLocaleDateString('en-US', {
-    month: 'long',
-    day:   'numeric',
-    timeZone: 'UTC',
+    month: 'long', day: 'numeric', timeZone: 'UTC',
   });
   return `Daily · ${monthDay}`;
 }
@@ -38,12 +49,10 @@ function getISOWeekNumber(isoDate) {
 }
 
 function formatWeeklyTitle(isoDate, powerZoneName) {
-  const week      = getISOWeekNumber(isoDate);
-  const blockName = powerZoneName ?? 'Current Block';
-  return `Week ${week} · ${blockName}`;
+  return `Week ${getISOWeekNumber(isoDate)} · ${powerZoneName ?? 'Current Block'}`;
 }
 
-// ── Notion property builders ──────────────────────────────────────────────
+// ── Property value builders ───────────────────────────────────────────────
 
 function titleProp(text) {
   return { title: [{ type: 'text', text: { content: text } }] };
@@ -58,27 +67,115 @@ function dateProp(isoDate) {
 }
 
 function relationProp(ids) {
-  const validIds = (ids ?? []).filter(Boolean);
-  return { relation: validIds.map(id => ({ id })) };
+  return { relation: (ids ?? []).filter(Boolean).map(id => ({ id })) };
 }
 
-// ── Notion page creation ──────────────────────────────────────────────────
+/**
+ * Build a rich_text property value, chunking at 2000 chars per segment.
+ * Notion database rich_text properties accept multiple text objects.
+ */
+function richTextProp(text) {
+  if (!text) return { rich_text: [] };
+  const chunks = [];
+  let remaining = String(text);
+  while (remaining.length > 0) {
+    chunks.push({ type: 'text', text: { content: remaining.slice(0, 2000) } });
+    remaining = remaining.slice(2000);
+  }
+  return { rich_text: chunks };
+}
+
+// ── Analysis text extraction ──────────────────────────────────────────────
 
 /**
- * Build the page properties object for the Notion create call.
- *
- * ASSUMPTIONS about the Health Intelligence DB schema:
- *   - "Title"                : title
- *   - "Report Type"          : select  ("Daily" | "Weekly")
- *   - "Date"                 : date
- *   - "Status"               : select  ("Final")
- *   - "PowerZone Block"      : relation → NOTION_POWERZONE_DB_ID
- *   - "Daily Physical State" : relation → NOTION_DAILY_STATE_DB_ID  (daily only)
- *   - "Workouts"             : relation → NOTION_WORKOUT_DB_ID       (daily only)
- *
- * If any relation IDs are null/empty the relation property is still included
- * but with an empty array — Notion accepts this without error.
+ * Extract the body text under a `## Header` section.
+ * Stops at the next `##` heading or end of string.
  */
+function extractSection(markdown, headerName) {
+  const lines     = markdown.split('\n');
+  let   inSection = false;
+  const body      = [];
+
+  for (const line of lines) {
+    if (line.startsWith('## ')) {
+      if (inSection) break;
+      if (line.slice(3).trim().toLowerCase() === headerName.toLowerCase()) {
+        inSection = true;
+      }
+      continue;
+    }
+    if (inSection) body.push(line);
+  }
+
+  return body.join('\n').trim();
+}
+
+/**
+ * Pick the most meaningful single-section summary for the Key Insight property.
+ * Daily  → "Body state this morning"
+ * Weekly → "What the data is saying"
+ */
+function extractKeyInsight(analysis, mode) {
+  const header = mode === 'weekly'
+    ? 'What the data is saying'
+    : 'Body state this morning';
+  return extractSection(analysis, header);
+}
+
+/**
+ * Extract the flags/anomalies section.
+ * Daily  → "Fatigue flags"
+ * Weekly → "Recovery and fatigue"
+ */
+function extractAnomalies(analysis, mode) {
+  const header = mode === 'weekly'
+    ? 'Recovery and fatigue'
+    : 'Fatigue flags';
+  return extractSection(analysis, header);
+}
+
+/**
+ * Build a compact summary of the context to store in Raw Prompt.
+ * Captures the key data dimensions without the full JSON payload.
+ */
+function buildRawPromptSummary(context, mode) {
+  const { date, days, windowSummary } = context;
+  const today = days.find(d => d.day === date) ?? days[0] ?? {};
+  const pmc   = today.performance_management ?? {};
+
+  const lines = [
+    `Mode: ${mode} | Date: ${date} | Days in context: ${days.length}`,
+    `PMC: CTL=${pmc.ctl ?? 'n/a'} ATL=${pmc.atl ?? 'n/a'} TSB=${pmc.tsb ?? 'n/a'}`,
+  ];
+
+  if (windowSummary) {
+    lines.push(
+      `90-day window: CTL ${windowSummary.ctl_start}→${windowSummary.ctl_end} (${windowSummary.ctl_change > 0 ? '+' : ''}${windowSummary.ctl_change}), TSB range ${windowSummary.tsb_min}–${windowSummary.tsb_max}`
+    );
+  }
+
+  if (mode === 'daily') {
+    const sleep  = today.sleep ?? {};
+    const nutr   = today.nutrition ?? {};
+    const ready  = today.readiness ?? {};
+    lines.push(`Readiness: ${ready.score ?? 'n/a'} | Sleep: ${sleep.total_sleep_sec != null ? Math.round(sleep.total_sleep_sec / 3600 * 10) / 10 + 'h' : 'n/a'}`);
+    lines.push(`Nutrition: ${nutr.calories ?? 'n/a'} kcal | Protein: ${nutr.protein_g ?? 'n/a'}g`);
+    lines.push(`Physical state: ${today.physical_state?.overall_state ?? 'n/a'}`);
+  } else {
+    const { deficitAdherenceStr, plannedNextWeek } = context;
+    lines.push(`Deficit adherence: ${deficitAdherenceStr ?? 'n/a'}`);
+    lines.push(`Planned next week: ${(plannedNextWeek ?? []).length} sessions`);
+  }
+
+  if (context.notionRefs.powerZone) {
+    lines.push(`PowerZone block: ${context.notionRefs.powerZone.name}`);
+  }
+
+  return lines.join('\n');
+}
+
+// ── Page properties builder ───────────────────────────────────────────────
+
 function buildPageProperties(context, analysis, mode) {
   const { date, notionRefs } = context;
   const { powerZone, dpsPageId, workoutPageIds } = notionRefs;
@@ -88,16 +185,25 @@ function buildPageProperties(context, analysis, mode) {
     : formatDailyTitle(date);
 
   const props = {
-    'Title':       titleProp(title),
-    'Report Type': selectProp(mode === 'weekly' ? 'Weekly' : 'Daily'),
-    'Date':        dateProp(date),
-    'Status':      selectProp('Final'),
-    'PowerZone Block': relationProp(powerZone ? [powerZone.id] : []),
+    // ── Core ──
+    'Title':        titleProp(title),
+    'Report Type':  selectProp(mode === 'weekly' ? 'Weekly' : 'Daily'),
+    'Created Date': dateProp(date),
+
+    // ── Text summaries extracted from Claude response ──
+    'Key Insight':      richTextProp(extractKeyInsight(analysis, mode)),
+    'Anomalies/Flags':  richTextProp(extractAnomalies(analysis, mode)),
+    'Action Items':     richTextProp(''),        // prompts are observational-only; fill manually
+    'Raw Prompt':       richTextProp(buildRawPromptSummary(context, mode)),
+
+    // ── Relations ──
+    'PZ': relationProp(powerZone ? [powerZone.id] : []),
   };
 
   if (mode === 'daily') {
+    // ⚠ Verify these exact property names match your Notion DB
     props['Daily Physical State'] = relationProp(dpsPageId ? [dpsPageId] : []);
-    props['Workouts']             = relationProp(workoutPageIds ?? []);
+    props['Daily Fitness Log']    = relationProp(workoutPageIds ?? []);
   }
 
   return props;
@@ -114,14 +220,6 @@ async function saveFailedReport(date, mode, analysis) {
 
 // ── Main export ───────────────────────────────────────────────────────────
 
-/**
- * Post the analysis to Notion and return the created page URL.
- *
- * @param {object} context  - from buildDailyContext / buildWeeklyContext
- * @param {string} analysis - raw Claude response text
- * @param {string} mode     - 'daily' | 'weekly'
- * @returns {string}        - URL of the created Notion page
- */
 export async function postReport(context, analysis, mode) {
   const dbId = process.env.NOTION_HEALTH_INTELLIGENCE_DB_ID;
   if (!dbId) throw new Error('NOTION_HEALTH_INTELLIGENCE_DB_ID is not set');
@@ -130,8 +228,7 @@ export async function postReport(context, analysis, mode) {
   const properties = buildPageProperties(context, analysis, mode);
   const blocks     = parseMarkdownToBlocks(analysis);
 
-  // Notion API allows up to 100 blocks per create call; chunk if needed
-  const firstBatch  = blocks.slice(0, 100);
+  const firstBatch   = blocks.slice(0, 100);
   const extraBatches = [];
   for (let i = 100; i < blocks.length; i += 100) {
     extraBatches.push(blocks.slice(i, i + 100));
@@ -149,15 +246,9 @@ export async function postReport(context, analysis, mode) {
     throw new Error(`Notion page creation failed: ${err.message}`);
   }
 
-  // Append any remaining blocks
   for (const batch of extraBatches) {
-    await notion.blocks.children.append({
-      block_id: page.id,
-      children: batch,
-    });
+    await notion.blocks.children.append({ block_id: page.id, children: batch });
   }
 
-  // Notion page URL format
-  const pageIdClean = page.id.replace(/-/g, '');
-  return `https://notion.so/${pageIdClean}`;
+  return `https://notion.so/${page.id.replace(/-/g, '')}`;
 }
