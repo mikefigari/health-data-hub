@@ -77,9 +77,9 @@ SAMPLE_ACTIVITY_ROW = {
     "low_activity_time": 5400,
     "medium_activity_time": 1800,
     "high_activity_time": 600,
-    "met_min_low": 120,
-    "met_min_medium": 90,
-    "met_min_high": 60,
+    "low_activity_met_minutes": 120,
+    "medium_activity_met_minutes": 90,
+    "high_activity_met_minutes": 60,
 }
 
 
