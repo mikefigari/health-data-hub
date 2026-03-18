@@ -217,6 +217,10 @@ config/prod.env
 # Runtime output
 analysis_logs/
 
+# notion-reporter
+notion-reporter/.env
+notion-reporter/node_modules/
+
 # Project-specific ignores
 config/*.env
 config/strava_tokens.json
