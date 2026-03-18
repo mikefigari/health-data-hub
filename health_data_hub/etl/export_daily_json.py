@@ -142,9 +142,23 @@ nutrition AS (
         sugar_g,
         sodium_mg,
         goal_calories,
-        logged_complete
+        logged_complete,
+        weight_kg
     FROM nutrition_daily
     WHERE day BETWEEN %(start_date)s AND %(end_date)s
+),
+planned AS (
+    SELECT
+        planned_date AS day,
+        json_agg(json_build_object(
+            'class_type',    pw.class_type,
+            'duration_min',  pw.duration_min,
+            'estimated_tss', pw.estimated_tss,
+            'notes',         pw.notes
+        ) ORDER BY pw.id) AS planned_workouts
+    FROM planned_workouts pw
+    WHERE planned_date BETWEEN %(start_date)s AND %(end_date)s
+    GROUP BY planned_date
 ),
 daily_tss_lookback AS (
     -- Generate a date series from 42 days before start_date through end_date,
@@ -254,7 +268,8 @@ SELECT
         'logged_complete', nu.logged_complete,
         'weight_kg',      nu.weight_kg
     ) AS nutrition,
-    json_build_object('ctl', pm.ctl, 'atl', pm.atl, 'tsb', pm.tsb) AS performance_management
+    json_build_object('ctl', pm.ctl, 'atl', pm.atl, 'tsb', pm.tsb) AS performance_management,
+    COALESCE(pl.planned_workouts, '[]'::json) AS planned_workouts
 FROM date_series d
 LEFT JOIN sleep       sl ON sl.day      = d.day
 LEFT JOIN readiness   re ON re.day      = d.day
@@ -264,6 +279,7 @@ LEFT JOIN workouts    wo ON wo.day      = d.day
 LEFT JOIN phys        ph ON ph.day      = d.day
 LEFT JOIN nutrition   nu ON nu.day      = d.day
 LEFT JOIN pmc         pm ON pm.day      = d.day
+LEFT JOIN planned     pl ON pl.day      = d.day
 ORDER BY d.day DESC;
 """
 

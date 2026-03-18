@@ -227,6 +227,21 @@ ALTER TABLE nutrition_daily
     ADD COLUMN IF NOT EXISTS weight_kg NUMERIC(5,2);
 
 
+-- ------------------------------------------------------------
+-- Planned workouts (athlete's training calendar)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS planned_workouts (
+    id              SERIAL PRIMARY KEY,
+    planned_date    DATE NOT NULL,
+    class_type      VARCHAR(100),
+    duration_min    INTEGER,
+    estimated_tss   NUMERIC(6,1),
+    notes           TEXT,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(planned_date, class_type)
+);
+
 -- ============================================================
 -- Indexes
 -- ============================================================
