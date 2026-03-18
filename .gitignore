@@ -211,6 +211,12 @@ __marimo__/
 config/dev.env
 config/prod.env
 
+# Claude Code
+.claude/
+
+# Runtime output
+analysis_logs/
+
 # Project-specific ignores
 config/*.env
 config/strava_tokens.json

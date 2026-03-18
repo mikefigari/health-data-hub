@@ -294,7 +294,8 @@ def run_weekly_plan(no_save: bool = False) -> str:
     ]
     output = "\n".join(lines)
 
-    print(output)
+    sys.stdout.buffer.write((output + "\n").encode("utf-8", errors="replace"))
+    sys.stdout.buffer.flush()
 
     if not no_save:
         LOGS_DIR.mkdir(exist_ok=True)
