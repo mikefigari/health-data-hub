@@ -226,11 +226,13 @@ config/*.env
 config/strava_tokens.json
 config/*tokens*.json
 
+pi_migration_prompt.md
 
 health_data_hub/integrations/poller_debug.log
 health_data_hub/**/*.log
 
 health_data_hub/config/dev.env
+health_data_hub/config/prod.env
 health_data_hub/integrations/oura/sample_payloads/
 
 health_data_hub/config/strava_tokens.json
