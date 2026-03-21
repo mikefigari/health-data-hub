@@ -7,13 +7,12 @@ run_oura_scheduler.bat (Oura) used on the Windows main PC.
 
 Jobs:
     - Strava:              every 5 minutes (configurable via STRAVA_POLL_INTERVAL_MIN)
-    - Oura:                daily at a configurable hour (OURA_POLL_HOUR, default 7 AM)
+    - Oura:                every 30 minutes, 5 AM – 3 PM
     - Notion Daily State:  daily at a configurable hour (NOTION_DAILY_STATE_POLL_HOUR, default 8 AM)
     - MFP nutrition:       daily at a configurable hour (MFP_POLL_HOUR, default 11 PM)
 
 Environment variables (set in dev.env / prod.env):
     STRAVA_POLL_INTERVAL_MIN        Minutes between Strava polls (default: 5)
-    OURA_POLL_HOUR                  Hour of day for Oura poll, 0-23 (default: 7)
     NOTION_DAILY_STATE_POLL_HOUR    Hour of day for Notion Daily State poll, 0-23 (default: 8)
     MFP_POLL_HOUR                   Hour of day for MFP nutrition poll, 0-23 (default: 23)
 """
@@ -43,7 +42,6 @@ from health_data_hub.integrations.mfp.poll_mfp import poll_mfp
 # -------------------------------------------------------------------
 
 STRAVA_INTERVAL_MIN = int(os.getenv("STRAVA_POLL_INTERVAL_MIN", "5"))
-OURA_POLL_HOUR = int(os.getenv("OURA_POLL_HOUR", "7"))
 NOTION_DAILY_STATE_POLL_HOUR = int(os.getenv("NOTION_DAILY_STATE_POLL_HOUR", "8"))
 MFP_POLL_HOUR = int(os.getenv("MFP_POLL_HOUR", "23"))
 
@@ -104,10 +102,10 @@ scheduler.add_job(
 scheduler.add_job(
     run_oura,
     trigger="cron",
-    hour=OURA_POLL_HOUR,
-    minute=0,
+    hour="5-15",
+    minute="0,30",
     id="oura_poller",
-    name="Oura daily poller",
+    name="Oura poller",
     max_instances=1,
 )
 
@@ -132,10 +130,9 @@ scheduler.add_job(
 )
 
 logger.info(
-    "Unified scheduler starting — Strava every %d min, Oura daily at %02d:00, "
+    "Unified scheduler starting — Strava every %d min, Oura every 30 min (5am-3pm), "
     "Notion daily state at %02d:30, MFP nutrition at %02d:00",
     STRAVA_INTERVAL_MIN,
-    OURA_POLL_HOUR,
     NOTION_DAILY_STATE_POLL_HOUR,
     MFP_POLL_HOUR,
 )

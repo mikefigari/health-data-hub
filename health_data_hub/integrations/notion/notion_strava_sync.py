@@ -119,6 +119,9 @@ def build_properties(row: dict) -> dict:
     return {
         "Name": {"title": [{"text": {"content": name}}]},
 
+        # Unique identifier for upsert lookups
+        "Workout ID": {"number": row.get("workout_id")},
+
         # Performance metrics
         "Avg Cadence": {"number": row.get("avg_cadence")},
         "Avg Heart Rate": {"number": row.get("avg_heart_rate")},
@@ -156,11 +159,14 @@ def _find_page_id(notion: Client, database_id: str, workout_id: int):
     database filter. More reliable than notion.search() which does
     full-text matching and can return wrong results.
     """
-    response = notion.databases.query(
-        database_id=database_id,
-        filter={
-            "property": "Workout ID",
-            "number": {"equals": workout_id},
+    response = notion.request(
+        path=f"databases/{database_id}/query",
+        method="POST",
+        body={
+            "filter": {
+                "property": "Workout ID",
+                "number": {"equals": workout_id},
+            }
         },
     )
     results = response.get("results", [])
@@ -203,7 +209,7 @@ def sync_to_notion(since: date | None = None):
         print("No workouts to sync.")
         return
 
-    notion = Client(auth=NOTION_TOKEN)
+    notion = Client(auth=NOTION_TOKEN, notion_version="2022-06-28")
 
     for row in rows:
         upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
@@ -238,7 +244,7 @@ def sync_single_newest():
         print("[Notion] No workouts found to sync.")
         return
 
-    notion = Client(auth=NOTION_TOKEN)
+    notion = Client(auth=NOTION_TOKEN, notion_version="2022-06-28")
     upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
     print(f"[Notion] Synced newest workout: {row.get('name')}")
 
@@ -256,7 +262,7 @@ def sync_specific_workout(workout_id: int):
     if not row:
         raise ValueError(f"No summary row found for workout_id {workout_id}")
 
-    notion = Client(auth=NOTION_TOKEN)
+    notion = Client(auth=NOTION_TOKEN, notion_version="2022-06-28")
     upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
     print(f"[Notion] Synced specific workout: {row.get('name')} (ID {workout_id})")
 
