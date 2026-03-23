@@ -216,6 +216,8 @@ config/prod.env
 
 # Runtime output
 analysis_logs/
+failed_reports/
+logs/
 
 # notion-reporter
 notion-reporter/.env

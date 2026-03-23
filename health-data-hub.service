@@ -1,0 +1,34 @@
+[Unit]
+Description=Health Data Hub — unified health data scheduler
+Documentation=https://github.com/mfigari/health-data-hub
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mike
+Group=mike
+WorkingDirectory=/home/mike/projects/health-data-hub
+
+# Load production secrets from the out-of-repo config
+# Symlinked from ~/.config/health-data-hub/prod.env
+EnvironmentFile=/home/mike/.config/health-data-hub/prod.env
+
+# Run scheduler_all.py inside the project virtualenv
+ExecStart=/home/mike/projects/health-data-hub/.venv/bin/python scheduler_all.py
+
+# Restart policy: restart on any failure with a 10-second back-off
+Restart=on-failure
+RestartSec=10s
+
+# Write stdout and stderr to the systemd journal
+# View with: journalctl -u health-data-hub -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=health-data-hub
+
+# Give the process time to shut down gracefully
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
