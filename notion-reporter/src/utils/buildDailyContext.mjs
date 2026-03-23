@@ -10,7 +10,6 @@ import { Client as NotionClient } from '@notionhq/client';
 import { exportDays } from './db.mjs';
 
 const TDEE_BASELINE        = 2800;
-const WORKOUT_KCAL_PER_TSS = 4;
 
 function isoToday() {
   return new Date().toISOString().slice(0, 10);
@@ -163,10 +162,11 @@ function computeDailyCalorieContext(todayRow) {
   const workouts  = todayRow?.workouts ?? [];
   const nutrition = todayRow?.nutrition ?? {};
   const dayTss    = workouts.reduce((s, w) => s + (w?.tss ?? 0), 0);
-  const estTdee   = TDEE_BASELINE + dayTss * WORKOUT_KCAL_PER_TSS;
+  const dayKj     = workouts.reduce((s, w) => s + (w?.kj  ?? 0), 0);
+  const estTdee   = TDEE_BASELINE + Math.round(dayKj);
   const calories  = nutrition.calories ?? null;
   const deficit   = calories != null ? estTdee - calories : null;
-  return { dayTss, estTdee, calories, deficit };
+  return { dayTss, dayKj, estTdee, calories, deficit };
 }
 
 // ── Main export ───────────────────────────────────────────────────────────

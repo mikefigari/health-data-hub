@@ -186,9 +186,8 @@ function buildPageProperties(context, analysis, mode) {
 
   const props = {
     // ── Core ──
-    'Title':        titleProp(title),
+    'Name':         titleProp(title),
     'Report Type':  selectProp(mode === 'weekly' ? 'Weekly' : 'Daily'),
-    'Created Date': dateProp(date),
 
     // ── Text summaries extracted from Claude response ──
     'Key Insight':      richTextProp(extractKeyInsight(analysis, mode)),
@@ -197,13 +196,12 @@ function buildPageProperties(context, analysis, mode) {
     'Raw Prompt':       richTextProp(buildRawPromptSummary(context, mode)),
 
     // ── Relations ──
-    'PZ': relationProp(powerZone ? [powerZone.id] : []),
   };
 
   if (mode === 'daily') {
     // ⚠ Verify these exact property names match your Notion DB
-    props['Daily Physical State'] = relationProp(dpsPageId ? [dpsPageId] : []);
-    props['Daily Fitness']        = relationProp(workoutPageIds ?? []);
+    props["📸 Daily Physical State[DB]"] = relationProp(dpsPageId ? [dpsPageId] : []);
+    props["🚴🏻‍♂️ Daily Fitness[DB]"] = relationProp(workoutPageIds ?? []);
   }
 
   return props;

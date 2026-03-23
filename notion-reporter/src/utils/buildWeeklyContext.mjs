@@ -12,7 +12,6 @@ import { Client as NotionClient } from '@notionhq/client';
 import { exportDays, queryRows } from './db.mjs';
 
 const TDEE_BASELINE        = 2800;
-const WORKOUT_KCAL_PER_TSS = 4;
 
 function isoToday() {
   return new Date().toISOString().slice(0, 10);
@@ -37,7 +36,8 @@ function computeDeficitAdherence(days14, today) {
     const workouts  = row.workouts  ?? [];
     const calories  = nutrition.calories ?? null;
     const dayTss    = workouts.reduce((s, w) => s + (w?.tss ?? 0), 0);
-    const estTdee   = TDEE_BASELINE + dayTss * WORKOUT_KCAL_PER_TSS;
+    const dayKj     = workouts.reduce((s, w) => s + (w?.kj  ?? 0), 0);
+    const estTdee   = TDEE_BASELINE + Math.round(dayKj);
     const deficit   = calories != null ? estTdee - calories : null;
     const onTarget  = deficit != null && deficit >= 400 && deficit <= 800;
 
