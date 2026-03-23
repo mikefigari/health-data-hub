@@ -32,8 +32,7 @@ ENV_FILE = PACKAGE_ROOT / "config" / f"{ENV_NAME}.env"
 
 if ENV_FILE.exists():
     load_dotenv(ENV_FILE)
-else:
-    raise FileNotFoundError(f"Environment file not found: {ENV_FILE}")
+# If the file doesn't exist, assume vars are already in the environment (e.g. sourced externally)
 
 
 # -------------------------------------------------------------
