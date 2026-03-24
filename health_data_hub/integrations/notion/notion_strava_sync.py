@@ -10,22 +10,34 @@ Targets:
 """
 
 from datetime import date
+from pathlib import Path
+
+import os
+import requests
 from notion_client import Client
 from psycopg2.extras import RealDictCursor
 
-import os
-
-from health_data_hub.utils.db_connect import get_connection
 from health_data_hub.config.settings import (
     NOTION_TOKEN,
     NOTION_WORKOUT_DB_ID,
 )
+from health_data_hub.etl.transform.power_zone_graph import generate_power_zone_graph
+from health_data_hub.utils.db_connect import get_connection
 
 if not NOTION_TOKEN or not NOTION_WORKOUT_DB_ID:
     raise RuntimeError("Missing Notion configuration in environment.")
 
-# Set NOTION_DRY_RUN=1 in your env file to log without writing to Notion.
 DRY_RUN = os.getenv("NOTION_DRY_RUN", "0") == "1"
+NOTION_SDK_VERSION = "2022-06-28"
+NOTION_FILE_UPLOAD_VERSION = "2026-03-11"
+NOTION_API_BASE = "https://api.notion.com/v1"
+CYCLING_SPORT_TYPES = {
+    "ride",
+    "virtualride",
+    "ebikeride",
+    "handcycleride",
+    "gravelride",
+}
 
 
 # -------------------------------------------------------------------
@@ -41,6 +53,7 @@ def safe_round(value, digits: int = 0):
         return None
 
 
+
 def seconds_to_minutes(seconds):
     if seconds is None:
         return None
@@ -48,6 +61,7 @@ def seconds_to_minutes(seconds):
         return round(seconds / 60)
     except Exception:
         return None
+
 
 
 def determine_tag(row: dict) -> str:
@@ -66,6 +80,76 @@ def determine_tag(row: dict) -> str:
         return "Peloton Bike"
 
     return "Garmin Edge 530"
+
+
+
+def _is_cycling_workout(row: dict) -> bool:
+    sport_type = (row.get("sport_type") or "").replace(" ", "").lower()
+    return sport_type in CYCLING_SPORT_TYPES or sport_type.endswith("ride")
+
+
+
+def _notion_headers(content_type: str = "application/json") -> dict:
+    return {
+        "Authorization": f"Bearer {NOTION_TOKEN}",
+        "Notion-Version": NOTION_FILE_UPLOAD_VERSION,
+        "Content-Type": content_type,
+    }
+
+
+
+def _upload_file_to_notion(file_path: Path) -> str:
+    create_resp = requests.post(
+        f"{NOTION_API_BASE}/file_uploads",
+        headers=_notion_headers(),
+        json={},
+        timeout=30,
+    )
+    create_resp.raise_for_status()
+    upload = create_resp.json()
+    upload_id = upload["id"]
+
+    with file_path.open("rb") as fh:
+        send_resp = requests.post(
+            f"{NOTION_API_BASE}/file_uploads/{upload_id}/send",
+            headers={
+                "Authorization": f"Bearer {NOTION_TOKEN}",
+                "Notion-Version": NOTION_FILE_UPLOAD_VERSION,
+            },
+            files={"file": (file_path.name, fh, "image/png")},
+            timeout=120,
+        )
+    send_resp.raise_for_status()
+    return upload_id
+
+
+
+def _set_page_cover(page_id: str, file_upload_id: str):
+    response = requests.patch(
+        f"{NOTION_API_BASE}/pages/{page_id}",
+        headers=_notion_headers(),
+        json={
+            "cover": {
+                "type": "file_upload",
+                "file_upload": {"id": file_upload_id},
+            }
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+
+
+
+def _sync_power_zone_cover(page_id: str, workout_id: int):
+    graph = generate_power_zone_graph(workout_id)
+    if graph is None:
+        print(f"[Notion] No power-zone graph available for workout {workout_id}; skipping cover upload.")
+        return
+
+    file_upload_id = _upload_file_to_notion(Path(graph["output_path"]))
+    _set_page_cover(page_id, file_upload_id)
+    print(f"[Notion] Attached power-zone graph to workout {workout_id}")
+
 
 # -------------------------------------------------------------------
 # Database fetch helpers
@@ -89,6 +173,7 @@ def fetch_workouts_since(since_date: date):
         conn.close()
 
 
+
 def fetch_summary_row(workout_id: int):
     """
     Return a single summary row from notion_workouts_view for the given workout id.
@@ -108,6 +193,7 @@ def fetch_summary_row(workout_id: int):
     finally:
         conn.close()
 
+
 # -------------------------------------------------------------------
 # Notion property mapping
 # -------------------------------------------------------------------
@@ -118,11 +204,7 @@ def build_properties(row: dict) -> dict:
 
     return {
         "Name": {"title": [{"text": {"content": name}}]},
-
-        # Unique identifier for upsert lookups
         "Workout ID": {"number": row.get("workout_id")},
-
-        # Performance metrics
         "Avg Cadence": {"number": row.get("avg_cadence")},
         "Avg Heart Rate": {"number": row.get("avg_heart_rate")},
         "Avg Speed": {"number": safe_round(row.get("avg_speed_mph"), 1)},
@@ -131,23 +213,14 @@ def build_properties(row: dict) -> dict:
         "Max Watts": {"number": row.get("max_watts")},
         "Normalized Power": {"number": row.get("normalized_power")},
         "TSS": {"number": safe_round(row.get("tss"), 0)},
-
-        # Distance and elevation
         "Distance": {"number": row.get("distance_miles")},
         "Elevation": {"number": row.get("elevation_meters")},
-
-        # Duration in minutes
         "Duration": {"number": seconds_to_minutes(row.get("duration_seconds"))},
-
-        # Kilojoules
         "Kj": {"number": safe_round(row.get("kj"), 0)},
-
-        # Date
         "Workout Date": {"date": {"start": str(row.get("workout_date"))}},
-
-        # Tags
         "Tags": {"multi_select": [{"name": tag_value}]},
     }
+
 
 # -------------------------------------------------------------------
 # Notion upsert logic
@@ -173,13 +246,14 @@ def _find_page_id(notion: Client, database_id: str, workout_id: int):
     return results[0]["id"] if results else None
 
 
+
 def upsert_workout(notion: Client, database_id: str, row: dict):
     workout_id = row["workout_id"]
     name = row.get("name") or "Untitled workout"
 
     if DRY_RUN:
         print(f"[DRY RUN] Would sync workout {workout_id}: {name}")
-        return
+        return None
 
     page_id = _find_page_id(notion, database_id, workout_id)
     props = build_properties(row)
@@ -188,11 +262,21 @@ def upsert_workout(notion: Client, database_id: str, row: dict):
         notion.pages.update(page_id=page_id, properties=props)
         print(f"Updated workout {workout_id}: {name}")
     else:
-        notion.pages.create(
+        created = notion.pages.create(
             parent={"database_id": database_id},
             properties=props,
         )
+        page_id = created["id"]
         print(f"Created workout {workout_id}: {name}")
+
+    if page_id and _is_cycling_workout(row):
+        try:
+            _sync_power_zone_cover(page_id, workout_id)
+        except Exception as exc:
+            print(f"[Notion] Power-zone graph upload failed for workout {workout_id}: {exc}")
+
+    return page_id
+
 
 # -------------------------------------------------------------------
 # Bulk sync by date
@@ -209,12 +293,13 @@ def sync_to_notion(since: date | None = None):
         print("No workouts to sync.")
         return
 
-    notion = Client(auth=NOTION_TOKEN, notion_version="2022-06-28")
+    notion = Client(auth=NOTION_TOKEN, notion_version=NOTION_SDK_VERSION)
 
     for row in rows:
         upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
 
     print("Sync complete.")
+
 
 # -------------------------------------------------------------------
 # Sync newest workout (legacy, still available)
@@ -244,9 +329,10 @@ def sync_single_newest():
         print("[Notion] No workouts found to sync.")
         return
 
-    notion = Client(auth=NOTION_TOKEN, notion_version="2022-06-28")
+    notion = Client(auth=NOTION_TOKEN, notion_version=NOTION_SDK_VERSION)
     upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
     print(f"[Notion] Synced newest workout: {row.get('name')}")
+
 
 # -------------------------------------------------------------------
 # Sync specific workout id (used by poll_strava)
@@ -262,14 +348,14 @@ def sync_specific_workout(workout_id: int):
     if not row:
         raise ValueError(f"No summary row found for workout_id {workout_id}")
 
-    notion = Client(auth=NOTION_TOKEN, notion_version="2022-06-28")
+    notion = Client(auth=NOTION_TOKEN, notion_version=NOTION_SDK_VERSION)
     upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
     print(f"[Notion] Synced specific workout: {row.get('name')} (ID {workout_id})")
+
 
 # -------------------------------------------------------------------
 # Main entry for manual runs
 # -------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Example manual sync starting at a given date
     sync_to_notion(date(2025, 11, 23))

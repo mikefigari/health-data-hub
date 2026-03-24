@@ -1,0 +1,463 @@
+from __future__ import annotations
+
+import json
+import math
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Iterable, Optional
+
+from PIL import Image, ImageColor, ImageDraw, ImageFont
+from psycopg2.extras import RealDictCursor
+
+from health_data_hub.config.settings import PROJECT_ROOT
+from health_data_hub.utils.db_connect import get_connection
+
+
+DEFAULT_GRAPH_DIR = PROJECT_ROOT / "generated" / "power_zone_graphs"
+DEFAULT_ZONE_CONFIG_PATH = PROJECT_ROOT / "health_data_hub" / "config" / "power_zones.json"
+
+
+@dataclass(frozen=True)
+class PowerZone:
+    index: int
+    name: str
+    label: str
+    lower_pct: float
+    upper_pct: Optional[float]
+    color: str
+
+    def lower_watts(self, ftp_watts: float) -> int:
+        return int(round(self.lower_pct * ftp_watts))
+
+    def upper_watts(self, ftp_watts: float) -> Optional[int]:
+        if self.upper_pct is None:
+            return None
+        return int(round(self.upper_pct * ftp_watts))
+
+
+DEFAULT_POWER_ZONES = [
+    PowerZone(1, "Z1", "Active Recovery", 0.00, 0.55, "#D9D9D9"),
+    PowerZone(2, "Z2", "Endurance", 0.55, 0.75, "#4A90E2"),
+    PowerZone(3, "Z3", "Tempo", 0.75, 0.90, "#3CB371"),
+    PowerZone(4, "Z4", "Threshold", 0.90, 1.05, "#F2C94C"),
+    PowerZone(5, "Z5", "VO2 Max", 1.05, 1.20, "#F2994A"),
+    PowerZone(6, "Z6", "Anaerobic", 1.20, 1.50, "#EB5757"),
+    PowerZone(7, "Z7", "Neuromuscular", 1.50, None, "#8B1E3F"),
+]
+
+
+def _load_font(size: int, bold: bool = False):
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    ]
+    for path in font_paths:
+        if Path(path).exists():
+            return ImageFont.truetype(path, size=size)
+    return ImageFont.load_default()
+
+
+def _format_duration(total_seconds: Optional[int]) -> str:
+    if total_seconds is None:
+        return "n/a"
+    total_seconds = int(total_seconds)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours:d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:d}:{seconds:02d}"
+
+
+def _format_watts(value: Optional[float]) -> str:
+    if value is None:
+        return "n/a"
+    return f"{int(round(value))} W"
+
+
+def _lighten(color: str, amount: float = 0.70) -> str:
+    r, g, b = ImageColor.getrgb(color)
+    return "#%02x%02x%02x" % (
+        int(r + (255 - r) * amount),
+        int(g + (255 - g) * amount),
+        int(b + (255 - b) * amount),
+    )
+
+
+def _load_zone_config(config_path: Optional[Path]) -> list[PowerZone]:
+    if not config_path or not config_path.exists():
+        return DEFAULT_POWER_ZONES
+
+    with config_path.open("r", encoding="utf-8") as fh:
+        payload = json.load(fh)
+
+    zones = []
+    for idx, item in enumerate(payload.get("zones", []), start=1):
+        zones.append(
+            PowerZone(
+                index=item.get("index", idx),
+                name=item["name"],
+                label=item.get("label", item["name"]),
+                lower_pct=float(item["lower_pct"]),
+                upper_pct=None if item.get("upper_pct") is None else float(item["upper_pct"]),
+                color=item.get("color", DEFAULT_POWER_ZONES[min(idx - 1, len(DEFAULT_POWER_ZONES) - 1)].color),
+            )
+        )
+    return zones or DEFAULT_POWER_ZONES
+
+
+def _fetch_workout_graph_data(workout_id: int) -> Optional[dict]:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT
+                    wr.id,
+                    wr.external_id,
+                    wr.title,
+                    wr.sport_type,
+                    wr.start_time,
+                    wr.moving_s,
+                    wr.elapsed_s,
+                    wr.avg_watts,
+                    wr.max_watts,
+                    wr.weighted_average_watts,
+                    wr.kj,
+                    ws.np_watts,
+                    ws.intensity_factor,
+                    ws.tss_power
+                FROM workouts_raw wr
+                LEFT JOIN workout_summary ws
+                  ON ws.workout_id = wr.id
+                WHERE wr.id = %s
+                """,
+                (workout_id,),
+            )
+            workout = cur.fetchone()
+            if not workout:
+                return None
+
+            start_time = workout.get("start_time")
+            ftp_watts = None
+            if start_time:
+                cur.execute(
+                    """
+                    SELECT ftp_watts
+                    FROM ftp_history
+                    WHERE effective_from <= %s::date
+                    ORDER BY effective_from DESC
+                    LIMIT 1
+                    """,
+                    (start_time.date(),),
+                )
+                ftp_row = cur.fetchone()
+                if ftp_row:
+                    ftp_watts = ftp_row["ftp_watts"]
+
+            if ftp_watts is None:
+                cur.execute(
+                    """
+                    SELECT ftp_watts
+                    FROM ftp_history
+                    ORDER BY effective_from DESC
+                    LIMIT 1
+                    """
+                )
+                ftp_row = cur.fetchone()
+                if ftp_row:
+                    ftp_watts = ftp_row["ftp_watts"]
+
+            cur.execute(
+                """
+                SELECT
+                    COALESCE(second_index, ts_seconds) AS second_index,
+                    ts_seconds,
+                    watts
+                FROM workout_samples
+                WHERE workout_id = %s
+                ORDER BY COALESCE(second_index, ts_seconds), ts_seconds
+                """,
+                (workout_id,),
+            )
+            samples = cur.fetchall()
+
+        workout["ftp_watts"] = ftp_watts
+        workout["samples"] = samples
+        return workout
+    finally:
+        conn.close()
+
+
+def _zone_for_watts(watts: Optional[float], zones: Iterable[PowerZone], ftp_watts: float) -> Optional[PowerZone]:
+    if watts is None:
+        return None
+    zones = list(zones)
+    for zone in zones:
+        upper = zone.upper_watts(ftp_watts)
+        if upper is None and watts >= zone.lower_watts(ftp_watts):
+            return zone
+        if upper is not None and zone.lower_watts(ftp_watts) <= watts < upper:
+            return zone
+    return zones[-1] if zones else None
+
+
+def _bucket_samples(
+    samples: list[dict],
+    zones: list[PowerZone],
+    ftp_watts: float,
+    chart_width: int,
+) -> list[dict]:
+    if not samples:
+        return []
+
+    bucket_size = max(1, math.ceil(len(samples) / chart_width))
+    buckets = []
+    zone_lookup = {zone.index: zone for zone in zones}
+
+    for start in range(0, len(samples), bucket_size):
+        chunk = samples[start:start + bucket_size]
+        watts_values = [float(s["watts"]) for s in chunk if s.get("watts") is not None]
+        zone_indices = [
+            _zone_for_watts(s.get("watts"), zones, ftp_watts).index
+            for s in chunk
+            if s.get("watts") is not None
+        ]
+        dominant_zone = None
+        if zone_indices:
+            dominant_zone = zone_lookup[max(set(zone_indices), key=zone_indices.count)]
+
+        buckets.append(
+            {
+                "avg_watts": float(sum(watts_values) / len(watts_values)) if watts_values else None,
+                "zone": dominant_zone,
+                "second_start": chunk[0].get("ts_seconds") or chunk[0].get("second_index") or start,
+                "second_end": chunk[-1].get("ts_seconds") or chunk[-1].get("second_index") or (start + len(chunk) - 1),
+            }
+        )
+
+    return buckets
+
+
+def _compute_zone_distribution(samples: list[dict], zones: list[PowerZone], ftp_watts: float) -> list[dict]:
+    counts = {zone.index: 0 for zone in zones}
+    total_power_seconds = 0
+
+    for sample in samples:
+        zone = _zone_for_watts(sample.get("watts"), zones, ftp_watts)
+        if zone is None:
+            continue
+        counts[zone.index] += 1
+        total_power_seconds += 1
+
+    distribution = []
+    for zone in zones:
+        seconds = counts[zone.index]
+        pct = (seconds / total_power_seconds * 100.0) if total_power_seconds else 0.0
+        distribution.append({"zone": zone, "seconds": seconds, "pct": pct})
+    return distribution
+
+
+def _draw_text(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str, font, fill: str):
+    draw.text(xy, text, font=font, fill=fill)
+
+
+def generate_power_zone_graph(
+    workout_id: int,
+    output_dir: Optional[Path] = None,
+    config_path: Optional[Path] = None,
+) -> Optional[dict]:
+    workout = _fetch_workout_graph_data(workout_id)
+    if not workout:
+        return None
+
+    ftp_watts = workout.get("ftp_watts")
+    samples = workout.get("samples") or []
+    if not ftp_watts or not samples:
+        return None
+
+    zones = _load_zone_config(config_path or DEFAULT_ZONE_CONFIG_PATH)
+    distribution = _compute_zone_distribution(samples, zones, float(ftp_watts))
+    power_seconds = sum(item["seconds"] for item in distribution)
+    if power_seconds == 0:
+        return None
+
+    width = 1800
+    height = 1040
+    panel_gap = 40
+    summary_width = 360
+    margin_left = 90
+    margin_top = 120
+    chart_height = 660
+    chart_width = width - margin_left - summary_width - panel_gap - 60
+    chart_left = margin_left
+    chart_top = margin_top + 40
+    chart_bottom = chart_top + chart_height
+    chart_right = chart_left + chart_width
+    summary_left = chart_right + panel_gap
+
+    power_values = [float(s["watts"]) for s in samples if s.get("watts") is not None]
+    if not power_values:
+        return None
+
+    max_power_sample = max(power_values)
+    max_zone_ceiling = max(
+        z.upper_watts(float(ftp_watts)) or float(ftp_watts) * 1.7
+        for z in zones
+    )
+    y_max = max(float(ftp_watts) * 1.6, max_power_sample * 1.08, max_zone_ceiling)
+    y_max = int(math.ceil(y_max / 25.0) * 25)
+
+    image = Image.new("RGB", (width, height), "#FAF8F3")
+    draw = ImageDraw.Draw(image, "RGBA")
+
+    title_font = _load_font(34, bold=True)
+    subtitle_font = _load_font(18)
+    label_font = _load_font(16)
+    small_font = _load_font(14)
+    summary_font = _load_font(18)
+    summary_bold_font = _load_font(20, bold=True)
+
+    title = workout.get("title") or f"Workout {workout_id}"
+    ride_date = workout.get("start_time")
+    ride_date_str = ride_date.strftime("%Y-%m-%d %H:%M") if isinstance(ride_date, datetime) else "Unknown date"
+    sport_type = workout.get("sport_type") or "Ride"
+
+    _draw_text(draw, (margin_left, 34), title, title_font, "#1A1A1A")
+    _draw_text(
+        draw,
+        (margin_left, 74),
+        f"{sport_type}  |  {ride_date_str}  |  FTP {int(round(float(ftp_watts)))} W",
+        subtitle_font,
+        "#4F4F4F",
+    )
+
+    metric_y = height - 170
+    metrics = [
+        ("Avg", _format_watts(workout.get("avg_watts"))),
+        ("NP", _format_watts(workout.get("np_watts"))),
+        ("Max", _format_watts(workout.get("max_watts"))),
+        ("TSS", f"{int(round(workout['tss_power']))}" if workout.get("tss_power") is not None else "n/a"),
+        ("Duration", _format_duration(workout.get("moving_s") or workout.get("elapsed_s") or power_seconds)),
+    ]
+    metric_x = margin_left
+    for label, value in metrics:
+        draw.rounded_rectangle((metric_x, metric_y, metric_x + 150, metric_y + 78), radius=18, fill="#FFFFFF", outline="#E8E1D7")
+        _draw_text(draw, (metric_x + 18, metric_y + 14), label, label_font, "#7A6F63")
+        _draw_text(draw, (metric_x + 18, metric_y + 40), value, summary_bold_font, "#1A1A1A")
+        metric_x += 166
+
+    for zone in zones:
+        lower = zone.lower_watts(float(ftp_watts))
+        upper = zone.upper_watts(float(ftp_watts)) or y_max
+        lower = max(0, lower)
+        upper = min(y_max, upper)
+        if upper <= lower:
+            continue
+        y1 = chart_bottom - int(lower / y_max * chart_height)
+        y0 = chart_bottom - int(upper / y_max * chart_height)
+        draw.rectangle((chart_left, y0, chart_right, y1), fill=_lighten(zone.color, 0.84))
+        _draw_text(draw, (chart_left + 10, y0 + 6), zone.name, small_font, "#5F5A54")
+
+    for watt_mark in range(0, y_max + 1, 50):
+        y = chart_bottom - int(watt_mark / y_max * chart_height)
+        draw.line((chart_left, y, chart_right, y), fill="#DED7CD", width=1)
+        _draw_text(draw, (chart_left - 52, y - 8), f"{watt_mark}", small_font, "#6E675D")
+
+    time_ticks = 6
+    total_seconds = max(power_seconds, int(workout.get("moving_s") or power_seconds))
+    for tick in range(time_ticks + 1):
+        x = chart_left + int(chart_width * tick / time_ticks)
+        draw.line((x, chart_top, x, chart_bottom), fill="#ECE5DA", width=1)
+        seconds = int(total_seconds * tick / time_ticks)
+        _draw_text(draw, (x - 15, chart_bottom + 12), _format_duration(seconds), small_font, "#6E675D")
+
+    draw.rectangle((chart_left, chart_top, chart_right, chart_bottom), outline="#CFC5B6", width=2)
+
+    buckets = _bucket_samples(samples, zones, float(ftp_watts), chart_width)
+    area_points = [(chart_left, chart_bottom)]
+    line_points = []
+
+    for idx, bucket in enumerate(buckets):
+        x = chart_left + idx
+        zone = bucket.get("zone")
+        if zone is not None:
+            draw.line((x, chart_top, x, chart_bottom), fill=ImageColor.getrgb(zone.color) + (42,), width=1)
+
+        avg_watts = bucket.get("avg_watts")
+        if avg_watts is None:
+            continue
+        y = chart_bottom - int(avg_watts / y_max * chart_height)
+        area_points.append((x, y))
+        line_points.append((x, y))
+
+    if line_points:
+        area_points.extend([(line_points[-1][0], chart_bottom), (chart_left, chart_bottom)])
+        draw.polygon(area_points, fill=(31, 47, 61, 88))
+        draw.line(line_points, fill="#102331", width=3)
+
+    ftp_y = chart_bottom - int(float(ftp_watts) / y_max * chart_height)
+    draw.line((chart_left, ftp_y, chart_right, ftp_y), fill="#111111", width=2)
+    _draw_text(draw, (chart_right - 72, ftp_y - 22), "FTP", summary_font, "#111111")
+
+    _draw_text(draw, (summary_left, chart_top - 40), "Time In Zone", summary_bold_font, "#1A1A1A")
+    _draw_text(draw, (summary_left, chart_top - 12), "Peloton-style thresholds from active FTP", small_font, "#6A6258")
+
+    bar_width = 220
+    row_y = chart_top + 24
+    for item in distribution:
+        zone = item["zone"]
+        seconds = item["seconds"]
+        pct = item["pct"]
+        upper = zone.upper_watts(float(ftp_watts))
+        upper_label = f"{upper} W" if upper is not None else "+"
+
+        draw.rounded_rectangle((summary_left, row_y, summary_left + summary_width - 10, row_y + 78), radius=16, fill="#FFFFFF", outline="#E8E1D7")
+        draw.rounded_rectangle((summary_left + 14, row_y + 16, summary_left + 74, row_y + 62), radius=12, fill=zone.color)
+        _draw_text(draw, (summary_left + 28, row_y + 29), zone.name, summary_font, "#FFFFFF")
+        _draw_text(
+            draw,
+            (summary_left + 92, row_y + 14),
+            f"{zone.label}  |  {zone.lower_watts(float(ftp_watts))} W to {upper_label}",
+            small_font,
+            "#564F48",
+        )
+        draw.rounded_rectangle((summary_left + 92, row_y + 40, summary_left + 92 + bar_width, row_y + 54), radius=7, fill="#EEE7DD")
+        fill_width = int(bar_width * (pct / 100.0))
+        if fill_width > 0:
+            draw.rounded_rectangle((summary_left + 92, row_y + 40, summary_left + 92 + fill_width, row_y + 54), radius=7, fill=zone.color)
+        _draw_text(draw, (summary_left + 92, row_y + 58), _format_duration(seconds), summary_font, "#1A1A1A")
+        _draw_text(draw, (summary_left + 250, row_y + 58), f"{pct:4.1f}%", summary_font, "#564F48")
+        row_y += 92
+
+    footer = "Background bands show power zones. Vertical color strips mark the dominant zone for each visible time slice."
+    _draw_text(draw, (margin_left, height - 42), footer, small_font, "#6A6258")
+
+    output_dir = output_dir or DEFAULT_GRAPH_DIR
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"workout_{workout_id}_power_zone.png"
+    output_path = output_dir / filename
+    image.save(output_path, format="PNG")
+
+    return {
+        "workout_id": workout_id,
+        "workout_title": title,
+        "ftp_watts": float(ftp_watts),
+        "output_path": output_path,
+        "zone_distribution": distribution,
+    }
+
+
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) != 2:
+        print("Usage: python -m health_data_hub.etl.transform.power_zone_graph <workout_id>")
+        raise SystemExit(1)
+
+    result = generate_power_zone_graph(int(sys.argv[1]))
+    if result is None:
+        print("No power-zone graph generated.")
+        raise SystemExit(2)
+
+    print(result["output_path"])

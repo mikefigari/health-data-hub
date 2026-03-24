@@ -1,0 +1,11 @@
+{
+  "zones": [
+    {"index": 1, "name": "Z1", "label": "Active Recovery", "lower_pct": 0.0, "upper_pct": 0.55, "color": "#D9D9D9"},
+    {"index": 2, "name": "Z2", "label": "Endurance", "lower_pct": 0.55, "upper_pct": 0.75, "color": "#4A90E2"},
+    {"index": 3, "name": "Z3", "label": "Tempo", "lower_pct": 0.75, "upper_pct": 0.90, "color": "#3CB371"},
+    {"index": 4, "name": "Z4", "label": "Threshold", "lower_pct": 0.90, "upper_pct": 1.05, "color": "#F2C94C"},
+    {"index": 5, "name": "Z5", "label": "VO2 Max", "lower_pct": 1.05, "upper_pct": 1.20, "color": "#F2994A"},
+    {"index": 6, "name": "Z6", "label": "Anaerobic", "lower_pct": 1.20, "upper_pct": 1.50, "color": "#EB5757"},
+    {"index": 7, "name": "Z7", "label": "Neuromuscular", "lower_pct": 1.50, "upper_pct": null, "color": "#8B1E3F"}
+  ]
+}

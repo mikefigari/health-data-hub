@@ -5,4 +5,4 @@ python-dotenv
 notion-client
 numpy
 apscheduler
-myfitnesspal
+Pillow
