@@ -9,7 +9,31 @@ import Anthropic from '@anthropic-ai/sdk';
 
 // ── System prompts (mirroring morning_briefing.py / weekly_plan.py) ────────
 
-const DAILY_SYSTEM_PROMPT = `\
+const DATA_GATE_PREAMBLE = `\
+DATA AVAILABILITY RULES — read data_gate before writing any section:
+
+If oura_sleep_present is false:
+  Write exactly: "Oura sleep data not available for [date] — recovery analysis is deferred."
+  Do not estimate, infer, or reference sleep quality in any other section.
+If oura_readiness_present is false:
+  Write exactly: "Oura readiness data not available for [date] — readiness score and HRV deferred."
+If nutrition_present is false:
+  Write exactly: "Nutrition data not received for [date] — deficit and macro analysis deferred."
+  Do not estimate calories, deficit, or macro split.
+If strava_present is false:
+  Write exactly: "No Strava workout recorded for [date] — TSS and load contribution are zero for this day."
+  Do not estimate TSS or training stress.
+If pmc_present is false:
+  Write exactly: "PMC data unavailable — fitness trend analysis deferred."
+
+For any present source: proceed with full analysis as normal.
+Never hedge, speculate, or partially analyze a missing source.
+A deferred section is complete — do not add caveats beyond the single deferred line.
+
+────────────────────────────────────────────────────────────────────────
+`;
+
+const DAILY_SYSTEM_PROMPT = DATA_GATE_PREAMBLE + `\
 You are a data analyst for an endurance athlete focused on losing 27kg while
 preserving cycling power (w/kg). You analyse sleep, fatigue, and nutrition data
 and report what the numbers say. You do not schedule workouts or tell the athlete
@@ -118,13 +142,15 @@ signal from this week's data. This is an observation, not an instruction.`;
 // ── User message builders ─────────────────────────────────────────────────
 
 function buildDailyUserMessage(context) {
-  const { todayRow, last3Nights, calorieContext } = context;
+  const { todayRow, last3Nights, calorieContext, dataGate } = context;
 
-  const todayJson  = JSON.stringify(todayRow   ?? {}, null, 2);
+  const gateJson   = JSON.stringify(dataGate    ?? {}, null, 2);
+  const todayJson  = JSON.stringify(todayRow    ?? {}, null, 2);
   const last3Json  = JSON.stringify(last3Nights ?? [], null, 2);
   const ctxJson    = JSON.stringify(calorieContext, null, 2);
 
   return (
+    `DATA_GATE: ${gateJson}\n\n` +
     `TODAY_DATA: ${todayJson}\n\n` +
     `LAST_3_NIGHTS_SLEEP: ${last3Json}\n\n` +
     `CALORIE_CONTEXT: ${ctxJson}`

@@ -156,6 +156,44 @@ function extractPageTitle(page) {
   return titleProp?.title?.[0]?.plain_text ?? 'Unknown Block';
 }
 
+// ── Data gate ─────────────────────────────────────────────────────────────
+
+/**
+ * Checks which data sources are present for today's row.
+ * Returns a data_gate object that is passed to Claude alongside the health data
+ * so it knows exactly which sections have real numbers versus absent data.
+ */
+function buildDataGate(todayRow) {
+  const sleep      = todayRow?.sleep                 ?? {};
+  const readiness  = todayRow?.readiness             ?? {};
+  const workouts   = todayRow?.workouts              ?? [];
+  const nutrition  = todayRow?.nutrition             ?? {};
+  const pmc        = todayRow?.performance_management ?? {};
+
+  const oura_sleep_present     = sleep.total_sleep_sec != null;
+  const oura_readiness_present = readiness.score != null;
+  const strava_present         = Array.isArray(workouts) && workouts.length > 0;
+  const nutrition_present      = nutrition.calories != null && nutrition.calories > 0;
+  const pmc_present            = pmc.atl != null && pmc.ctl != null && pmc.tsb != null;
+
+  const missing_sources = [];
+  if (!oura_sleep_present)     missing_sources.push('oura_sleep');
+  if (!oura_readiness_present) missing_sources.push('oura_readiness');
+  if (!strava_present)         missing_sources.push('strava');
+  if (!nutrition_present)      missing_sources.push('nutrition');
+  if (!pmc_present)            missing_sources.push('pmc');
+
+  return {
+    oura_sleep_present,
+    oura_readiness_present,
+    strava_present,
+    nutrition_present,
+    pmc_present,
+    missing_sources,
+    gate_checked_at: new Date().toISOString(),
+  };
+}
+
 // ── Deficit context for the daily prompt ──────────────────────────────────
 
 function computeDailyCalorieContext(todayRow) {
@@ -191,6 +229,13 @@ export async function buildDailyContext() {
   }));
 
   const calorieContext = computeDailyCalorieContext(todayRow);
+  const dataGate       = buildDataGate(todayRow);
+
+  if (dataGate.missing_sources.length > 0) {
+    console.log(`[data_gate] Missing sources: ${dataGate.missing_sources.join(', ')}`);
+  } else {
+    console.log('[data_gate] All sources present');
+  }
 
   // Notion fetches (in parallel — failures are warned, not thrown)
   const [workoutPageIds, dpsPageId, powerZone] = await Promise.all([
@@ -207,6 +252,7 @@ export async function buildDailyContext() {
     todayRow,
     last3Nights,
     calorieContext,
+    dataGate,
     notionRefs: {
       powerZone,                           // { id, name } | null
       dpsPageId,                           // string | null

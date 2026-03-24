@@ -98,6 +98,7 @@ async function importPromptBuilders() {
   // Expose internal builders for dry-run inspection
   return {
     buildDailyUserMessage:  ctx => JSON.stringify({
+      data_gate:   ctx.dataGate,
       today:       ctx.todayRow,
       last3Nights: ctx.last3Nights,
       calCtx:      ctx.calorieContext,
