@@ -8,11 +8,11 @@
  *
  * Add these entries to your crontab (`crontab -e`):
  *
- *   # Daily briefing at 7:00 AM
- *   0 7 * * * cd /path/to/health_data_hub/notion-reporter && REPORT_MODE=daily node index.mjs >> /var/log/health-reporter.log 2>&1
+ *   # Daily briefing at 8:00 AM
+ *   0 8 * * * cd /path/to/health_data_hub/notion-reporter && node index.mjs >> /home/mike/logs/notion-reporter-daily.log 2>&1
  *
  *   # Weekly review every Sunday at 8:00 PM
- *   0 20 * * 0 cd /path/to/health_data_hub/notion-reporter && REPORT_MODE=weekly node index.mjs >> /var/log/health-reporter.log 2>&1
+ *   0 20 * * 0 cd /path/to/health_data_hub/notion-reporter && REPORT_MODE=weekly node index.mjs >> /home/mike/logs/notion-reporter-weekly.log 2>&1
  *
  * On Windows with Task Scheduler, create two tasks that run:
  *   node "C:\path\to\health_data_hub\notion-reporter\index.mjs"
