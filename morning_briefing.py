@@ -26,6 +26,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from health_data_hub.etl.export_daily_json import export_daily_json
+from health_data_hub.integrations.apple_health.nutrition_reader import get_nutrition
+from health_data_hub.utils.units import convert_kj_to_kcal
 
 # ---------------------------------------------------------------------------
 # Config
@@ -59,6 +61,17 @@ context — the athlete decides whether to hit it.
 You will receive TODAY_DATA: Oura readiness score, sleep score and duration,
 TSB from PMC, physical_state recorded by the athlete, yesterday's calorie intake
 and deficit, today's planned workout if any, and current weight + w/kg.
+
+Nutrition data comes from Apple Health via Health Auto Export. If the nutrition
+section contains "data_present: false", state exactly:
+"Nutrition data not yet received from Apple Health for this date"
+and do not attempt to analyse or estimate nutrition for that day.
+
+For cycling workouts, energy is provided as both kJ (power meter) and an kcal
+estimate derived from it. Prefer the kJ-derived kcal over TSS-based estimates
+when available — it is labelled "Cycling energy (from power)". If no power data
+is available for a cycling workout, the label will say "Cycling energy (estimated,
+no power data)" and you should note the lower confidence.
 
 Respond in this exact structure:
 
@@ -128,6 +141,41 @@ def run_briefing(no_save: bool = False) -> str:
             "score":          readiness.get("score"),
             "duration_hours": _sleep_duration_hours(r),
         })
+
+    # --- Nutrition: read from Apple Health JSON store ---
+    nutrition = get_nutrition(today.isoformat())
+    if not nutrition["data_present"]:
+        # Also check yesterday in case today's data hasn't arrived yet
+        yesterday = today - timedelta(days=1)
+        nutrition_yesterday = get_nutrition(yesterday.isoformat())
+    else:
+        nutrition_yesterday = None
+
+    # Attach nutrition to today_row for the prompt (override DB value with fresh JSON-store data)
+    if today_row is None:
+        today_row = {}
+    if nutrition["data_present"]:
+        today_row["nutrition"] = nutrition
+    elif nutrition_yesterday and nutrition_yesterday["data_present"]:
+        today_row["nutrition_yesterday"] = nutrition_yesterday
+        today_row.setdefault("nutrition", {})["data_present"] = False
+    else:
+        today_row.setdefault("nutrition", {})["data_present"] = False
+
+    # --- Annotate cycling workout energy from kJ ---
+    _CYCLING_TYPES = {"Ride", "VirtualRide", "MountainBikeRide", "GravelRide", "EBikeRide"}
+    for workout in today_row.get("workouts") or []:
+        if workout.get("sport_type") in _CYCLING_TYPES:
+            kj = workout.get("kj") or 0
+            if kj > 0:
+                kcal = convert_kj_to_kcal(kj)
+                workout["cycling_energy_label"] = (
+                    f"Cycling energy (from power): ~{kcal} kcal (converted from {kj} kJ)"
+                )
+            else:
+                workout["cycling_energy_label"] = (
+                    "Cycling energy (estimated, no power data): see Oura active kcal"
+                )
 
     # Build user message
     today_json = json.dumps(today_row, indent=2, default=str) if today_row else "{}"
