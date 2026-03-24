@@ -74,9 +74,3 @@ OURA_PERSONAL_ACCESS_TOKEN = os.getenv("OURA_PERSONAL_ACCESS_TOKEN")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 
-# -------------------------------------------------------------
-# MyFitnessPal Configuration
-# -------------------------------------------------------------
-
-MFP_USERNAME = os.getenv("MFP_USERNAME")
-MFP_COOKIE_FILE = CONFIG_DIR / "mfp_cookies.txt"

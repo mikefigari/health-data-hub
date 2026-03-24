@@ -9,12 +9,14 @@ Jobs:
     - Strava:              every 5 minutes (configurable via STRAVA_POLL_INTERVAL_MIN)
     - Oura:                every 30 minutes, 5 AM – 3 PM
     - Notion Daily State:  daily at a configurable hour (NOTION_DAILY_STATE_POLL_HOUR, default 8 AM)
-    - MFP nutrition:       daily at a configurable hour (MFP_POLL_HOUR, default 11 PM)
+
+Nutrition:
+    # NUTRITION: now sourced from Apple Health via Health Auto Export webhook.
+    # Run health_webhook_receiver.py as a separate process (see docs/health_auto_export_setup.md).
 
 Environment variables (set in dev.env / prod.env):
     STRAVA_POLL_INTERVAL_MIN        Minutes between Strava polls (default: 5)
     NOTION_DAILY_STATE_POLL_HOUR    Hour of day for Notion Daily State poll, 0-23 (default: 8)
-    MFP_POLL_HOUR                   Hour of day for MFP nutrition poll, 0-23 (default: 23)
 """
 
 import logging
@@ -35,7 +37,6 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from health_data_hub.integrations.poll_strava import poll_once
 from health_data_hub.integrations.oura.poll_oura import poll_oura
 from health_data_hub.integrations.notion.poll_notion_daily_state import poll_notion_daily_state
-from health_data_hub.integrations.mfp.poll_mfp import poll_mfp
 
 # -------------------------------------------------------------------
 # Configuration
@@ -43,7 +44,6 @@ from health_data_hub.integrations.mfp.poll_mfp import poll_mfp
 
 STRAVA_INTERVAL_MIN = int(os.getenv("STRAVA_POLL_INTERVAL_MIN", "5"))
 NOTION_DAILY_STATE_POLL_HOUR = int(os.getenv("NOTION_DAILY_STATE_POLL_HOUR", "8"))
-MFP_POLL_HOUR = int(os.getenv("MFP_POLL_HOUR", "23"))
 
 
 # -------------------------------------------------------------------
@@ -73,15 +73,6 @@ def run_notion_daily_state():
             logger.warning("Notion daily state poll completed with errors (exit_code=%d)", exit_code)
     except Exception:
         logger.error("Notion daily state poll cycle failed", exc_info=True)
-
-
-def run_mfp():
-    try:
-        exit_code = poll_mfp(days_back=7)
-        if exit_code != 0:
-            logger.warning("MFP poll completed with errors (exit_code=%d)", exit_code)
-    except Exception:
-        logger.error("MFP poll cycle failed", exc_info=True)
 
 
 # -------------------------------------------------------------------
@@ -119,22 +110,11 @@ scheduler.add_job(
     max_instances=1,
 )
 
-scheduler.add_job(
-    run_mfp,
-    trigger="cron",
-    hour=MFP_POLL_HOUR,
-    minute=0,
-    id="mfp_poller",
-    name="MFP nutrition daily poller",
-    max_instances=1,
-)
-
 logger.info(
     "Unified scheduler starting — Strava every %d min, Oura every 30 min (5am-3pm), "
-    "Notion daily state at %02d:30, MFP nutrition at %02d:00",
+    "Notion daily state at %02d:30",
     STRAVA_INTERVAL_MIN,
     NOTION_DAILY_STATE_POLL_HOUR,
-    MFP_POLL_HOUR,
 )
 
 try:
