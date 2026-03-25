@@ -9,10 +9,7 @@ Jobs:
     - Strava:              every 5 minutes (configurable via STRAVA_POLL_INTERVAL_MIN)
     - Oura:                every 30 minutes, 5 AM – 3 PM
     - Notion Daily State:  daily at a configurable hour (NOTION_DAILY_STATE_POLL_HOUR, default 8 AM)
-
-Nutrition:
-    # NUTRITION: now sourced from Apple Health via Health Auto Export webhook.
-    # Run health_webhook_receiver.py as a separate process (see docs/health_auto_export_setup.md).
+    - Nutrition poller:    every hour, 6 AM – midnight
 
 Environment variables (set in dev.env / prod.env):
     STRAVA_POLL_INTERVAL_MIN        Minutes between Strava polls (default: 5)
@@ -37,6 +34,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from health_data_hub.integrations.poll_strava import poll_once
 from health_data_hub.integrations.oura.poll_oura import poll_oura
 from health_data_hub.integrations.notion.poll_notion_daily_state import poll_notion_daily_state
+from health_data_hub.integrations.apple_health.nutrition_poller import poll_once as poll_nutrition
 
 # -------------------------------------------------------------------
 # Configuration
@@ -75,6 +73,15 @@ def run_notion_daily_state():
         logger.error("Notion daily state poll cycle failed", exc_info=True)
 
 
+def run_nutrition_poller():
+    try:
+        exit_code = poll_nutrition()
+        if exit_code != 0:
+            logger.warning("Nutrition poll completed with errors (exit_code=%d)", exit_code)
+    except Exception:
+        logger.error("Nutrition poll cycle failed", exc_info=True)
+
+
 # -------------------------------------------------------------------
 # Scheduler setup
 # -------------------------------------------------------------------
@@ -110,9 +117,19 @@ scheduler.add_job(
     max_instances=1,
 )
 
+scheduler.add_job(
+    run_nutrition_poller,
+    trigger="cron",
+    hour="6-23",
+    minute=0,
+    id="nutrition_poller",
+    name="Nutrition poller",
+    max_instances=1,
+)
+
 logger.info(
     "Unified scheduler starting — Strava every %d min, Oura every 30 min (5am-3pm), "
-    "Notion daily state at %02d:30",
+    "Notion daily state at %02d:30, Nutrition poller hourly (6am-midnight)",
     STRAVA_INTERVAL_MIN,
     NOTION_DAILY_STATE_POLL_HOUR,
 )

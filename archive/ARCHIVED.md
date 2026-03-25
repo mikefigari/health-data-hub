@@ -35,6 +35,13 @@ calls `claude-opus-4-5`, prints to stdout and optionally saves to
 Weekly Claude analysis script. Parallel to `morning_briefing.py` for
 the 7-day review. Never scheduled via cron.
 
+### `health_webhook_receiver.py`
+Apple Health webhook receiver (HTTP server on port 8765). Accepted POST requests
+from Health Auto Export, parsed the metrics payload, and upserted rows into
+`nutrition_daily`. Replaced on 2026-03-24 by the pull-based `nutrition_poller.py`
+which polls `GET https://health.michaelfigari.com/health/latest` instead.
+The corresponding `health-webhook.service` systemd unit was disabled at the same time.
+
 ## Safe to delete?
 
 Yes, once you are satisfied that `notion-reporter` meets all your needs.

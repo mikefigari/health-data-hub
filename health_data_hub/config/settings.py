@@ -68,6 +68,14 @@ OURA_PERSONAL_ACCESS_TOKEN = os.getenv("OURA_PERSONAL_ACCESS_TOKEN")
 
 
 # -------------------------------------------------------------
+# Apple Health Worker Configuration
+# -------------------------------------------------------------
+
+HEALTH_WORKER_URL = os.getenv("HEALTH_WORKER_URL")   # e.g. https://health.example.com/health
+HEALTH_TOKEN      = os.getenv("HEALTH_TOKEN")
+
+
+# -------------------------------------------------------------
 # Anthropic API Configuration
 # -------------------------------------------------------------
 

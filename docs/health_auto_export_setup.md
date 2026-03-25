@@ -1,22 +1,15 @@
 # Health Auto Export — Setup Guide
 
 This guide configures the **Health Auto Export** iOS app (by Gregory Chicote) to push
-Apple Health nutrition and workout data to the health-data-hub webhook receiver running
-on the Raspberry Pi.
+Apple Health nutrition data to the Cloudflare Worker, which the Pi poller then pulls
+from on an hourly schedule.
 
 ---
 
 ## Prerequisites
 
 - Health Auto Export installed from the App Store
-- The Pi and your iPhone on the same local network (or the Pi reachable by hostname/IP)
-- The webhook receiver running on the Pi:
-
-```bash
-# In a separate terminal or as a systemd service:
-cd ~/projects/health-data-hub
-.venv/bin/python -m health_data_hub.integrations.apple_health.health_webhook_receiver
-```
+- The `nutrition_poller` job running inside `health-data-hub.service` on the Pi
 
 ---
 
@@ -28,7 +21,7 @@ Enable the following Apple Health categories:
 
 | Data Type | Apple Health Identifier | Notes |
 |-----------|------------------------|-------|
-| Dietary Energy Consumed | `HKQuantityTypeIdentifierDietaryEnergyConsumed` | kcal preferred; app will convert kJ automatically |
+| Dietary Energy Consumed | `HKQuantityTypeIdentifierDietaryEnergyConsumed` | kcal preferred; Worker converts kJ automatically |
 | Dietary Protein | `HKQuantityTypeIdentifierDietaryProtein` | grams |
 | Dietary Carbohydrates | `HKQuantityTypeIdentifierDietaryCarbohydrates` | grams |
 | Dietary Fat (Total) | `HKQuantityTypeIdentifierDietaryFatTotal` | grams |
@@ -44,21 +37,23 @@ You do not need to enable sleep or heart rate — those come from Oura.
 1. In Health Auto Export, go to **Automations** (or **Export** → **Webhook**)
 2. Tap **Add Automation** → **Webhook**
 3. Set:
-   - **URL**: `http://<pi-hostname-or-ip>:8765/health`
+   - **URL**: `https://health.michaelfigari.com/health`
    - **Method**: POST
    - **Format**: JSON
-4. Under **Data Range**, select **Last 7 days** (ensures missed nights are backfilled)
-5. Leave authentication blank (the receiver is local-network only)
+4. Under **Custom Headers**, add:
+   - **Header name**: `X-Health-Token`
+   - **Header value**: *(the token from `HEALTH_TOKEN` in prod.env)*
+5. Under **Data Range**, select **Last 7 days** (ensures missed days are backfilled)
 
-Replace `<pi-hostname-or-ip>` with the Pi's local IP (e.g. `192.168.1.42`) or hostname
-(e.g. `raspberrypi.local`).
+> **Note:** The old setup used `http://<pi-hostname>:8765/health` on the local network.
+> The new endpoint is the public Cloudflare Worker URL and requires the auth token header.
 
 ---
 
 ## Step 3 — Set the automation schedule
 
 Set the trigger to run **nightly at 9:30 PM**. This ensures the day's food logging in
-the Health app has synced before the morning briefing runs.
+the Health app has synced before the Pi poller picks it up.
 
 In Health Auto Export:
 - **Automation type**: Time-based
@@ -71,18 +66,25 @@ In Health Auto Export:
 
 ### Option A — Test from within the app
 
-1. After configuring the webhook, tap **Test** or **Send Now** in the automation settings
-2. Check the Pi logs for a confirmation line:
-
-```
-[INFO] Wrote nutrition data for 2026-03-24 → .../data/nutrition/2026-03-24.json
-```
-
-### Option B — Manual curl test from the Pi
+After configuring the webhook, tap **Test** or **Send Now** in the automation settings.
+Then trigger a manual poll on the Pi to confirm it was picked up:
 
 ```bash
-curl -X POST http://localhost:8765/health \
+cd ~/projects/health-data-hub
+HEALTH_ENV=prod .venv/bin/python -m health_data_hub.integrations.apple_health.nutrition_poller
+```
+
+Expected log line:
+```
+Nutrition upserted for 2026-03-24: 2150 kcal
+```
+
+### Option B — Manual curl test
+
+```bash
+curl -X POST https://health.michaelfigari.com/health \
      -H "Content-Type: application/json" \
+     -H "X-Health-Token: $(grep HEALTH_TOKEN ~/.config/health-data-hub/prod.env | cut -d= -f2)" \
      -d '{
        "data": {
          "metrics": [
@@ -103,50 +105,13 @@ curl -X POST http://localhost:8765/health \
 
 Expected response:
 ```json
-{"status": "ok", "dates_written": ["2026-03-24"]}
+{"status": "ok", "date": "2026-03-24"}
 ```
 
-### Option C — Verify the written file
+### Option C — Verify in the database
 
 ```bash
-cat ~/projects/health-data-hub/data/nutrition/2026-03-24.json
-```
-
----
-
-## Step 5 — Run the webhook receiver as a systemd service (optional)
-
-Create `/etc/systemd/system/health-webhook.service`:
-
-```ini
-[Unit]
-Description=Health Auto Export Webhook Receiver
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=mike
-WorkingDirectory=/home/mike/projects/health-data-hub
-EnvironmentFile=/home/mike/.config/health-data-hub/prod.env
-ExecStart=/home/mike/projects/health-data-hub/.venv/bin/python \
-    -m health_data_hub.integrations.apple_health.health_webhook_receiver
-Restart=on-failure
-RestartSec=10s
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=health-webhook
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Then:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable health-webhook
-sudo systemctl start health-webhook
-sudo journalctl -u health-webhook -f
+psql -U postgres -d health_pi -c "SELECT * FROM nutrition_daily WHERE day = '2026-03-24';"
 ```
 
 ---
@@ -156,12 +121,14 @@ sudo journalctl -u health-webhook -f
 ```
 iPhone (Health Auto Export)
   → nightly POST at 9:30 PM
-  → http://<pi>:8765/health
-  → health_webhook_receiver.py
-  → data/nutrition/YYYY-MM-DD.json
-  → nutrition_reader.get_nutrition(date)
-  → morning_briefing.py (6 AM or manual)
-  → Claude analysis
+  → https://health.michaelfigari.com/health   (Cloudflare Worker)
+  → stores in KV store
+
+Pi (health-data-hub.service / scheduler_all.py)
+  → nutrition_poller runs hourly (6am–midnight)
+  → GET https://health.michaelfigari.com/health/latest
+  → upserts into nutrition_daily (PostgreSQL)
+  → notion-reporter reads nutrition_daily each morning
 ```
 
 ---
@@ -170,8 +137,8 @@ iPhone (Health Auto Export)
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| `Connection refused` on iPhone | Webhook receiver not running | Start the service or run manually |
-| `404` response | Wrong URL path | Ensure URL ends in `/health` |
-| `dates_written: []` | Metric names not recognised | Check app version; names may differ — see `_METRIC_MAP` in `health_webhook_receiver.py` |
-| Morning briefing shows "not yet received" | Webhook ran after 9:30 but data not synced | Tap "Send Now" in the app or re-run the automation |
-| Energy in kJ instead of kcal | App configured to use kJ | The receiver converts automatically; or switch app units to kcal |
+| `401` from Worker | Missing or wrong token header | Check `X-Health-Token` value matches `HEALTH_TOKEN` in prod.env |
+| `404` from Worker on GET /latest | No data has been POSTed yet | Send a test POST from the app or via curl |
+| Poller logs "Nutrition already present" | Date already in DB | Normal — no action needed |
+| Morning report shows nutrition missing | Poller hasn't run since last POST | Run poller manually (Option A above) |
+| Energy in kJ instead of kcal | App configured to use kJ | The Worker converts automatically; or switch app units to kcal |
