@@ -242,6 +242,18 @@ CREATE TABLE IF NOT EXISTS planned_workouts (
     UNIQUE(planned_date, class_type)
 );
 
+-- ------------------------------------------------------------
+-- Strava: Sync audit log
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS strava_sync_log (
+    id                  SERIAL PRIMARY KEY,
+    triggered_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    status              TEXT NOT NULL,       -- 'success' | 'error' | 'no_data'
+    activities_found    INTEGER,
+    activities_written  INTEGER,
+    error_message       TEXT
+);
+
 -- ============================================================
 -- Indexes
 -- ============================================================

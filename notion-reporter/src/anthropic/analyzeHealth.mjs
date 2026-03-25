@@ -13,18 +13,31 @@ const DATA_GATE_PREAMBLE = `\
 DATA AVAILABILITY RULES — read data_gate before writing any section:
 
 If oura_sleep_present is false:
-  Write exactly: "Oura sleep data not available for [date] — recovery analysis is deferred."
-  Do not estimate, infer, or reference sleep quality in any other section.
+  Write exactly: "Oura sleep data not available — recovery analysis uses PMC and prior-night trend only."
+  Do not estimate, infer, or reference last night's sleep quality in any other section.
 If oura_readiness_present is false:
-  Write exactly: "Oura readiness data not available for [date] — readiness score and HRV deferred."
+  Write exactly: "Oura readiness data not available — readiness score and HRV deferred."
 If nutrition_present is false:
-  Write exactly: "Nutrition data not received for [date] — deficit and macro analysis deferred."
+  Write exactly: "Nutrition data not received for yesterday — deficit and macro analysis deferred."
   Do not estimate calories, deficit, or macro split.
-If strava_present is false:
-  Write exactly: "No Strava workout recorded for [date] — TSS and load contribution are zero for this day."
+If strava_present is false AND strava_sync_ok is false:
+  Write exactly: "⚠️  Strava sync issue — workout data may be missing (poller error). TSS and load contribution cannot be confirmed for this day."
+  Then on the next line write: "Last sync: [strava_last_sync.triggered_at] | Status: [strava_last_sync.status] | Error: [strava_last_sync.error_message]"
+  (If strava_last_sync is null, write "Last sync: unknown — no sync log entry in last 4 hours" instead.)
+  Do not assume a rest day. Do not estimate TSS.
+If strava_present is false AND strava_sync_ok is true:
+  Write exactly: "No Strava workout recorded for today — TSS and load contribution are zero for this day."
   Do not estimate TSS or training stress.
 If pmc_present is false:
   Write exactly: "PMC data unavailable — fitness trend analysis deferred."
+If physical_state_present is false:
+  Render this box at the very top of ## Body state this morning:
+  ╔══════════════════════════════════════════════════════════╗
+  ║  ACTION NEEDED: No physical state logged for today.      ║
+  ║  Rate your readiness 1–10 and note sleep quality,        ║
+  ║  soreness, or mood before reviewing the rest.            ║
+  ╚══════════════════════════════════════════════════════════╝
+  Then continue with Oura + PMC data only for the body state analysis.
 
 For any present source: proceed with full analysis as normal.
 Never hedge, speculate, or partially analyze a missing source.
@@ -49,20 +62,32 @@ against recovery — elevated cortisol from poor sleep and caloric restriction
 together can stall fat loss and accelerate muscle loss. Report this as a data
 observation, not an instruction.
 
-TDEE is approximately 2800 kcal on rest days. Workout days add the kilojoules
-from the power meter directly as calories (kJ ≈ kcal for cycling). Use this to compute today's estimated calorie target and report it as
-context — the athlete decides whether to hit it.
+This report runs at 10:00. Data source notes:
+- LAST_NIGHT_OURA contains full Oura sleep and readiness for last night. Oura
+  attributes sleep to the date the session STARTED (the prior calendar evening),
+  so LAST_NIGHT_OURA.date will be yesterday's date — this is correct and expected.
+- YESTERDAY_NUTRITION contains yesterday's closed nutrition diary. Do not attempt
+  to report today's nutrition — it is too early (10:00) to be meaningful.
+- CALORIE_CONTEXT contains energy_kj pre-resolved with a kj_source label. Never
+  derive kJ from TSS yourself — use the values provided. kj_source values:
+    'actual'                           → kJ direct from power meter
+    'estimated from TSS'               → TSS × 9.5 (rough estimate, unstructured ride)
+    'athlete default (500 kJ — ...)'   → no ride data; 500 kJ default used
 
-You will receive TODAY_DATA: Oura readiness score, sleep score and duration,
-TSB from PMC, physical_state recorded by the athlete, yesterday's calorie intake
-and deficit, today's planned workout if any, and current weight + w/kg.
+TDEE is approximately 2800 kcal on rest days. Add energy_kj from CALORIE_CONTEXT
+to get gross TDEE on training days.
+
+You will receive: TODAY_DATA (PMC, physical_state, today's workouts/planned),
+LAST_NIGHT_OURA (full sleep + readiness), YESTERDAY_NUTRITION, LAST_3_NIGHTS_SLEEP
+(3-night trend summary), and CALORIE_CONTEXT.
 
 Respond in this exact structure:
 
 ## Body state this morning
-Two to three sentences. Synthesise Oura readiness, sleep score, TSB, and the
-athlete's recorded physical state into an honest picture of where the body is.
-If signals conflict, say so. Do not soften bad data.
+If physical_state_present is false, render the ACTION NEEDED box first (see DATA
+AVAILABILITY RULES above). Then two to three sentences synthesising LAST_NIGHT_OURA
+readiness score, sleep duration and efficiency, TSB from PMC, and the athlete's
+physical_state. If signals conflict, say so. Do not soften bad data.
 
 ## Fatigue flags
 Bullet list of any amber or red signals in the data. Examples: TSB below -20,
@@ -70,12 +95,23 @@ sleep score below 65 two nights running, physical state poor despite low TSS,
 ATL spiking faster than CTL can absorb. If no flags, say 'None today'.
 
 ## Nutrition yesterday
-Actual deficit vs target. Whether protein target was hit (160g training days,
-140g rest days). One sentence on what the trend looks like across the last 3 days.
-No judgment — just the numbers.
+Report from YESTERDAY_NUTRITION: actual calories, deficit vs 500-750 kcal target,
+protein vs target (160g training days, 140g rest days). One sentence on the 3-day
+trend. No judgment — just the numbers. Do not estimate today's intake.
 
 ## Today's calorie context
-Estimated target: [TDEE + workout_kcal - deficit_target]. Show the arithmetic.
+Render this table using CALORIE_CONTEXT values:
+
+| Component | kcal |
+|---|---|
+| Rest-day TDEE | 2,800 |
+| Ride energy (source: [kj_source]) | +[energy_kj] |
+| Gross TDEE estimate | [sum] |
+| Target deficit | −500 to −750 |
+| Calorie target range | [range] |
+
+If kj_source contains 'no ride data', add the line: "Ride not yet recorded — using
+athlete default of 500 kJ for planning."
 Note if today's planned TSS is significantly higher or lower than recent days.`;
 
 const WEEKLY_SYSTEM_PROMPT = `\
@@ -142,16 +178,20 @@ signal from this week's data. This is an observation, not an instruction.`;
 // ── User message builders ─────────────────────────────────────────────────
 
 function buildDailyUserMessage(context) {
-  const { todayRow, last3Nights, calorieContext, dataGate } = context;
+  const { todayRow, yesterdayRow, lastNightOura, last3Nights, calorieContext, dataGate } = context;
 
-  const gateJson   = JSON.stringify(dataGate    ?? {}, null, 2);
-  const todayJson  = JSON.stringify(todayRow    ?? {}, null, 2);
-  const last3Json  = JSON.stringify(last3Nights ?? [], null, 2);
-  const ctxJson    = JSON.stringify(calorieContext, null, 2);
+  const gateJson      = JSON.stringify(dataGate                       ?? {},   null, 2);
+  const todayJson     = JSON.stringify(todayRow                       ?? {},   null, 2);
+  const lastNightJson = JSON.stringify(lastNightOura                  ?? {},   null, 2);
+  const ydayNutrJson  = JSON.stringify(yesterdayRow?.nutrition        ?? null, null, 2);
+  const last3Json     = JSON.stringify(last3Nights                    ?? [],   null, 2);
+  const ctxJson       = JSON.stringify(calorieContext,                          null, 2);
 
   return (
     `DATA_GATE: ${gateJson}\n\n` +
     `TODAY_DATA: ${todayJson}\n\n` +
+    `LAST_NIGHT_OURA: ${lastNightJson}\n\n` +
+    `YESTERDAY_NUTRITION: ${ydayNutrJson}\n\n` +
     `LAST_3_NIGHTS_SLEEP: ${last3Json}\n\n` +
     `CALORIE_CONTEXT: ${ctxJson}`
   );

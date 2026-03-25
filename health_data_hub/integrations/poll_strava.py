@@ -30,6 +30,31 @@ POLL_INTERVAL = 300  # 5 minutes
 
 
 # -------------------------------------------------------------------
+# Sync log
+# -------------------------------------------------------------------
+
+def _write_sync_log(status: str, activities_found: int = None,
+                    activities_written: int = None, error_message: str = None):
+    """Write one row to strava_sync_log.  Never raises — log errors are non-fatal."""
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO strava_sync_log
+                (status, activities_found, activities_written, error_message)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (status, activities_found, activities_written, error_message),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error("Failed to write strava_sync_log: %s", e)
+
+
+# -------------------------------------------------------------------
 # Helpers
 # -------------------------------------------------------------------
 
@@ -66,10 +91,18 @@ def poll_once():
     logger.info("Last DB sync timestamp: %s", last_sync)
 
     logger.info("Checking Strava OAuth token...")
-    access_token = get_valid_access_token()
+    try:
+        access_token = get_valid_access_token()
+    except Exception as e:
+        _write_sync_log("error", error_message=f"Token refresh failed: {e}")
+        raise
 
     logger.info("Fetching recent activities...")
-    activities = get_recent_activities(access_token, limit=30)
+    try:
+        activities = get_recent_activities(access_token, limit=30)
+    except Exception as e:
+        _write_sync_log("error", error_message=f"API fetch failed: {e}")
+        raise
 
     for act in activities:
         act["_dt"] = parse_strava_ts(act.get("start_date_local"))
@@ -79,6 +112,7 @@ def poll_once():
     )
 
     found_new = False
+    written = 0
 
     for act in activities:
         act_dt = act["_dt"]
@@ -119,9 +153,13 @@ def poll_once():
                 logger.error("Notion sync failed for workout %s: %s", wid, e)
 
             found_new = True
+            written += 1
 
     if not found_new:
         logger.info("No new workouts found.")
+        _write_sync_log("no_data", activities_found=len(activities), activities_written=0)
+    else:
+        _write_sync_log("success", activities_found=len(activities), activities_written=written)
 
     logger.info("=== Poll cycle complete ===")
 

@@ -236,6 +236,26 @@ ORDER BY d.day DESC;
 `;
 
 /**
+ * Return the most recent strava_sync_log entry within the last `windowHours` hours.
+ * Returns null if the table doesn't exist or no rows are found.
+ */
+export async function getLastStravaSyncStatus(windowHours = 4) {
+  try {
+    const rows = await queryRows(
+      `SELECT status, triggered_at, activities_written, error_message
+       FROM strava_sync_log
+       WHERE triggered_at >= NOW() - ($1 || ' hours')::interval
+       ORDER BY triggered_at DESC
+       LIMIT 1`,
+      [windowHours],
+    );
+    return rows[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Run EXPORT_SQL for the given date range.
  * Returns { days, windowSummary } mirroring export_daily_json() in Python.
  */

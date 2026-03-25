@@ -31,6 +31,7 @@ DRY_RUN = os.getenv("NOTION_DRY_RUN", "0") == "1"
 NOTION_SDK_VERSION = "2022-06-28"
 NOTION_FILE_UPLOAD_VERSION = "2026-03-11"
 NOTION_API_BASE = "https://api.notion.com/v1"
+POWER_ZONE_GRAPH_CAPTION = "Power Zone Graph"
 CYCLING_SPORT_TYPES = {
     "ride",
     "virtualride",
@@ -140,6 +141,79 @@ def _set_page_cover(page_id: str, file_upload_id: str):
 
 
 
+def _iter_page_children(page_id: str):
+    next_cursor = None
+    while True:
+        params = {"page_size": 100}
+        if next_cursor:
+            params["start_cursor"] = next_cursor
+
+        response = requests.get(
+            f"{NOTION_API_BASE}/blocks/{page_id}/children",
+            headers=_notion_headers(),
+            params=params,
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+
+        for block in payload.get("results", []):
+            yield block
+
+        if not payload.get("has_more"):
+            break
+        next_cursor = payload.get("next_cursor")
+
+
+def _find_power_zone_graph_block_id(page_id: str) -> str | None:
+    for block in _iter_page_children(page_id):
+        if block.get("type") != "image":
+            continue
+
+        caption = block.get("image", {}).get("caption", [])
+        caption_text = "".join(part.get("plain_text", "") for part in caption).strip()
+        if caption_text == POWER_ZONE_GRAPH_CAPTION:
+            return block.get("id")
+    return None
+
+
+def _upsert_power_zone_graph_block(page_id: str, file_upload_id: str):
+    existing_block_id = _find_power_zone_graph_block_id(page_id)
+
+    if existing_block_id:
+        delete_response = requests.delete(
+            f"{NOTION_API_BASE}/blocks/{existing_block_id}",
+            headers=_notion_headers(),
+            timeout=30,
+        )
+        delete_response.raise_for_status()
+
+    response = requests.patch(
+        f"{NOTION_API_BASE}/blocks/{page_id}/children",
+        headers=_notion_headers(),
+        json={
+            "children": [
+                {
+                    "object": "block",
+                    "type": "image",
+                    "image": {
+                        "type": "file_upload",
+                        "file_upload": {"id": file_upload_id},
+                        "caption": [
+                            {
+                                "type": "text",
+                                "text": {"content": POWER_ZONE_GRAPH_CAPTION},
+                            }
+                        ],
+                    },
+                }
+            ]
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+
+
 def _sync_power_zone_cover(page_id: str, workout_id: int):
     graph = generate_power_zone_graph(workout_id)
     if graph is None:
@@ -148,6 +222,7 @@ def _sync_power_zone_cover(page_id: str, workout_id: int):
 
     file_upload_id = _upload_file_to_notion(Path(graph["output_path"]))
     _set_page_cover(page_id, file_upload_id)
+    _upsert_power_zone_graph_block(page_id, file_upload_id)
     print(f"[Notion] Attached power-zone graph to workout {workout_id}")
 
 

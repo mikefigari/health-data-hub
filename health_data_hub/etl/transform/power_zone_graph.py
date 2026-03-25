@@ -378,11 +378,22 @@ def generate_power_zone_graph(
     area_points = [(chart_left, chart_bottom)]
     line_points = []
 
+    bucket_count = len(buckets)
+    if bucket_count <= 1:
+        x_positions = [chart_left] * bucket_count
+    else:
+        x_positions = [
+            chart_left + int((chart_width - 1) * idx / (bucket_count - 1))
+            for idx in range(bucket_count)
+        ]
+
     for idx, bucket in enumerate(buckets):
-        x = chart_left + idx
+        x = x_positions[idx]
+        next_x = x_positions[idx + 1] if idx + 1 < bucket_count else x
+
         zone = bucket.get("zone")
         if zone is not None:
-            draw.line((x, chart_top, x, chart_bottom), fill=ImageColor.getrgb(zone.color) + (42,), width=1)
+            draw.rectangle((x, chart_top, next_x, chart_bottom), fill=ImageColor.getrgb(zone.color) + (42,))
 
         avg_watts = bucket.get("avg_watts")
         if avg_watts is None:
@@ -390,7 +401,6 @@ def generate_power_zone_graph(
         y = chart_bottom - int(avg_watts / y_max * chart_height)
         area_points.append((x, y))
         line_points.append((x, y))
-
     if line_points:
         area_points.extend([(line_points[-1][0], chart_bottom), (chart_left, chart_bottom)])
         draw.polygon(area_points, fill=(31, 47, 61, 88))

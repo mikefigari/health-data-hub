@@ -7,9 +7,10 @@
  */
 
 import { Client as NotionClient } from '@notionhq/client';
-import { exportDays } from './db.mjs';
+import { exportDays, getLastStravaSyncStatus } from './db.mjs';
 
 const TDEE_BASELINE        = 2800;
+const DEFAULT_RIDE_KJ      = 500;
 
 function isoToday() {
   return new Date().toISOString().slice(0, 10);
@@ -159,22 +160,32 @@ function extractPageTitle(page) {
 // ── Data gate ─────────────────────────────────────────────────────────────
 
 /**
- * Checks which data sources are present for today's row.
- * Returns a data_gate object that is passed to Claude alongside the health data
- * so it knows exactly which sections have real numbers versus absent data.
+ * Checks which data sources are present.
+ *
+ * Oura sleep and readiness are attributed to the date the sleep session STARTED
+ * (the prior calendar evening), so they live in yesterdayRow — not todayRow.
+ * Yesterday's nutrition diary is also fully closed and synced by 10:00, so that
+ * check uses yesterdayRow as well.
  */
-function buildDataGate(todayRow) {
-  const sleep      = todayRow?.sleep                 ?? {};
-  const readiness  = todayRow?.readiness             ?? {};
-  const workouts   = todayRow?.workouts              ?? [];
-  const nutrition  = todayRow?.nutrition             ?? {};
-  const pmc        = todayRow?.performance_management ?? {};
+function buildDataGate(todayRow, yesterdayRow, lastStravaSync) {
+  const sleep      = yesterdayRow?.sleep                 ?? {};
+  const readiness  = yesterdayRow?.readiness             ?? {};
+  const workouts   = todayRow?.workouts                  ?? [];
+  const nutrition  = yesterdayRow?.nutrition             ?? {};
+  const pmc        = todayRow?.performance_management    ?? {};
+  const physState  = todayRow?.physical_state            ?? {};
 
   const oura_sleep_present     = sleep.total_sleep_sec != null;
   const oura_readiness_present = readiness.score != null;
   const strava_present         = Array.isArray(workouts) && workouts.length > 0;
   const nutrition_present      = nutrition.calories != null && nutrition.calories > 0;
   const pmc_present            = pmc.atl != null && pmc.ctl != null && pmc.tsb != null;
+  const physical_state_present = physState.overall_state != null;
+
+  // Sync health: true if a successful or no_data poll ran in the last 4 hours.
+  // false means the poller is broken (token error, API error, etc.).
+  const strava_sync_ok = lastStravaSync != null &&
+    (lastStravaSync.status === 'success' || lastStravaSync.status === 'no_data');
 
   const missing_sources = [];
   if (!oura_sleep_present)     missing_sources.push('oura_sleep');
@@ -182,13 +193,24 @@ function buildDataGate(todayRow) {
   if (!strava_present)         missing_sources.push('strava');
   if (!nutrition_present)      missing_sources.push('nutrition');
   if (!pmc_present)            missing_sources.push('pmc');
+  if (!physical_state_present) missing_sources.push('physical_state');
 
   return {
     oura_sleep_present,
     oura_readiness_present,
     strava_present,
+    strava_sync_ok,
+    strava_last_sync: lastStravaSync
+      ? {
+          status:              lastStravaSync.status,
+          triggered_at:        lastStravaSync.triggered_at,
+          activities_written:  lastStravaSync.activities_written,
+          error_message:       lastStravaSync.error_message ?? null,
+        }
+      : null,
     nutrition_present,
     pmc_present,
+    physical_state_present,
     missing_sources,
     gate_checked_at: new Date().toISOString(),
   };
@@ -196,30 +218,56 @@ function buildDataGate(todayRow) {
 
 // ── Deficit context for the daily prompt ──────────────────────────────────
 
-function computeDailyCalorieContext(todayRow) {
-  const workouts  = todayRow?.workouts ?? [];
-  const nutrition = todayRow?.nutrition ?? {};
-  const dayTss    = workouts.reduce((s, w) => s + (w?.tss ?? 0), 0);
-  const dayKj     = workouts.reduce((s, w) => s + (w?.kj  ?? 0), 0);
-  const estTdee   = TDEE_BASELINE + Math.round(dayKj);
-  const calories  = nutrition.calories ?? null;
-  const deficit   = calories != null ? estTdee - calories : null;
-  return { dayTss, dayKj, estTdee, calories, deficit };
+/**
+ * Computes calorie context using yesterday's closed nutrition diary.
+ *
+ * kJ resolution order (never derive from TSS in the prompt — do it here):
+ *   1. Actual kJ from power meter   (kj_source = 'actual')
+ *   2. TSS × 9.5 estimate           (kj_source = 'estimated from TSS')
+ *   3. Athlete default 500 kJ       (kj_source = 'athlete default (500 kJ — no ride data)')
+ */
+function computeDailyCalorieContext(todayRow, yesterdayRow) {
+  const workouts  = todayRow?.workouts      ?? [];
+  const nutrition = yesterdayRow?.nutrition ?? {};
+
+  const rawKj  = workouts.reduce((s, w) => s + (w?.kj  ?? 0), 0);
+  const rawTss = workouts.reduce((s, w) => s + (w?.tss ?? 0), 0);
+
+  let energy_kj, kj_source;
+  if (rawKj > 0) {
+    energy_kj = Math.round(rawKj);
+    kj_source = 'actual';
+  } else if (rawTss > 0) {
+    energy_kj = Math.round(rawTss * 9.5);
+    kj_source = 'estimated from TSS';
+  } else {
+    energy_kj = DEFAULT_RIDE_KJ;
+    kj_source = 'athlete default (500 kJ — no ride data)';
+  }
+
+  const estTdee   = TDEE_BASELINE + energy_kj;
+  const calories  = nutrition.calories  ?? null;
+  const protein_g = nutrition.protein_g ?? null;
+  const deficit   = calories != null ? Math.round(estTdee - calories) : null;
+
+  return { energy_kj, kj_source, estTdee, calories, protein_g, deficit };
 }
 
 // ── Main export ───────────────────────────────────────────────────────────
 
 export async function buildDailyContext() {
-  const today = isoToday();
-  const start = addDays(today, -3);
+  const today     = isoToday();
+  const yesterday = addDays(today, -1);
+  const start     = addDays(today, -3);
 
   // DB fetch (today + 3 prior days)
   const { days, windowSummary } = await exportDays(start, today);
 
-  const todayRow  = days.find(d => d.day === today) ?? days[0] ?? null;
-  const priorDays = days.filter(d => d.day !== today).slice(0, 3);
+  const todayRow     = days.find(d => d.day === today)     ?? null;
+  const yesterdayRow = days.find(d => d.day === yesterday) ?? null;
+  const priorDays    = days.filter(d => d.day !== today).slice(0, 3);
 
-  // Build last-3-nights sleep summary for the prompt
+  // Build last-3-nights sleep summary for trend context (score + duration only)
   const last3Nights = priorDays.map(d => ({
     date:           d.day,
     score:          d.readiness?.score ?? null,
@@ -228,13 +276,30 @@ export async function buildDailyContext() {
       : null,
   }));
 
-  const calorieContext = computeDailyCalorieContext(todayRow);
-  const dataGate       = buildDataGate(todayRow);
+  // Full last-night Oura data (Oura attributes sleep to the date the session
+  // started, which is yesterday's calendar date)
+  const lastNightOura = {
+    date:      yesterdayRow?.day ?? yesterday,
+    sleep:     yesterdayRow?.sleep     ?? null,
+    readiness: yesterdayRow?.readiness ?? null,
+  };
+
+  const lastStravaSync = await getLastStravaSyncStatus(4);
+  const calorieContext = computeDailyCalorieContext(todayRow, yesterdayRow);
+  const dataGate       = buildDataGate(todayRow, yesterdayRow, lastStravaSync);
 
   if (dataGate.missing_sources.length > 0) {
     console.log(`[data_gate] Missing sources: ${dataGate.missing_sources.join(', ')}`);
   } else {
     console.log('[data_gate] All sources present');
+  }
+  if (!dataGate.strava_sync_ok) {
+    const last = dataGate.strava_last_sync;
+    if (last) {
+      console.warn(`[data_gate] Strava sync unhealthy — last status: ${last.status} @ ${last.triggered_at} | error: ${last.error_message}`);
+    } else {
+      console.warn('[data_gate] Strava sync unhealthy — no sync log entry in last 4 hours');
+    }
   }
 
   // Notion fetches (in parallel — failures are warned, not thrown)
@@ -250,7 +315,9 @@ export async function buildDailyContext() {
     days,
     windowSummary,
     todayRow,
+    yesterdayRow,
     last3Nights,
+    lastNightOura,
     calorieContext,
     dataGate,
     notionRefs: {
