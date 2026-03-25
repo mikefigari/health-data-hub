@@ -8,12 +8,14 @@ run_oura_scheduler.bat (Oura) used on the Windows main PC.
 Jobs:
     - Strava:              every 5 minutes (configurable via STRAVA_POLL_INTERVAL_MIN)
     - Oura:                every 30 minutes, 5 AM – 3 PM
-    - Notion Daily State:  daily at a configurable hour (NOTION_DAILY_STATE_POLL_HOUR, default 8 AM)
+    - Notion Daily State:  every 30 minutes, 5 AM – 11 PM (configurable)
     - Nutrition poller:    every hour, 6 AM – 11 PM PT
 
 Environment variables (set in dev.env / prod.env):
-    STRAVA_POLL_INTERVAL_MIN        Minutes between Strava polls (default: 5)
-    NOTION_DAILY_STATE_POLL_HOUR    Hour of day for Notion Daily State poll, 0-23 (default: 8)
+    STRAVA_POLL_INTERVAL_MIN                Minutes between Strava polls (default: 5)
+    NOTION_DAILY_STATE_POLL_INTERVAL_MIN    Minutes between Notion Daily State polls (default: 30)
+    NOTION_DAILY_STATE_POLL_START_HOUR      Start hour for Notion Daily State polling, 0-23 (default: 5)
+    NOTION_DAILY_STATE_POLL_END_HOUR        End hour for Notion Daily State polling, 0-23 (default: 23)
 """
 
 import logging
@@ -41,7 +43,21 @@ from health_data_hub.integrations.apple_health.nutrition_poller import poll_once
 # -------------------------------------------------------------------
 
 STRAVA_INTERVAL_MIN = int(os.getenv("STRAVA_POLL_INTERVAL_MIN", "5"))
-NOTION_DAILY_STATE_POLL_HOUR = int(os.getenv("NOTION_DAILY_STATE_POLL_HOUR", "8"))
+NOTION_DAILY_STATE_POLL_INTERVAL_MIN = int(os.getenv("NOTION_DAILY_STATE_POLL_INTERVAL_MIN", "30"))
+NOTION_DAILY_STATE_POLL_START_HOUR = int(os.getenv("NOTION_DAILY_STATE_POLL_START_HOUR", "5"))
+NOTION_DAILY_STATE_POLL_END_HOUR = int(os.getenv("NOTION_DAILY_STATE_POLL_END_HOUR", "23"))
+
+if NOTION_DAILY_STATE_POLL_INTERVAL_MIN <= 0:
+    raise ValueError("NOTION_DAILY_STATE_POLL_INTERVAL_MIN must be > 0")
+if not 0 <= NOTION_DAILY_STATE_POLL_START_HOUR <= 23:
+    raise ValueError("NOTION_DAILY_STATE_POLL_START_HOUR must be between 0 and 23")
+if not 0 <= NOTION_DAILY_STATE_POLL_END_HOUR <= 23:
+    raise ValueError("NOTION_DAILY_STATE_POLL_END_HOUR must be between 0 and 23")
+if NOTION_DAILY_STATE_POLL_START_HOUR > NOTION_DAILY_STATE_POLL_END_HOUR:
+    raise ValueError("NOTION_DAILY_STATE_POLL_START_HOUR cannot be greater than NOTION_DAILY_STATE_POLL_END_HOUR")
+
+NOTION_POLL_HOUR_EXPR = f"{NOTION_DAILY_STATE_POLL_START_HOUR}-{NOTION_DAILY_STATE_POLL_END_HOUR}"
+NOTION_POLL_MINUTE_EXPR = f"*/{NOTION_DAILY_STATE_POLL_INTERVAL_MIN}"
 
 
 # -------------------------------------------------------------------
@@ -110,8 +126,8 @@ scheduler.add_job(
 scheduler.add_job(
     run_notion_daily_state,
     trigger="cron",
-    hour=NOTION_DAILY_STATE_POLL_HOUR,
-    minute=30,
+    hour=NOTION_POLL_HOUR_EXPR,
+    minute=NOTION_POLL_MINUTE_EXPR,
     id="notion_daily_state_poller",
     name="Notion daily state poller",
     max_instances=1,
@@ -129,9 +145,11 @@ scheduler.add_job(
 
 logger.info(
     "Unified scheduler starting — Strava every %d min, Oura every 30 min (5am-3pm), "
-    "Notion daily state at %02d:30, Nutrition poller hourly (6am-11pm PT)",
+    "Notion daily state every %d min (%02d:00-%02d:59), Nutrition poller hourly (6am-11pm PT)",
     STRAVA_INTERVAL_MIN,
-    NOTION_DAILY_STATE_POLL_HOUR,
+    NOTION_DAILY_STATE_POLL_INTERVAL_MIN,
+    NOTION_DAILY_STATE_POLL_START_HOUR,
+    NOTION_DAILY_STATE_POLL_END_HOUR,
 )
 
 try:

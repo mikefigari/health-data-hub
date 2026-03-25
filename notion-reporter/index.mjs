@@ -8,8 +8,8 @@
  *
  * Add these entries to your crontab (`crontab -e`):
  *
- *   # Daily briefing at 8:00 AM
- *   0 8 * * * cd /path/to/health_data_hub/notion-reporter && node index.mjs >> /home/mike/logs/notion-reporter-daily.log 2>&1
+ *   # Daily briefing at 10:00 AM (moved from 8am — Oura syncs by 05:00, Notion by 08:30)
+ *   0 10 * * * cd /path/to/health_data_hub/notion-reporter && node index.mjs >> /home/mike/logs/notion-reporter-daily.log 2>&1
  *
  *   # Weekly review every Sunday at 8:00 PM
  *   0 20 * * 0 cd /path/to/health_data_hub/notion-reporter && REPORT_MODE=weekly node index.mjs >> /home/mike/logs/notion-reporter-weekly.log 2>&1
@@ -37,6 +37,65 @@ import { postReport }         from './src/notion/postReport.mjs';
 import { closePool }          from './src/utils/db.mjs';
 
 const mode = process.env.REPORT_MODE || 'daily';
+const DAILY_RETRY_INTERVAL_MIN = Number(process.env.DAILY_RETRY_INTERVAL_MIN || '30');
+const DAILY_RETRY_ENABLED = String(process.env.DAILY_RETRY_ENABLED || 'true').toLowerCase() !== 'false';
+const DAILY_REQUIRED_SOURCES = (process.env.DAILY_REQUIRED_SOURCES || 'oura_sleep,oura_readiness,nutrition,pmc,physical_state')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getMissingRequiredSources(dataGate) {
+  const missing = dataGate?.missing_sources ?? [];
+  return DAILY_REQUIRED_SOURCES.filter(source => missing.includes(source));
+}
+
+function isDailyContextComplete(context) {
+  const dataGate = context?.dataGate ?? {};
+  const missingRequired = getMissingRequiredSources(dataGate);
+  const stravaSyncOk = dataGate.strava_sync_ok === true;
+  return {
+    complete: missingRequired.length === 0 && stravaSyncOk,
+    missingRequired,
+    stravaSyncOk,
+  };
+}
+
+async function buildDailyContextWithGate() {
+  let attempt = 1;
+
+  while (true) {
+    const context = await buildDailyContext();
+    const { complete, missingRequired, stravaSyncOk } = isDailyContextComplete(context);
+
+    if (complete) {
+      if (attempt > 1) {
+        console.log(`[data_gate] All required sources present on retry ${attempt}`);
+      }
+      return context;
+    }
+
+    const missingText = missingRequired.length ? missingRequired.join(', ') : 'none';
+    console.warn(
+      `[data_gate] Incomplete daily data (attempt ${attempt}) — missing required: ${missingText}; strava_sync_ok: ${stravaSyncOk}`,
+    );
+
+    if (!DAILY_RETRY_ENABLED) {
+      const err = new Error(
+        `Daily report skipped: missing required sources (${missingText}) or unhealthy Strava sync.`,
+      );
+      err.code = 'INCOMPLETE_DAILY_DATA';
+      throw err;
+    }
+
+    console.log(`[retry] Waiting ${DAILY_RETRY_INTERVAL_MIN} minutes before retrying daily context...`);
+    await sleep(DAILY_RETRY_INTERVAL_MIN * 60 * 1000);
+    attempt += 1;
+  }
+}
 
 async function run() {
   if (!['daily', 'weekly', 'dry'].includes(mode)) {
@@ -48,7 +107,9 @@ async function run() {
   // ── Context assembly ─────────────────────────────────────────────────
   const context = mode === 'weekly'
     ? await buildWeeklyContext()
-    : await buildDailyContext();  // also used for dry run
+    : mode === 'daily'
+      ? await buildDailyContextWithGate()
+      : await buildDailyContext();  // dry run prints raw payload without retry loop
 
   console.log(`[context] Date: ${context.date} | Days fetched: ${context.days.length}`);
   if (context.notionRefs.powerZone) {
@@ -94,14 +155,15 @@ async function run() {
 
 // Lazy-import prompt builders (avoids loading Anthropic SDK in dry-run path)
 async function importPromptBuilders() {
-  const mod = await import('./src/anthropic/analyzeHealth.mjs');
   // Expose internal builders for dry-run inspection
   return {
-    buildDailyUserMessage:  ctx => JSON.stringify({
-      data_gate:   ctx.dataGate,
-      today:       ctx.todayRow,
-      last3Nights: ctx.last3Nights,
-      calCtx:      ctx.calorieContext,
+    buildDailyUserMessage: ctx => JSON.stringify({
+      data_gate:           ctx.dataGate,
+      today:               ctx.todayRow,
+      last_night_oura:     ctx.lastNightOura,
+      yesterday_nutrition: ctx.yesterdayRow?.nutrition ?? null,
+      last3Nights:         ctx.last3Nights,
+      calorie_context:     ctx.calorieContext,
     }, null, 2),
     buildWeeklyUserMessage: ctx => JSON.stringify({
       last14Days:       ctx.days,
