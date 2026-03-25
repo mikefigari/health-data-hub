@@ -9,7 +9,7 @@ Jobs:
     - Strava:              every 5 minutes (configurable via STRAVA_POLL_INTERVAL_MIN)
     - Oura:                every 30 minutes, 5 AM – 3 PM
     - Notion Daily State:  daily at a configurable hour (NOTION_DAILY_STATE_POLL_HOUR, default 8 AM)
-    - Nutrition poller:    every hour, 6 AM – midnight
+    - Nutrition poller:    every hour, 6 AM – 11 PM PT
 
 Environment variables (set in dev.env / prod.env):
     STRAVA_POLL_INTERVAL_MIN        Minutes between Strava polls (default: 5)
@@ -129,7 +129,7 @@ scheduler.add_job(
 
 logger.info(
     "Unified scheduler starting — Strava every %d min, Oura every 30 min (5am-3pm), "
-    "Notion daily state at %02d:30, Nutrition poller hourly (6am-midnight)",
+    "Notion daily state at %02d:30, Nutrition poller hourly (6am-11pm PT)",
     STRAVA_INTERVAL_MIN,
     NOTION_DAILY_STATE_POLL_HOUR,
 )
