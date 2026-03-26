@@ -14,7 +14,8 @@ import traceback
 from datetime import datetime, timezone
 
 from health_data_hub.utils.db_connect import get_connection
-from health_data_hub.etl.extract.strava_refresh import get_valid_access_token
+from health_data_hub.etl.extract.strava_refresh import get_valid_access_token, StravaAuthError
+from health_data_hub.utils.alert import send_alert
 from health_data_hub.etl.extract.strava_api import (
     get_recent_activities,
     get_activity_streams,
@@ -93,6 +94,23 @@ def poll_once():
     logger.info("Checking Strava OAuth token...")
     try:
         access_token = get_valid_access_token()
+    except StravaAuthError as e:
+        _write_sync_log("auth_error", error_message=str(e))
+        logger.critical(
+            "STRAVA AUTH FAILED — poller suspended until re-authorization. %s", e
+        )
+        send_alert(
+            subject="Strava auth failed — re-authorization required",
+            body=(
+                f"{e}\n\n"
+                "The Strava poller has suspended itself. No workout data will sync "
+                "until you re-authorize.\n\n"
+                "Re-authorize:\n"
+                "  cd ~/projects/health-data-hub\n"
+                "  HEALTH_ENV=prod python -m health_data_hub.etl.extract.strava_oauth\n"
+            ),
+        )
+        return  # No point retrying; only a new OAuth flow will fix this
     except Exception as e:
         _write_sync_log("error", error_message=f"Token refresh failed: {e}")
         raise

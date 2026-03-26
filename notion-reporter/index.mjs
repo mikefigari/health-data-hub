@@ -56,9 +56,10 @@ function getMissingRequiredSources(dataGate) {
 function isDailyContextComplete(context) {
   const dataGate = context?.dataGate ?? {};
   const missingRequired = getMissingRequiredSources(dataGate);
+  const stravaRequired = DAILY_REQUIRED_SOURCES.includes('strava');
   const stravaSyncOk = dataGate.strava_sync_ok === true;
   return {
-    complete: missingRequired.length === 0 && stravaSyncOk,
+    complete: missingRequired.length === 0 && (!stravaRequired || stravaSyncOk),
     missingRequired,
     stravaSyncOk,
   };

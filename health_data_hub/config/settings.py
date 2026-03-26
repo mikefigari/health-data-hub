@@ -10,7 +10,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parents[1]   # health_data_hub/health_data_hub
 CONFIG_DIR = BASE_DIR / "config"
-TOKEN_FILE = CONFIG_DIR / "strava_tokens.json"
+
+# Token file lives outside the project directory so it survives git operations
+# and package reinstalls.  Override with STRAVA_TOKEN_FILE in your env file.
+_DEFAULT_TOKEN_FILE = Path.home() / ".config" / "health-data-hub" / "strava_tokens.json"
+TOKEN_FILE = Path(os.getenv("STRAVA_TOKEN_FILE", str(_DEFAULT_TOKEN_FILE)))
 
 
 # -------------------------------------------------------------

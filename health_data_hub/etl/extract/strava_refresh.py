@@ -20,6 +20,14 @@ from health_data_hub.config.settings import (
 TOKEN_URL = "https://www.strava.com/oauth/token"
 _EXPIRY_BUFFER_SECONDS = 300  # refresh if less than 5 min remaining
 
+_REAUTH_CMD = "HEALTH_ENV=prod python -m health_data_hub.etl.extract.strava_oauth"
+
+
+class StravaAuthError(RuntimeError):
+    """Raised when Strava rejects the refresh token (401).
+    Re-authorization via the OAuth flow is required — automatic retries will not help.
+    """
+
 
 def _load_token_file():
     """Load the current token payload safely."""
@@ -92,6 +100,11 @@ def get_valid_access_token():
     }
 
     response = requests.post(TOKEN_URL, data=payload, timeout=30)
+    if response.status_code == 401:
+        raise StravaAuthError(
+            f"Strava refresh token rejected (401) — OAuth re-authorization required. "
+            f"Run: {_REAUTH_CMD}"
+        )
     response.raise_for_status()
 
     try:
