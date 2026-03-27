@@ -564,7 +564,7 @@ def generate_weekly_zone_summary_graph(
 
     # ── Canvas ────────────────────────────────────────────────────────────────
     width = 1800
-    height = 1060
+    height = 1140
     margin_left = 72
     margin_right = 72
 
@@ -626,14 +626,15 @@ def generate_weekly_zone_summary_graph(
     )
 
     # ── Zone bars ─────────────────────────────────────────────────────────────
-    bar_area_left  = margin_left + 220   # left edge of progress bar track
-    bar_area_right = width - margin_right - 180  # right edge of progress bar track
+    # bar_area_left is set wide enough so label text (ends ~x+266) clears the bar
+    bar_area_left  = margin_left + 250
+    bar_area_right = width - margin_right - 200
     bar_track_w    = bar_area_right - bar_area_left
-    time_x         = bar_area_right + 20
-    pct_x          = time_x + 130
+    time_x         = bar_area_right + 24
+    pct_x          = time_x + 120
 
     row_y = section_y + 62
-    row_h = 82
+    row_h = 84  # label (12–30) + watt range (32–50) + bar (52–68) + gap = 84
 
     for item in distribution:
         zone    = item["zone"]
@@ -643,32 +644,26 @@ def generate_weekly_zone_summary_graph(
         upper_label = f"{upper} W" if upper is not None else "+"
         lower_label = f"{zone.lower_watts(ftp_watts)} W"
 
-        # Zone pill
+        # Zone pill — spans full text height
         draw.rounded_rectangle(
-            (margin_left, row_y + 14, margin_left + 80, row_y + 60),
+            (margin_left, row_y + 10, margin_left + 78, row_y + 54),
             radius=12, fill=zone.color,
         )
-        _draw_text(draw, (margin_left + 14, row_y + 27), zone.name, summary_font, "#FFFFFF")
+        _draw_text(draw, (margin_left + 14, row_y + 23), zone.name, summary_font, "#FFFFFF")
 
-        # Label + watt range
+        # Label (16pt) then watt range (14pt) — both clear the bar vertically
+        _draw_text(draw, (margin_left + 94, row_y + 12), zone.label, label_font, "#1A1A1A")
         _draw_text(
             draw,
-            (margin_left + 96, row_y + 14),
-            zone.label,
-            summary_font,
-            "#1A1A1A",
-        )
-        _draw_text(
-            draw,
-            (margin_left + 96, row_y + 40),
+            (margin_left + 94, row_y + 32),
             f"{lower_label} – {upper_label}",
             small_font,
             "#7A6F63",
         )
 
-        # Progress bar track
-        track_top    = row_y + 30
-        track_bottom = row_y + 48
+        # Progress bar track — below the text block, no overlap
+        track_top    = row_y + 54
+        track_bottom = row_y + 70
         draw.rounded_rectangle(
             (bar_area_left, track_top, bar_area_right, track_bottom),
             radius=8, fill="#EEE7DD",
@@ -680,9 +675,9 @@ def generate_weekly_zone_summary_graph(
                 radius=8, fill=zone.color,
             )
 
-        # Time + pct
-        _draw_text(draw, (time_x, row_y + 27), _format_duration(seconds), summary_font, "#1A1A1A")
-        _draw_text(draw, (pct_x, row_y + 27), f"{pct:4.1f}%", summary_font, "#564F48")
+        # Time + pct aligned with bar
+        _draw_text(draw, (time_x, row_y + 54), _format_duration(seconds), summary_font, "#1A1A1A")
+        _draw_text(draw, (pct_x, row_y + 54), f"{int(round(pct))}%", summary_font, "#564F48")
 
         row_y += row_h
 
@@ -720,29 +715,27 @@ def generate_weekly_zone_summary_graph(
         _draw_text(
             draw,
             (margin_left + summary_card_w - 62, summary_y + 14),
-            f"{card_pct:.1f}%",
+            f"{int(round(card_pct))}%",
             summary_bold, card_color,
         )
         margin_left += summary_card_w + summary_gap
 
     margin_left = 72  # restore
 
-    # ── Workout list ──────────────────────────────────────────────────────────
-    list_y = summary_y + summary_card_h + 12
+    # ── Workout list — one line per ride ─────────────────────────────────────
+    list_y = summary_y + summary_card_h + 14
     draw.line((margin_left, list_y, width - margin_right, list_y), fill="#DED7CD", width=1)
-    list_y += 12
+    list_y += 14
 
-    parts = []
+    line_h = 22
     for w in workouts:
         dt = w.get("start_time")
-        date_str = dt.strftime("%-d %b") if isinstance(dt, datetime) else "?"
-        title = (w.get("title") or "Ride")[:35]
+        date_str = dt.strftime("%a %-d %b") if isinstance(dt, datetime) else "?"
+        title = (w.get("title") or "Ride")[:48]
         dur = _format_duration(w.get("moving_s"))
-        tss = f"TSS {int(round(float(w['tss_power'])))}" if w.get("tss_power") is not None else ""
-        parts.append(f"{date_str} · {title} · {dur}" + (f" · {tss}" if tss else ""))
-
-    rides_line = "    |    ".join(parts)
-    _draw_text(draw, (margin_left, list_y), rides_line, small_font, "#6A6258")
+        tss = f"  ·  TSS {int(round(float(w['tss_power'])))}" if w.get("tss_power") is not None else ""
+        _draw_text(draw, (margin_left, list_y), f"{date_str}  ·  {title}  ·  {dur}{tss}", small_font, "#6A6258")
+        list_y += line_h
 
     # ── Footer ────────────────────────────────────────────────────────────────
     _draw_text(
