@@ -686,8 +686,49 @@ def generate_weekly_zone_summary_graph(
 
         row_y += row_h
 
+    # ── Combined Z1–3 / Z4–7 summary cards ───────────────────────────────────
+    aerobic_secs = sum(item["seconds"] for item in distribution if item["zone"].index <= 3)
+    intense_secs = sum(item["seconds"] for item in distribution if item["zone"].index >= 4)
+    aerobic_pct  = aerobic_secs / total_seconds * 100 if total_seconds else 0.0
+    intense_pct  = intense_secs / total_seconds * 100 if total_seconds else 0.0
+
+    summary_card_w = 380
+    summary_card_h = 64
+    summary_gap    = 20
+    summary_y      = row_y + 10
+
+    for card_label, card_sub, card_time, card_pct, card_color in [
+        ("Aerobic  Z1–Z3",  "Active Recovery · Endurance · Tempo",    aerobic_secs, aerobic_pct,  "#4A90E2"),
+        ("High Intensity  Z4–Z7", "Threshold · VO2 Max · Anaerobic · Neuro", intense_secs, intense_pct, "#EB5757"),
+    ]:
+        draw.rounded_rectangle(
+            (margin_left, summary_y, margin_left + summary_card_w, summary_y + summary_card_h),
+            radius=14, fill="#FFFFFF", outline="#E8E1D7",
+        )
+        draw.rounded_rectangle(
+            (margin_left + 12, summary_y + 12, margin_left + 18, summary_y + summary_card_h - 12),
+            radius=3, fill=card_color,
+        )
+        _draw_text(draw, (margin_left + 28, summary_y + 8),  card_label, label_font, "#1A1A1A")
+        _draw_text(draw, (margin_left + 28, summary_y + 30), card_sub,   small_font, "#7A6F63")
+        _draw_text(
+            draw,
+            (margin_left + summary_card_w - 160, summary_y + 14),
+            _format_duration(card_time),
+            summary_font, "#1A1A1A",
+        )
+        _draw_text(
+            draw,
+            (margin_left + summary_card_w - 62, summary_y + 14),
+            f"{card_pct:.1f}%",
+            summary_bold, card_color,
+        )
+        margin_left += summary_card_w + summary_gap
+
+    margin_left = 72  # restore
+
     # ── Workout list ──────────────────────────────────────────────────────────
-    list_y = row_y + 8
+    list_y = summary_y + summary_card_h + 12
     draw.line((margin_left, list_y, width - margin_right, list_y), fill="#DED7CD", width=1)
     list_y += 12
 
