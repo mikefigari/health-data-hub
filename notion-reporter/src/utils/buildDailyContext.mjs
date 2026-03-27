@@ -227,7 +227,7 @@ function buildDataGate(todayRow, yesterdayRow, lastStravaSync) {
  *   3. Athlete default 500 kJ       (kj_source = 'athlete default (500 kJ — no ride data)')
  */
 function computeDailyCalorieContext(todayRow, yesterdayRow) {
-  const workouts  = todayRow?.workouts      ?? [];
+  const workouts  = yesterdayRow?.workouts  ?? [];
   const nutrition = yesterdayRow?.nutrition ?? {};
 
   const rawKj  = workouts.reduce((s, w) => s + (w?.kj  ?? 0), 0);

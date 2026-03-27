@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -455,6 +455,278 @@ def generate_power_zone_graph(
         "ftp_watts": float(ftp_watts),
         "output_path": output_path,
         "zone_distribution": distribution,
+    }
+
+
+def _fetch_weekly_zone_data(week_start: date, week_end: date) -> Optional[dict]:
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT
+                    wr.id            AS workout_id,
+                    wr.title,
+                    wr.start_time,
+                    wr.sport_type,
+                    wr.moving_s,
+                    wr.kj,
+                    ws.tss_power,
+                    ws.np_watts
+                FROM workouts_raw wr
+                LEFT JOIN workout_summary ws ON ws.workout_id = wr.id
+                WHERE wr.start_time::date BETWEEN %s AND %s
+                  AND LOWER(REPLACE(wr.sport_type, ' ', '')) LIKE '%%ride%%'
+                ORDER BY wr.start_time
+                """,
+                (week_start, week_end),
+            )
+            workouts = cur.fetchall()
+            if not workouts:
+                return None
+
+            cur.execute(
+                """
+                SELECT ftp_watts
+                FROM ftp_history
+                WHERE effective_from <= %s
+                ORDER BY effective_from DESC
+                LIMIT 1
+                """,
+                (week_start,),
+            )
+            ftp_row = cur.fetchone()
+            if not ftp_row:
+                cur.execute(
+                    "SELECT ftp_watts FROM ftp_history ORDER BY effective_from DESC LIMIT 1"
+                )
+                ftp_row = cur.fetchone()
+            ftp_watts = ftp_row["ftp_watts"] if ftp_row else None
+            if not ftp_watts:
+                return None
+
+            workout_ids = [w["workout_id"] for w in workouts]
+            cur.execute(
+                """
+                SELECT workout_id, watts
+                FROM workout_samples
+                WHERE workout_id = ANY(%s)
+                  AND watts IS NOT NULL
+                ORDER BY workout_id, COALESCE(second_index, ts_seconds)
+                """,
+                (workout_ids,),
+            )
+            all_samples = cur.fetchall()
+
+        return {
+            "workouts": workouts,
+            "ftp_watts": ftp_watts,
+            "all_samples": all_samples,
+            "week_start": week_start,
+            "week_end": week_end,
+        }
+    finally:
+        conn.close()
+
+
+def generate_weekly_zone_summary_graph(
+    week_start: date,
+    output_dir: Optional[Path] = None,
+    config_path: Optional[Path] = None,
+) -> Optional[dict]:
+    """Generate a weekly combined power-zone bar chart for all cycling workouts Mon–Sun."""
+    if isinstance(week_start, datetime):
+        week_start = week_start.date()
+    # Snap to Monday
+    week_start = week_start - timedelta(days=week_start.weekday())
+    week_end = week_start + timedelta(days=6)
+
+    data = _fetch_weekly_zone_data(week_start, week_end)
+    if not data:
+        return None
+
+    workouts = data["workouts"]
+    ftp_watts = float(data["ftp_watts"])
+    all_samples = data["all_samples"]
+    if not all_samples:
+        return None
+
+    zones = _load_zone_config(config_path or DEFAULT_ZONE_CONFIG_PATH)
+    distribution = _compute_zone_distribution(all_samples, zones, ftp_watts)
+    total_seconds = sum(item["seconds"] for item in distribution)
+    if total_seconds == 0:
+        return None
+
+    total_tss = sum(
+        float(w["tss_power"]) for w in workouts if w.get("tss_power") is not None
+    )
+    total_kj = sum(float(w["kj"]) for w in workouts if w.get("kj") is not None)
+
+    # ── Canvas ────────────────────────────────────────────────────────────────
+    width = 1800
+    height = 900
+    margin_left = 72
+    margin_right = 72
+
+    image = Image.new("RGB", (width, height), "#FAF8F3")
+    draw = ImageDraw.Draw(image, "RGBA")
+
+    title_font       = _load_font(34, bold=True)
+    subtitle_font    = _load_font(18)
+    label_font       = _load_font(16)
+    small_font       = _load_font(14)
+    summary_font     = _load_font(18)
+    summary_bold     = _load_font(20, bold=True)
+    section_bold     = _load_font(22, bold=True)
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    week_start_label = week_start.strftime("%a %b %-d")
+    week_end_label   = week_end.strftime("%a %b %-d, %Y")
+    _draw_text(draw, (margin_left, 32), "Weekly Zone Summary", title_font, "#1A1A1A")
+    _draw_text(
+        draw,
+        (margin_left, 78),
+        f"{week_start_label} – {week_end_label}  ·  FTP {int(round(ftp_watts))} W",
+        subtitle_font,
+        "#4F4F4F",
+    )
+
+    # ── Metrics row ───────────────────────────────────────────────────────────
+    metrics = [
+        ("Total Time",  _format_duration(total_seconds)),
+        ("Rides",       str(len(workouts))),
+        ("Total TSS",   f"{int(round(total_tss))}" if total_tss else "n/a"),
+        ("Total kJ",    f"{int(round(total_kj))}" if total_kj else "n/a"),
+    ]
+    card_w, card_h, card_gap = 200, 78, 20
+    card_y = 118
+    card_x = margin_left
+    for m_label, m_value in metrics:
+        draw.rounded_rectangle(
+            (card_x, card_y, card_x + card_w, card_y + card_h),
+            radius=18, fill="#FFFFFF", outline="#E8E1D7",
+        )
+        _draw_text(draw, (card_x + 18, card_y + 12), m_label, label_font, "#7A6F63")
+        _draw_text(draw, (card_x + 18, card_y + 38), m_value, summary_bold, "#1A1A1A")
+        card_x += card_w + card_gap
+
+    # ── Divider ───────────────────────────────────────────────────────────────
+    divider_y = card_y + card_h + 18
+    draw.line((margin_left, divider_y, width - margin_right, divider_y), fill="#DED7CD", width=1)
+
+    # ── "Time In Zone" section label ──────────────────────────────────────────
+    section_y = divider_y + 18
+    _draw_text(draw, (margin_left, section_y), "Time In Zone", section_bold, "#1A1A1A")
+    _draw_text(
+        draw,
+        (margin_left, section_y + 28),
+        "Combined across all rides this week  ·  Peloton-style thresholds from active FTP",
+        small_font,
+        "#6A6258",
+    )
+
+    # ── Zone bars ─────────────────────────────────────────────────────────────
+    bar_area_left  = margin_left + 220   # left edge of progress bar track
+    bar_area_right = width - margin_right - 180  # right edge of progress bar track
+    bar_track_w    = bar_area_right - bar_area_left
+    time_x         = bar_area_right + 20
+    pct_x          = time_x + 130
+
+    row_y = section_y + 62
+    row_h = 82
+
+    for item in distribution:
+        zone    = item["zone"]
+        seconds = item["seconds"]
+        pct     = item["pct"]
+        upper   = zone.upper_watts(ftp_watts)
+        upper_label = f"{upper} W" if upper is not None else "+"
+        lower_label = f"{zone.lower_watts(ftp_watts)} W"
+
+        # Zone pill
+        draw.rounded_rectangle(
+            (margin_left, row_y + 14, margin_left + 80, row_y + 60),
+            radius=12, fill=zone.color,
+        )
+        _draw_text(draw, (margin_left + 14, row_y + 27), zone.name, summary_font, "#FFFFFF")
+
+        # Label + watt range
+        _draw_text(
+            draw,
+            (margin_left + 96, row_y + 14),
+            zone.label,
+            summary_font,
+            "#1A1A1A",
+        )
+        _draw_text(
+            draw,
+            (margin_left + 96, row_y + 40),
+            f"{lower_label} – {upper_label}",
+            small_font,
+            "#7A6F63",
+        )
+
+        # Progress bar track
+        track_top    = row_y + 30
+        track_bottom = row_y + 48
+        draw.rounded_rectangle(
+            (bar_area_left, track_top, bar_area_right, track_bottom),
+            radius=8, fill="#EEE7DD",
+        )
+        fill_w = int(bar_track_w * (pct / 100.0))
+        if fill_w > 0:
+            draw.rounded_rectangle(
+                (bar_area_left, track_top, bar_area_left + fill_w, track_bottom),
+                radius=8, fill=zone.color,
+            )
+
+        # Time + pct
+        _draw_text(draw, (time_x, row_y + 27), _format_duration(seconds), summary_font, "#1A1A1A")
+        _draw_text(draw, (pct_x, row_y + 27), f"{pct:4.1f}%", summary_font, "#564F48")
+
+        row_y += row_h
+
+    # ── Workout list ──────────────────────────────────────────────────────────
+    list_y = row_y + 8
+    draw.line((margin_left, list_y, width - margin_right, list_y), fill="#DED7CD", width=1)
+    list_y += 12
+
+    parts = []
+    for w in workouts:
+        dt = w.get("start_time")
+        date_str = dt.strftime("%-d %b") if isinstance(dt, datetime) else "?"
+        title = (w.get("title") or "Ride")[:35]
+        dur = _format_duration(w.get("moving_s"))
+        tss = f"TSS {int(round(float(w['tss_power'])))}" if w.get("tss_power") is not None else ""
+        parts.append(f"{date_str} · {title} · {dur}" + (f" · {tss}" if tss else ""))
+
+    rides_line = "    |    ".join(parts)
+    _draw_text(draw, (margin_left, list_y), rides_line, small_font, "#6A6258")
+
+    # ── Footer ────────────────────────────────────────────────────────────────
+    _draw_text(
+        draw,
+        (margin_left, height - 30),
+        "Zone thresholds calculated from active FTP using Peloton power-zone percentages.",
+        small_font,
+        "#9E9086",
+    )
+
+    output_dir = output_dir or DEFAULT_GRAPH_DIR
+    output_dir.mkdir(parents=True, exist_ok=True)
+    week_tag  = week_start.strftime("%Y_W%V")
+    filename  = f"weekly_zone_summary_{week_tag}.png"
+    out_path  = output_dir / filename
+    image.save(out_path, format="PNG")
+
+    return {
+        "week_start":         week_start,
+        "week_end":           week_end,
+        "ftp_watts":          ftp_watts,
+        "output_path":        out_path,
+        "zone_distribution":  distribution,
+        "workout_count":      len(workouts),
+        "total_seconds":      total_seconds,
     }
 
 

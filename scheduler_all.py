@@ -37,6 +37,7 @@ from health_data_hub.integrations.poll_strava import poll_once
 from health_data_hub.integrations.oura.poll_oura import poll_oura
 from health_data_hub.integrations.notion.poll_notion_daily_state import poll_notion_daily_state
 from health_data_hub.integrations.apple_health.nutrition_poller import poll_once as poll_nutrition
+from health_data_hub.integrations.notion.notion_strava_sync import sync_weekly_zone_summary
 
 # -------------------------------------------------------------------
 # Configuration
@@ -98,6 +99,13 @@ def run_nutrition_poller():
         logger.error("Nutrition poll cycle failed", exc_info=True)
 
 
+def run_weekly_powerzone_summary():
+    try:
+        sync_weekly_zone_summary()
+    except Exception:
+        logger.error("Weekly power-zone summary failed", exc_info=True)
+
+
 # -------------------------------------------------------------------
 # Scheduler setup
 # -------------------------------------------------------------------
@@ -143,9 +151,21 @@ scheduler.add_job(
     max_instances=1,
 )
 
+scheduler.add_job(
+    run_weekly_powerzone_summary,
+    trigger="cron",
+    day_of_week="sun",
+    hour=21,
+    minute=0,
+    id="weekly_powerzone_summary",
+    name="Weekly power-zone zone summary",
+    max_instances=1,
+)
+
 logger.info(
     "Unified scheduler starting — Strava every %d min, Oura every 30 min (5am-3pm), "
-    "Notion daily state every %d min (%02d:00-%02d:59), Nutrition poller hourly (6am-11pm PT)",
+    "Notion daily state every %d min (%02d:00-%02d:59), Nutrition poller hourly (6am-11pm PT), "
+    "Weekly power-zone summary Sundays 21:00",
     STRAVA_INTERVAL_MIN,
     NOTION_DAILY_STATE_POLL_INTERVAL_MIN,
     NOTION_DAILY_STATE_POLL_START_HOUR,

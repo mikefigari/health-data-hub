@@ -9,7 +9,7 @@ Targets:
 - Notion database: NOTION_WORKOUT_DB_ID
 """
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import os
@@ -20,8 +20,13 @@ from psycopg2.extras import RealDictCursor
 from health_data_hub.config.settings import (
     NOTION_TOKEN,
     NOTION_WORKOUT_DB_ID,
+    NOTION_POWERZONE_DB_ID,
+    NOTION_POWERZONE_DATE_PROP,
 )
-from health_data_hub.etl.transform.power_zone_graph import generate_power_zone_graph
+from health_data_hub.etl.transform.power_zone_graph import (
+    generate_power_zone_graph,
+    generate_weekly_zone_summary_graph,
+)
 from health_data_hub.utils.db_connect import get_connection
 
 if not NOTION_TOKEN or not NOTION_WORKOUT_DB_ID:
@@ -32,6 +37,7 @@ NOTION_SDK_VERSION = "2022-06-28"
 NOTION_FILE_UPLOAD_VERSION = "2026-03-11"
 NOTION_API_BASE = "https://api.notion.com/v1"
 POWER_ZONE_GRAPH_CAPTION = "Power Zone Graph"
+WEEKLY_ZONE_SUMMARY_CAPTION = "Weekly Zone Summary"
 CYCLING_SPORT_TYPES = {
     "ride",
     "virtualride",
@@ -426,6 +432,146 @@ def sync_specific_workout(workout_id: int):
     notion = Client(auth=NOTION_TOKEN, notion_version=NOTION_SDK_VERSION)
     upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
     print(f"[Notion] Synced specific workout: {row.get('name')} (ID {workout_id})")
+
+
+# -------------------------------------------------------------------
+# Weekly zone summary → PowerZone training block page
+# -------------------------------------------------------------------
+
+def _fetch_powerzone_page_id_for_week(week_start: date) -> str | None:
+    """
+    Query NOTION_POWERZONE_DB_ID for a page whose date range covers week_start.
+    Falls back to the most recently edited page if the date filter finds nothing.
+    """
+    if not NOTION_POWERZONE_DB_ID:
+        print("[Notion] NOTION_POWERZONE_DB_ID not set — skipping PowerZone page lookup.")
+        return None
+
+    date_prop = NOTION_POWERZONE_DATE_PROP
+
+    def _query(body: dict) -> list:
+        resp = requests.post(
+            f"{NOTION_API_BASE}/databases/{NOTION_POWERZONE_DB_ID}/query",
+            headers={
+                "Authorization": f"Bearer {NOTION_TOKEN}",
+                "Notion-Version": NOTION_SDK_VERSION,
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json().get("results", [])
+
+    # Try: page whose date range includes week_start
+    try:
+        results = _query({
+            "filter": {
+                "and": [
+                    {"property": date_prop, "date": {"on_or_before": str(week_start)}},
+                    {"property": date_prop, "date": {"on_or_after":  str(week_start)}},
+                ]
+            },
+            "sorts": [{"timestamp": "last_edited_time", "direction": "descending"}],
+            "page_size": 1,
+        })
+        if results:
+            return results[0]["id"]
+    except Exception:
+        pass
+
+    # Fallback: most recently edited page
+    try:
+        results = _query({
+            "sorts": [{"timestamp": "last_edited_time", "direction": "descending"}],
+            "page_size": 1,
+        })
+        if results:
+            print("[Notion] PowerZone date filter found nothing — using most recent page.")
+            return results[0]["id"]
+    except Exception as exc:
+        print(f"[Notion] Could not fetch PowerZone page: {exc}")
+
+    return None
+
+
+def _find_weekly_zone_summary_block_id(page_id: str) -> str | None:
+    for block in _iter_page_children(page_id):
+        if block.get("type") != "image":
+            continue
+        caption = block.get("image", {}).get("caption", [])
+        caption_text = "".join(p.get("plain_text", "") for p in caption).strip()
+        if caption_text == WEEKLY_ZONE_SUMMARY_CAPTION:
+            return block.get("id")
+    return None
+
+
+def _upsert_weekly_zone_summary_block(page_id: str, file_upload_id: str):
+    existing = _find_weekly_zone_summary_block_id(page_id)
+    if existing:
+        requests.delete(
+            f"{NOTION_API_BASE}/blocks/{existing}",
+            headers=_notion_headers(),
+            timeout=30,
+        ).raise_for_status()
+
+    requests.patch(
+        f"{NOTION_API_BASE}/blocks/{page_id}/children",
+        headers=_notion_headers(),
+        json={
+            "children": [
+                {
+                    "object": "block",
+                    "type": "image",
+                    "image": {
+                        "type": "file_upload",
+                        "file_upload": {"id": file_upload_id},
+                        "caption": [
+                            {"type": "text", "text": {"content": WEEKLY_ZONE_SUMMARY_CAPTION}}
+                        ],
+                    },
+                }
+            ]
+        },
+        timeout=30,
+    ).raise_for_status()
+
+
+def sync_weekly_zone_summary(week_start: date | None = None):
+    """
+    Generate the weekly combined zone distribution chart for Mon–Sun and attach
+    it to the PowerZone training block page in Notion.
+
+    week_start defaults to the most recently completed Monday.
+    """
+    if week_start is None:
+        today = date.today()
+        week_start = today - timedelta(days=today.weekday())
+        # If we're running on Sunday (weekday=6), current week is fine;
+        # if Monday (0), we want the week that just ended (previous Mon).
+        if today.weekday() == 0:
+            week_start -= timedelta(weeks=1)
+
+    if DRY_RUN:
+        print(f"[DRY RUN] Would generate weekly zone summary for week of {week_start}.")
+        return
+
+    graph = generate_weekly_zone_summary_graph(week_start)
+    if graph is None:
+        print(f"[Notion] No cycling data found for week of {week_start}; skipping weekly zone summary.")
+        return
+
+    powerzone_page_id = _fetch_powerzone_page_id_for_week(week_start)
+    if not powerzone_page_id:
+        print(f"[Notion] No PowerZone page found for week of {week_start}; skipping upload.")
+        return
+
+    file_upload_id = _upload_file_to_notion(Path(graph["output_path"]))
+    _upsert_weekly_zone_summary_block(powerzone_page_id, file_upload_id)
+    print(
+        f"[Notion] Attached weekly zone summary for {graph['week_start']}–{graph['week_end']} "
+        f"({graph['workout_count']} rides) to PowerZone page."
+    )
 
 
 # -------------------------------------------------------------------
