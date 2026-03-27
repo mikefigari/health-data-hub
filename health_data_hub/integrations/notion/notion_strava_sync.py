@@ -463,7 +463,9 @@ def _fetch_powerzone_page_id_for_week(week_start: date) -> str | None:
         resp.raise_for_status()
         return resp.json().get("results", [])
 
-    # Try: page whose date range includes week_start
+    # Find page whose week starts on week_start (Monday).
+    # Both conditions check the start date of the range property, so together they
+    # require start_date == week_start exactly.
     try:
         results = _query({
             "filter": {
@@ -472,22 +474,10 @@ def _fetch_powerzone_page_id_for_week(week_start: date) -> str | None:
                     {"property": date_prop, "date": {"on_or_after":  str(week_start)}},
                 ]
             },
-            "sorts": [{"timestamp": "last_edited_time", "direction": "descending"}],
+            "sorts": [{"property": date_prop, "direction": "descending"}],
             "page_size": 1,
         })
         if results:
-            return results[0]["id"]
-    except Exception:
-        pass
-
-    # Fallback: most recently edited page
-    try:
-        results = _query({
-            "sorts": [{"timestamp": "last_edited_time", "direction": "descending"}],
-            "page_size": 1,
-        })
-        if results:
-            print("[Notion] PowerZone date filter found nothing — using most recent page.")
             return results[0]["id"]
     except Exception as exc:
         print(f"[Notion] Could not fetch PowerZone page: {exc}")
