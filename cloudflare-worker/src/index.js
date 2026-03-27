@@ -1,0 +1,185 @@
+var __defProp = Object.defineProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+
+// src/index.js
+var NUTRITION_METRICS = {
+  // Apple Health internal identifiers
+  dietary_energy_consumed: "calories",
+  dietary_protein:         "protein_g",
+  dietary_carbohydrates:   "carbs_g",
+  dietary_fat_total:       "fat_g",
+  dietary_fiber:           "fiber_g",
+  // Health Auto Export display names (normalised to lowercase + underscores)
+  dietary_energy:          "calories",
+  active_energy:           "calories",
+  energy:                  "calories",
+  protein:                 "protein_g",
+  carbohydrates:           "carbs_g",
+  total_fat:               "fat_g",
+  fiber:                   "fiber_g",
+};
+var TTL_SECONDS = 30 * 24 * 60 * 60;
+
+function parseDate(dateStr) {
+  return dateStr.slice(0, 10);
+}
+__name(parseDate, "parseDate");
+
+function normaliseName(raw) {
+  return (raw || "").toLowerCase().replace(/[\s\-]+/g, "_");
+}
+__name(normaliseName, "normaliseName");
+
+function unauthorized() {
+  return new Response(JSON.stringify({ error: "unauthorized" }), {
+    status: 401,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+__name(unauthorized, "unauthorized");
+
+function checkAuth(request, env) {
+  const token = request.headers.get("X-Health-Token");
+  return token && token === env.HEALTH_TOKEN;
+}
+__name(checkAuth, "checkAuth");
+
+async function handlePost(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response(JSON.stringify({ error: "invalid json" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  // Accept both { data: { metrics: [...] } } and { metrics: [...] }
+  const metrics = body?.data?.metrics ?? body?.metrics;
+  if (!Array.isArray(metrics) || metrics.length === 0) {
+    return new Response(JSON.stringify({ error: "missing metrics" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  const values = {};
+  let date = null;
+
+  for (const metric of metrics) {
+    const entries = metric.data;
+    if (!Array.isArray(entries) || entries.length === 0) continue;
+    const entry = entries[0];
+
+    // Extract date from ANY metric that has a data point — not just nutrition ones
+    if (!date) {
+      const rawDate = entry.date || entry.startDate;
+      if (rawDate) date = parseDate(String(rawDate));
+    }
+
+    // Extract nutrition value if this metric is recognised
+    const field = NUTRITION_METRICS[normaliseName(metric.name)];
+    if (field && entry.qty != null) {
+      values[field] = entry.qty;
+    }
+  }
+
+  if (!date) {
+    return new Response(JSON.stringify({ error: "could not extract date from metrics" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  const record = {
+    date,
+    calories:    values.calories   ?? null,
+    protein_g:   values.protein_g  ?? null,
+    carbs_g:     values.carbs_g    ?? null,
+    fat_g:       values.fat_g      ?? null,
+    fiber_g:     values.fiber_g    ?? null,
+    received_at: new Date().toISOString(),
+    source:      "apple_health"
+  };
+
+  await env.NUTRITION_STORE.put(
+    `nutrition:${date}`,
+    JSON.stringify(record),
+    { expirationTtl: TTL_SECONDS }
+  );
+
+  return new Response(JSON.stringify({ status: "ok", date }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+__name(handlePost, "handlePost");
+
+async function handleGetByDate(date, env) {
+  const raw = await env.NUTRITION_STORE.get(`nutrition:${date}`);
+  if (!raw) {
+    return new Response(JSON.stringify({ error: "not found" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+  return new Response(raw, {
+    status: 200,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+__name(handleGetByDate, "handleGetByDate");
+
+async function handleGetLatest(env) {
+  const today = new Date();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const raw = await env.NUTRITION_STORE.get(`nutrition:${dateStr}`);
+    if (raw) {
+      return new Response(raw, {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  }
+  return new Response(JSON.stringify({ error: "not found" }), {
+    status: 404,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+__name(handleGetLatest, "handleGetLatest");
+
+var index_default = {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const path = url.pathname.replace(/\/$/, "");
+
+    if (!checkAuth(request, env)) {
+      return unauthorized();
+    }
+    if (request.method === "POST" && path === "/health") {
+      return handlePost(request, env);
+    }
+    if (request.method === "GET" && path === "/health/latest") {
+      return handleGetLatest(env);
+    }
+    const dateMatch = path.match(/^\/health\/(\d{4}-\d{2}-\d{2})$/);
+    if (request.method === "GET" && dateMatch) {
+      return handleGetByDate(dateMatch[1], env);
+    }
+    if (path === "/health" && request.method !== "POST") {
+      return new Response(JSON.stringify({ error: "method not allowed" }), {
+        status: 405,
+        headers: { "Content-Type": "application/json", Allow: "POST" }
+      });
+    }
+    return new Response(JSON.stringify({ error: "not found" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+};
+export { index_default as default };
