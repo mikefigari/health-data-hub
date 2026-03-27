@@ -564,7 +564,7 @@ def generate_weekly_zone_summary_graph(
 
     # ── Canvas ────────────────────────────────────────────────────────────────
     width = 1800
-    height = 900
+    height = 1060
     margin_left = 72
     margin_right = 72
 
