@@ -10,7 +10,6 @@ Workflow:
 
 import logging
 import time
-import traceback
 from datetime import datetime, timezone
 
 from health_data_hub.utils.db_connect import get_connection
@@ -29,10 +28,12 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 300  # 5 minutes
 
-# Circuit breaker — set to True after a StravaAuthError so subsequent poll
-# cycles skip silently instead of hammering Strava and spamming alerts.
-# Cleared only by restarting the process (i.e. after re-authorization).
-_auth_failed = False
+# Circuit breaker — records the Unix timestamp of the last StravaAuthError.
+# Subsequent poll cycles back off for _AUTH_BACKOFF_SECONDS before retrying.
+# Clears automatically on a successful token refresh (no service restart needed).
+# None means no failure has occurred.
+_auth_failed_at: float | None = None
+_AUTH_BACKOFF_SECONDS = 1800  # 30 minutes between retries after auth failure
 
 
 # -------------------------------------------------------------------
@@ -91,13 +92,22 @@ def get_last_synced_activity_time():
 # -------------------------------------------------------------------
 
 def poll_once():
-    global _auth_failed
+    global _auth_failed_at
 
-    # Circuit breaker: once auth has failed, stay silent until the service is
-    # restarted after re-authorization.  Avoids an email flood every 5 minutes.
-    if _auth_failed:
-        logger.debug("Strava poller suspended (auth failed — awaiting re-authorization).")
-        return
+    # Circuit breaker: back off for 30 minutes after a StravaAuthError, then
+    # retry automatically.  Clears on success so no service restart is needed
+    # if it was a transient Strava API blip.
+    if _auth_failed_at is not None:
+        elapsed = time.time() - _auth_failed_at
+        if elapsed < _AUTH_BACKOFF_SECONDS:
+            remaining = int(_AUTH_BACKOFF_SECONDS - elapsed)
+            logger.debug(
+                "Strava poller in auth backoff — retrying in %ds.", remaining
+            )
+            return
+        logger.info(
+            "Strava auth backoff elapsed (%.0fs) — retrying token refresh.", elapsed
+        )
 
     logger.info("=== Poll cycle start ===")
 
@@ -107,26 +117,35 @@ def poll_once():
     logger.info("Checking Strava OAuth token...")
     try:
         access_token = get_valid_access_token()
+        if _auth_failed_at is not None:
+            logger.info("Strava token refresh recovered after backoff — resuming normal polling.")
+            _auth_failed_at = None
     except StravaAuthError as e:
-        _auth_failed = True
+        first_failure = _auth_failed_at is None
+        _auth_failed_at = time.time()
         _write_sync_log("auth_error", error_message=str(e))
-        logger.critical(
-            "STRAVA AUTH FAILED — poller suspended until re-authorization. %s", e
-        )
-        send_alert(
-            subject="Strava auth failed — re-authorization required",
-            body=(
-                f"{e}\n\n"
-                "The Strava poller has suspended itself. No further alerts will be "
-                "sent until the service is restarted.\n\n"
-                "Re-authorize:\n"
-                "  cd ~/projects/health-data-hub\n"
-                "  HEALTH_ENV=prod python -m health_data_hub.etl.extract.strava_oauth\n\n"
-                "Then restart the service:\n"
-                "  sudo systemctl restart health-data-hub\n"
-            ),
-        )
-        return  # No point retrying; only a new OAuth flow will fix this
+        if first_failure:
+            logger.critical("STRAVA AUTH FAILED — backing off %ds before retry. %s",
+                            _AUTH_BACKOFF_SECONDS, e)
+            send_alert(
+                subject="Strava auth failed — re-authorization may be required",
+                body=(
+                    f"{e}\n\n"
+                    f"The poller will retry automatically every "
+                    f"{_AUTH_BACKOFF_SECONDS // 60} minutes.\n\n"
+                    "If retries keep failing, the refresh token is revoked and you\n"
+                    "need to re-authorize once (headlessly):\n\n"
+                    "  cd ~/projects/health-data-hub\n"
+                    "  HEALTH_ENV=prod python -m health_data_hub.etl.extract.strava_reauth_headless\n\n"
+                    "No further alerts will be sent during the backoff period."
+                ),
+            )
+        else:
+            logger.error(
+                "Strava auth still failing after backoff — next retry in %ds.",
+                _AUTH_BACKOFF_SECONDS,
+            )
+        return
     except Exception as e:
         _write_sync_log("error", error_message=f"Token refresh failed: {e}")
         raise

@@ -19,7 +19,7 @@ from health_data_hub.config.settings import (
 )
 
 TOKEN_URL = "https://www.strava.com/oauth/token"
-_EXPIRY_BUFFER_SECONDS = 300  # refresh if less than 5 min remaining
+_EXPIRY_BUFFER_SECONDS = 3600  # refresh if less than 60 min remaining
 _LOCK_FILE = TOKEN_FILE.with_suffix(".lock")
 
 _REAUTH_CMD = "HEALTH_ENV=prod python -m health_data_hub.etl.extract.strava_oauth"
@@ -73,11 +73,10 @@ def get_valid_access_token():
     """
     Return a valid Strava access token.
 
-    Reuses the stored token if it has more than 5 minutes remaining.
-    Only calls the Strava refresh endpoint when the token is expired
-    or about to expire. Strava tokens are valid for ~6 hours, so under
-    normal operation this refreshes roughly once every 6 hours instead
-    of on every 5-minute poll cycle.
+    Reuses the stored token if it has more than 60 minutes remaining.
+    Only calls the Strava refresh endpoint when the token is within an
+    hour of expiry. Refreshing proactively means a mid-poll expiry is
+    virtually impossible even if a poll cycle runs long.
 
     A file lock prevents two concurrent processes (e.g. a manual backfill
     running alongside the scheduler) from both refreshing simultaneously —
