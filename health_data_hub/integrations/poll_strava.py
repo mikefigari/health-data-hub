@@ -29,6 +29,11 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 300  # 5 minutes
 
+# Circuit breaker — set to True after a StravaAuthError so subsequent poll
+# cycles skip silently instead of hammering Strava and spamming alerts.
+# Cleared only by restarting the process (i.e. after re-authorization).
+_auth_failed = False
+
 
 # -------------------------------------------------------------------
 # Sync log
@@ -86,6 +91,14 @@ def get_last_synced_activity_time():
 # -------------------------------------------------------------------
 
 def poll_once():
+    global _auth_failed
+
+    # Circuit breaker: once auth has failed, stay silent until the service is
+    # restarted after re-authorization.  Avoids an email flood every 5 minutes.
+    if _auth_failed:
+        logger.debug("Strava poller suspended (auth failed — awaiting re-authorization).")
+        return
+
     logger.info("=== Poll cycle start ===")
 
     last_sync = get_last_synced_activity_time()
@@ -95,6 +108,7 @@ def poll_once():
     try:
         access_token = get_valid_access_token()
     except StravaAuthError as e:
+        _auth_failed = True
         _write_sync_log("auth_error", error_message=str(e))
         logger.critical(
             "STRAVA AUTH FAILED — poller suspended until re-authorization. %s", e
@@ -103,11 +117,13 @@ def poll_once():
             subject="Strava auth failed — re-authorization required",
             body=(
                 f"{e}\n\n"
-                "The Strava poller has suspended itself. No workout data will sync "
-                "until you re-authorize.\n\n"
+                "The Strava poller has suspended itself. No further alerts will be "
+                "sent until the service is restarted.\n\n"
                 "Re-authorize:\n"
                 "  cd ~/projects/health-data-hub\n"
-                "  HEALTH_ENV=prod python -m health_data_hub.etl.extract.strava_oauth\n"
+                "  HEALTH_ENV=prod python -m health_data_hub.etl.extract.strava_oauth\n\n"
+                "Then restart the service:\n"
+                "  sudo systemctl restart health-data-hub\n"
             ),
         )
         return  # No point retrying; only a new OAuth flow will fix this
