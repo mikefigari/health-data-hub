@@ -1,9 +1,8 @@
 """
 Apple Health nutrition poller.
 
-Polls GET {HEALTH_WORKER_URL}/latest every hour via scheduler_all.py.
-If the Worker returns a date not already in nutrition_daily, upserts
-the row and logs the result.
+Polls GET {HEALTH_WORKER_URL}/latest at 22:00 nightly via scheduler_all.py.
+Always upserts the latest nutrition row so end-of-day totals are captured.
 
 Exit behaviour (when run directly):
     0 — success (upserted, skipped, or no data yet)
@@ -26,14 +25,6 @@ from health_data_hub.etl.load.insert_nutrition_daily import insert_nutrition_dai
 from health_data_hub.utils.db_connect import get_connection
 
 logger = logging.getLogger(__name__)
-
-_CHECK_SQL = "SELECT 1 FROM nutrition_daily WHERE day = %s"
-
-
-def _date_in_db(conn, date_str: str) -> bool:
-    with conn.cursor() as cur:
-        cur.execute(_CHECK_SQL, (date_str,))
-        return cur.fetchone() is not None
 
 
 def poll_once() -> int:
@@ -66,10 +57,6 @@ def poll_once() -> int:
 
     conn = get_connection()
     try:
-        if _date_in_db(conn, date_str):
-            logger.info("Nutrition already present for %s — skipping", date_str)
-            return 0
-
         now_utc = datetime.now(timezone.utc)
         row = {
             "day":             date.fromisoformat(date_str),

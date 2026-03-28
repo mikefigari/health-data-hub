@@ -74,7 +74,7 @@ This report runs at 10:00. Data source notes:
     'estimated from TSS'               → TSS × 9.5 (rough estimate, unstructured ride)
     'athlete default (500 kJ — ...)'   → no ride data; 500 kJ default used
 
-TDEE is approximately 2800 kcal on rest days. Add energy_kj from CALORIE_CONTEXT
+TDEE is approximately 2300 kcal on rest days. Add energy_kj from CALORIE_CONTEXT
 to get gross TDEE on training days.
 
 You will receive: TODAY_DATA (PMC, physical_state, today's workouts/planned),
@@ -180,12 +180,12 @@ signal from this week's data. This is an observation, not an instruction.`;
 function buildDailyUserMessage(context) {
   const { todayRow, yesterdayRow, lastNightOura, last3Nights, calorieContext, dataGate } = context;
 
-  const gateJson      = JSON.stringify(dataGate                       ?? {},   null, 2);
-  const todayJson     = JSON.stringify(todayRow                       ?? {},   null, 2);
-  const lastNightJson = JSON.stringify(lastNightOura                  ?? {},   null, 2);
-  const ydayNutrJson  = JSON.stringify(yesterdayRow?.nutrition        ?? null, null, 2);
-  const last3Json     = JSON.stringify(last3Nights                    ?? [],   null, 2);
-  const ctxJson       = JSON.stringify(calorieContext,                          null, 2);
+  const gateJson = JSON.stringify(dataGate ?? {}, null, 2);
+  const todayJson = JSON.stringify(todayRow ?? {}, null, 2);
+  const lastNightJson = JSON.stringify(lastNightOura ?? {}, null, 2);
+  const ydayNutrJson = JSON.stringify(yesterdayRow?.nutrition ?? null, null, 2);
+  const last3Json = JSON.stringify(last3Nights ?? [], null, 2);
+  const ctxJson = JSON.stringify(calorieContext, null, 2);
 
   return (
     `DATA_GATE: ${gateJson}\n\n` +
@@ -200,9 +200,9 @@ function buildDailyUserMessage(context) {
 function buildWeeklyUserMessage(context) {
   const { days, windowSummary, deficitAdherenceStr, plannedNextWeek } = context;
 
-  const days14Json    = JSON.stringify(days         ?? [], null, 2);
-  const quarterJson   = JSON.stringify(windowSummary ?? null, null, 2);
-  const plannedJson   = JSON.stringify(plannedNextWeek ?? [], null, 2);
+  const days14Json = JSON.stringify(days ?? [], null, 2);
+  const quarterJson = JSON.stringify(windowSummary ?? null, null, 2);
+  const plannedJson = JSON.stringify(plannedNextWeek ?? [], null, 2);
 
   return (
     `LAST_14_DAYS: ${days14Json}\n\n` +
@@ -218,15 +218,15 @@ export async function analyzeHealth(context, mode) {
   const client = new Anthropic();
 
   const systemPrompt = mode === 'weekly' ? WEEKLY_SYSTEM_PROMPT : DAILY_SYSTEM_PROMPT;
-  const userMessage  = mode === 'weekly'
+  const userMessage = mode === 'weekly'
     ? buildWeeklyUserMessage(context)
     : buildDailyUserMessage(context);
 
   const response = await client.messages.create({
-    model:      'claude-opus-4-6',
+    model: 'claude-opus-4-6',
     max_tokens: mode === 'weekly' ? 1500 : 700,
-    system:     systemPrompt,
-    messages:   [{ role: 'user', content: userMessage }],
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userMessage }],
   });
 
   const text = response.content[0]?.text;

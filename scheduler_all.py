@@ -144,7 +144,7 @@ scheduler.add_job(
 scheduler.add_job(
     run_nutrition_poller,
     trigger="cron",
-    hour="6-23",
+    hour="22",
     minute=0,
     id="nutrition_poller",
     name="Nutrition poller",
@@ -164,7 +164,7 @@ scheduler.add_job(
 
 logger.info(
     "Unified scheduler starting — Strava every %d min, Oura every 30 min (5am-3pm), "
-    "Notion daily state every %d min (%02d:00-%02d:59), Nutrition poller hourly (6am-11pm PT), "
+    "Notion daily state every %d min (%02d:00-%02d:59), Nutrition poller nightly (10pm PT), "
     "Weekly power-zone summary Sundays 21:00",
     STRAVA_INTERVAL_MIN,
     NOTION_DAILY_STATE_POLL_INTERVAL_MIN,
