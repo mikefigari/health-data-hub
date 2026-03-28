@@ -9,7 +9,7 @@ workouts and samples that already exist.
 from datetime import datetime, timezone
 
 from health_data_hub.utils.db_connect import get_connection
-from health_data_hub.etl.extract.strava_refresh import refresh_access_token
+from health_data_hub.etl.extract.strava_refresh import get_valid_access_token
 from health_data_hub.etl.extract.strava_api import (
     get_all_strava_activities,
     get_activity_streams,
@@ -154,7 +154,7 @@ def backfill_all():
     and reuses it for all API calls.
     """
     print("Refreshing Strava token...")
-    access_token = refresh_access_token()
+    access_token = get_valid_access_token()
 
     print("Backfilling workout metadata...")
     backfill_metadata(access_token)

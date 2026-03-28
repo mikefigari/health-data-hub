@@ -52,8 +52,12 @@ class OAuthHandler(http.server.SimpleHTTPRequestHandler):
             print(f"[OAuth] Token exchange failed: {tokens}")
             return
 
-        with open(TOKEN_FILE, "w") as f:
+        temp_file = Path(str(TOKEN_FILE) + ".tmp")
+        with open(temp_file, "w") as f:
             json.dump(tokens, f, indent=4)
+            f.flush()
+            os.fsync(f.fileno())
+        temp_file.replace(TOKEN_FILE)
 
         self.send_response(200)
         self.end_headers()
