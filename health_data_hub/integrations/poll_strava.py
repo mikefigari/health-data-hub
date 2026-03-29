@@ -125,25 +125,23 @@ def poll_once():
         _auth_failed_at = time.time()
         _write_sync_log("auth_error", error_message=str(e))
         if first_failure:
-            logger.critical("STRAVA AUTH FAILED — backing off %ds before retry. %s",
-                            _AUTH_BACKOFF_SECONDS, e)
-            send_alert(
-                subject="Strava auth failed — re-authorization may be required",
-                body=(
-                    f"{e}\n\n"
-                    f"The poller will retry automatically every "
-                    f"{_AUTH_BACKOFF_SECONDS // 60} minutes.\n\n"
-                    "If retries keep failing, the refresh token is revoked and you\n"
-                    "need to re-authorize once (headlessly):\n\n"
-                    "  cd ~/projects/health-data-hub\n"
-                    "  HEALTH_ENV=prod python -m health_data_hub.etl.extract.strava_reauth_headless\n\n"
-                    "No further alerts will be sent during the backoff period."
-                ),
+            logger.warning(
+                "Strava auth failed (401) — backing off %ds before retry. "
+                "This may be a transient Strava API blip. %s",
+                _AUTH_BACKOFF_SECONDS, e,
             )
         else:
-            logger.error(
-                "Strava auth still failing after backoff — next retry in %ds.",
-                _AUTH_BACKOFF_SECONDS,
+            logger.critical("Strava auth still failing after backoff — poller suspended. %s", e)
+            send_alert(
+                subject="Strava poller suspended — re-authorization required",
+                body=(
+                    f"Auth has been failing for over {_AUTH_BACKOFF_SECONDS // 60} minutes.\n\n"
+                    f"{e}\n\n"
+                    "The poller will keep retrying automatically.\n\n"
+                    "If this persists, the refresh token may be revoked. Re-authorize:\n\n"
+                    "  cd ~/projects/health-data-hub\n"
+                    "  HEALTH_ENV=prod python -m health_data_hub.etl.extract.strava_reauth_headless\n"
+                ),
             )
         return
     except Exception as e:
