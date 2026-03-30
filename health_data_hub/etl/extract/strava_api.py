@@ -63,6 +63,17 @@ def get_all_strava_activities(access_token: str, after: int = None):
     return activities
 
 
+def get_activity(access_token: str, activity_id: int):
+    """Fetch full metadata for a single activity by ID."""
+    response = requests.get(
+        f"{BASE_URL}/activities/{activity_id}",
+        headers=_auth_headers(access_token),
+        timeout=30,
+    )
+    response.raise_for_status()
+    return _safe_json(response, f"Activity {activity_id}")
+
+
 def get_activity_streams(access_token: str, activity_id: int):
     """Fetch activity stream data."""
     response = requests.get(

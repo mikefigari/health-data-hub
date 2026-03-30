@@ -59,6 +59,18 @@ STRAVA_CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
 STRAVA_REDIRECT_URI = os.getenv("STRAVA_REDIRECT_URI")
 STRAVA_SCOPE = os.getenv("STRAVA_SCOPE")
 
+# Strava webhook push API
+# STRAVA_WEBHOOK_VERIFY_TOKEN  — arbitrary secret you choose; must match what you register
+#                                with Strava's subscriptions API (and what the Cloudflare
+#                                Worker sends when forwarding events to the Pi)
+# STRAVA_WEBHOOK_PORT          — local port for the webhook HTTP receiver (default: 8765)
+# STRAVA_PUBLIC_WEBHOOK_URL    — public HTTPS URL Strava will POST events to; can be the
+#                                Cloudflare Worker URL (/strava/webhook) which forwards to
+#                                the Pi, or a cloudflared tunnel that exposes port 8765
+STRAVA_WEBHOOK_VERIFY_TOKEN = os.getenv("STRAVA_WEBHOOK_VERIFY_TOKEN", "")
+STRAVA_WEBHOOK_PORT = int(os.getenv("STRAVA_WEBHOOK_PORT", "8765"))
+STRAVA_PUBLIC_WEBHOOK_URL = os.getenv("STRAVA_PUBLIC_WEBHOOK_URL", "")
+
 
 # -------------------------------------------------------------
 # Notion API Configuration

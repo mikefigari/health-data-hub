@@ -1,5 +1,10 @@
 """
-Poll Strava every X minutes for new activities.
+Strava fallback poller — catches activities missed by the webhook receiver.
+
+Real-time processing is handled by strava_webhook.py, which reacts to Strava
+push events within seconds.  This poller runs every 60 minutes as a backstop
+in case a webhook event was lost (e.g. during a service restart or a transient
+network gap between Strava and the Cloudflare Worker).
 
 Workflow:
     1. Insert into workouts_raw
@@ -26,14 +31,17 @@ from health_data_hub.integrations.notion.notion_strava_sync import sync_specific
 
 logger = logging.getLogger(__name__)
 
-POLL_INTERVAL = 300  # 5 minutes
+POLL_INTERVAL = 3600  # 60 minutes (backstop; real-time handled by webhook receiver)
 
 # Circuit breaker — records the Unix timestamp of the last StravaAuthError.
 # Subsequent poll cycles back off for _AUTH_BACKOFF_SECONDS before retrying.
 # Clears automatically on a successful token refresh (no service restart needed).
 # None means no failure has occurred.
 _auth_failed_at: float | None = None
-_AUTH_BACKOFF_SECONDS = 1800  # 30 minutes between retries after auth failure
+_AUTH_BACKOFF_SECONDS = 21600  # 6 hours between retries after auth failure (matches Strava token lifetime)
+
+_POLL_HOUR_START = 6   # earliest hour to run the fallback poller (inclusive)
+_POLL_HOUR_END   = 22  # hour at which polling stops (exclusive, i.e. last poll is 21:xx)
 
 
 # -------------------------------------------------------------------
@@ -94,6 +102,17 @@ def get_last_synced_activity_time():
 def poll_once():
     global _auth_failed_at
 
+    # Time-of-day gate: no workouts happen overnight, so skip the token refresh
+    # and API call entirely.  The webhook handles real-time; this poller is just
+    # a backstop for events missed during 6am–10pm.
+    current_hour = datetime.now().hour
+    if not (_POLL_HOUR_START <= current_hour < _POLL_HOUR_END):
+        logger.debug(
+            "Strava fallback poller: outside active hours (%02d:00–%02d:00), skipping.",
+            _POLL_HOUR_START, _POLL_HOUR_END,
+        )
+        return
+
     # Circuit breaker: back off for 30 minutes after a StravaAuthError, then
     # retry automatically.  Clears on success so no service restart is needed
     # if it was a transient Strava API blip.
@@ -135,7 +154,7 @@ def poll_once():
             send_alert(
                 subject="Strava poller suspended — re-authorization required",
                 body=(
-                    f"Auth has been failing for over {_AUTH_BACKOFF_SECONDS // 60} minutes.\n\n"
+                    f"Auth has been failing for over {_AUTH_BACKOFF_SECONDS // 3600} hours.\n\n"
                     f"{e}\n\n"
                     "The poller will keep retrying automatically.\n\n"
                     "If this persists, the refresh token may be revoked. Re-authorize:\n\n"

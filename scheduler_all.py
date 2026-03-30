@@ -6,13 +6,17 @@ managed by systemd. Replaces the separate scheduler.py (Strava) and
 run_oura_scheduler.bat (Oura) used on the Windows main PC.
 
 Jobs:
-    - Strava:              every 5 minutes (configurable via STRAVA_POLL_INTERVAL_MIN)
+    - Strava webhook:      HTTP receiver on STRAVA_WEBHOOK_PORT (default 8765), started at
+                           launch in a background thread; handles real-time activity events
+    - Strava poll:         every 60 minutes (configurable via STRAVA_POLL_INTERVAL_MIN),
+                           backstop only — catches any events missed by the webhook
     - Oura:                every 30 minutes, 5 AM – 3 PM
     - Notion Daily State:  every 30 minutes, 5 AM – 11 PM (configurable)
     - Nutrition poller:    every hour, 6 AM – 11 PM PT
 
 Environment variables (set in dev.env / prod.env):
-    STRAVA_POLL_INTERVAL_MIN                Minutes between Strava polls (default: 5)
+    STRAVA_POLL_INTERVAL_MIN                Minutes between Strava fallback polls (default: 60)
+    STRAVA_WEBHOOK_PORT                     Port for local webhook receiver (default: 8765)
     NOTION_DAILY_STATE_POLL_INTERVAL_MIN    Minutes between Notion Daily State polls (default: 30)
     NOTION_DAILY_STATE_POLL_START_HOUR      Start hour for Notion Daily State polling, 0-23 (default: 5)
     NOTION_DAILY_STATE_POLL_END_HOUR        End hour for Notion Daily State polling, 0-23 (default: 23)
@@ -34,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from health_data_hub.integrations.poll_strava import poll_once
+from health_data_hub.integrations.strava_webhook import start_webhook_server
 from health_data_hub.integrations.oura.poll_oura import poll_oura
 from health_data_hub.integrations.notion.poll_notion_daily_state import poll_notion_daily_state
 from health_data_hub.integrations.apple_health.nutrition_poller import poll_once as poll_nutrition
@@ -43,7 +48,7 @@ from health_data_hub.integrations.notion.notion_strava_sync import sync_weekly_z
 # Configuration
 # -------------------------------------------------------------------
 
-STRAVA_INTERVAL_MIN = int(os.getenv("STRAVA_POLL_INTERVAL_MIN", "5"))
+STRAVA_INTERVAL_MIN = int(os.getenv("STRAVA_POLL_INTERVAL_MIN", "60"))
 NOTION_DAILY_STATE_POLL_INTERVAL_MIN = int(os.getenv("NOTION_DAILY_STATE_POLL_INTERVAL_MIN", "30"))
 NOTION_DAILY_STATE_POLL_START_HOUR = int(os.getenv("NOTION_DAILY_STATE_POLL_START_HOUR", "5"))
 NOTION_DAILY_STATE_POLL_END_HOUR = int(os.getenv("NOTION_DAILY_STATE_POLL_END_HOUR", "23"))
@@ -117,7 +122,7 @@ scheduler.add_job(
     trigger="interval",
     minutes=STRAVA_INTERVAL_MIN,
     id="strava_poller",
-    name="Strava poller",
+    name="Strava fallback poller",
     max_instances=1,  # prevent overlap if a poll runs long
 )
 
@@ -162,10 +167,14 @@ scheduler.add_job(
     max_instances=1,
 )
 
+start_webhook_server()
+
 logger.info(
-    "Unified scheduler starting — Strava every %d min, Oura every 30 min (5am-3pm), "
+    "Unified scheduler starting — Strava webhook on port %s, "
+    "Strava fallback poll every %d min, Oura every 30 min (5am-3pm), "
     "Notion daily state every %d min (%02d:00-%02d:59), Nutrition poller nightly (10pm PT), "
     "Weekly power-zone summary Sundays 21:00",
+    os.getenv("STRAVA_WEBHOOK_PORT", "8765"),
     STRAVA_INTERVAL_MIN,
     NOTION_DAILY_STATE_POLL_INTERVAL_MIN,
     NOTION_DAILY_STATE_POLL_START_HOUR,

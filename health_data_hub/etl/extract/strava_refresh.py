@@ -111,11 +111,25 @@ def _get_valid_access_token_locked():
         "refresh_token": refresh_token,
     }
 
-    response = requests.post(TOKEN_URL, data=payload, timeout=30)
+    _MAX_REFRESH_RETRIES = 3
+    _REFRESH_RETRY_DELAY = 10  # seconds between retries on transient 401
+
+    response = None
+    for attempt in range(1, _MAX_REFRESH_RETRIES + 1):
+        response = requests.post(TOKEN_URL, data=payload, timeout=30)
+        if response.status_code != 401:
+            break
+        if attempt < _MAX_REFRESH_RETRIES:
+            print(
+                f"[Token] 401 on refresh attempt {attempt}/{_MAX_REFRESH_RETRIES}, "
+                f"retrying in {_REFRESH_RETRY_DELAY}s..."
+            )
+            time.sleep(_REFRESH_RETRY_DELAY)
+
     if response.status_code == 401:
         raise StravaAuthError(
-            f"Strava refresh token rejected (401) — OAuth re-authorization required. "
-            f"Run: {_REAUTH_CMD}"
+            f"Strava refresh token rejected (401) after {_MAX_REFRESH_RETRIES} attempts — "
+            f"OAuth re-authorization required. Run: {_REAUTH_CMD}"
         )
     response.raise_for_status()
 

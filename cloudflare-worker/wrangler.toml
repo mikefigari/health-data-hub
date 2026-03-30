@@ -2,6 +2,12 @@ name = "health-worker"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
 
+workers_dev = true
+
+routes = [
+  { pattern = "health.michaelfigari.com/*", zone_name = "michaelfigari.com" }
+]
+
 [[kv_namespaces]]
 binding = "NUTRITION_STORE"
 id = "cc6ba232afda4072b8ea22bf85f7b116"        # paste your KV namespace ID from the Cloudflare dashboard
@@ -9,3 +15,9 @@ preview_id = ""
 
 # HEALTH_TOKEN is set as a secret via: wrangler secret put HEALTH_TOKEN
 # Do NOT put the token value here.
+
+# Strava webhook secrets (set via: wrangler secret put <NAME>):
+#   STRAVA_WEBHOOK_VERIFY_TOKEN  — must match STRAVA_WEBHOOK_VERIFY_TOKEN in prod.env
+#   PI_WEBHOOK_URL               — internal URL of the Pi's webhook receiver, e.g.
+#                                  https://<your-tunnel>.trycloudflare.com/webhook
+#                                  Set up via: cloudflared tunnel --url http://localhost:8765

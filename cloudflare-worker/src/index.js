@@ -152,10 +152,70 @@ async function handleGetLatest(env) {
 }
 __name(handleGetLatest, "handleGetLatest");
 
+// ---------------------------------------------------------------------------
+// Strava webhook routes
+// These are unauthenticated — Strava manages its own auth via verify_token.
+// ---------------------------------------------------------------------------
+
+async function handleStravaWebhookGet(url, env) {
+  // Strava calls GET /strava/webhook?hub.mode=subscribe&hub.challenge=...&hub.verify_token=...
+  // to validate the subscription. Echo the challenge if the verify_token matches.
+  const mode      = url.searchParams.get("hub.mode");
+  const challenge = url.searchParams.get("hub.challenge");
+  const token     = url.searchParams.get("hub.verify_token");
+
+  if (mode === "subscribe" && challenge && token === env.STRAVA_WEBHOOK_VERIFY_TOKEN) {
+    return new Response(JSON.stringify({ "hub.challenge": challenge }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  return new Response(JSON.stringify({ error: "forbidden" }), {
+    status: 403,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+__name(handleStravaWebhookGet, "handleStravaWebhookGet");
+
+async function handleStravaWebhookPost(request, env, ctx) {
+  // Strava POSTs activity events here. Forward to the Pi's local webhook
+  // receiver (reachable via a cloudflared tunnel or port-forward configured
+  // as PI_WEBHOOK_URL in Worker secrets), then immediately return 200 so
+  // Strava does not retry. Processing happens asynchronously on the Pi.
+  const body = await request.text();
+
+  if (env.PI_WEBHOOK_URL) {
+    ctx.waitUntil(
+      fetch(env.PI_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      }).catch((err) => console.error("Strava webhook forward failed:", String(err)))
+    );
+  }
+
+  return new Response("OK", { status: 200 });
+}
+__name(handleStravaWebhookPost, "handleStravaWebhookPost");
+
+// ---------------------------------------------------------------------------
+// Main fetch handler
+// ---------------------------------------------------------------------------
+
 var index_default = {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/$/, "");
+
+    // Strava webhook — must come before checkAuth (Strava doesn't send X-Health-Token)
+    if (path === "/strava/webhook") {
+      if (request.method === "GET")  return handleStravaWebhookGet(url, env);
+      if (request.method === "POST") return handleStravaWebhookPost(request, env, ctx);
+      return new Response(JSON.stringify({ error: "method not allowed" }), {
+        status: 405,
+        headers: { "Content-Type": "application/json", Allow: "GET, POST" },
+      });
+    }
 
     if (!checkAuth(request, env)) {
       return unauthorized();
