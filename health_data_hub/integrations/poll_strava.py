@@ -113,7 +113,7 @@ def poll_once():
         )
         return
 
-    # Circuit breaker: back off for 30 minutes after a StravaAuthError, then
+    # Circuit breaker: back off for 6 hours after a StravaAuthError, then
     # retry automatically.  Clears on success so no service restart is needed
     # if it was a transient Strava API blip.
     if _auth_failed_at is not None:

@@ -9,6 +9,7 @@ and only calls the Strava refresh endpoint when the token is within
 import fcntl
 import json
 import os
+import threading
 import time
 import requests
 
@@ -21,6 +22,7 @@ from health_data_hub.config.settings import (
 TOKEN_URL = "https://www.strava.com/oauth/token"
 _EXPIRY_BUFFER_SECONDS = 3600  # refresh if less than 60 min remaining
 _LOCK_FILE = TOKEN_FILE.with_suffix(".lock")
+_threading_lock = threading.Lock()  # intra-process serialization (fcntl only covers inter-process)
 
 _REAUTH_CMD = "HEALTH_ENV=prod python -m health_data_hub.etl.extract.strava_oauth"
 
@@ -78,14 +80,18 @@ def get_valid_access_token():
     hour of expiry. Refreshing proactively means a mid-poll expiry is
     virtually impossible even if a poll cycle runs long.
 
-    A file lock prevents two concurrent processes (e.g. a manual backfill
-    running alongside the scheduler) from both refreshing simultaneously —
-    which would cause Strava to reject the second call because its refresh
-    token was already rotated by the first.
+    Two locks are used in combination:
+    - threading.Lock (_threading_lock): serializes callers within the same
+      process (e.g. the APScheduler poller thread and a webhook handler
+      thread both attempting refresh at the same instant).
+    - fcntl.LOCK_EX: serializes callers across separate processes (e.g. a
+      manual backfill running alongside the scheduler).
+    Both are needed: fcntl alone does not protect threads within a process.
     """
-    with open(_LOCK_FILE, "w") as _lock:
-        fcntl.flock(_lock, fcntl.LOCK_EX)
-        return _get_valid_access_token_locked()
+    with _threading_lock:
+        with open(_LOCK_FILE, "w") as _lock:
+            fcntl.flock(_lock, fcntl.LOCK_EX)
+            return _get_valid_access_token_locked()
 
 
 def _get_valid_access_token_locked():
@@ -111,8 +117,8 @@ def _get_valid_access_token_locked():
         "refresh_token": refresh_token,
     }
 
-    _MAX_REFRESH_RETRIES = 3
-    _REFRESH_RETRY_DELAY = 10  # seconds between retries on transient 401
+    _MAX_REFRESH_RETRIES = 5
+    _REFRESH_RETRY_DELAYS = [10, 20, 40, 80]  # seconds; exponential backoff, ~2.5 min total
 
     response = None
     for attempt in range(1, _MAX_REFRESH_RETRIES + 1):
@@ -120,11 +126,12 @@ def _get_valid_access_token_locked():
         if response.status_code != 401:
             break
         if attempt < _MAX_REFRESH_RETRIES:
+            delay = _REFRESH_RETRY_DELAYS[attempt - 1]
             print(
                 f"[Token] 401 on refresh attempt {attempt}/{_MAX_REFRESH_RETRIES}, "
-                f"retrying in {_REFRESH_RETRY_DELAY}s..."
+                f"retrying in {delay}s..."
             )
-            time.sleep(_REFRESH_RETRY_DELAY)
+            time.sleep(delay)
 
     if response.status_code == 401:
         raise StravaAuthError(

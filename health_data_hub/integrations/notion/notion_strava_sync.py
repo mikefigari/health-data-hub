@@ -227,7 +227,6 @@ def _sync_power_zone_cover(page_id: str, workout_id: int):
         return
 
     file_upload_id = _upload_file_to_notion(Path(graph["output_path"]))
-    _set_page_cover(page_id, file_upload_id)
     _upsert_power_zone_graph_block(page_id, file_upload_id)
     print(f"[Notion] Attached power-zone graph to workout {workout_id}")
 
