@@ -13,7 +13,7 @@ const TDEE_BASELINE        = 2800;
 const DEFAULT_RIDE_KJ      = 500;
 
 function isoToday() {
-  return new Date().toISOString().slice(0, 10);
+  return process.env.REPORT_DATE || new Date().toISOString().slice(0, 10);
 }
 
 function addDays(isoDate, n) {
