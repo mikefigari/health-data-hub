@@ -7,7 +7,8 @@
  */
 
 import { Client as NotionClient } from '@notionhq/client';
-import { exportDays, getLastStravaSyncStatus } from './db.mjs';
+import { exportDays, getLastStravaSyncStatus, getHrvBaseline, getLastRecordedWeight } from './db.mjs';
+import { fetchTodayWorkout } from './fetchCalendarWorkout.mjs';
 
 const TDEE_BASELINE        = 2800;
 const DEFAULT_RIDE_KJ      = 500;
@@ -126,7 +127,7 @@ async function fetchPowerZonePage(targetDate) {
 
     if (response.results.length > 0) {
       const page = response.results[0];
-      return { id: page.id, name: extractPageTitle(page) };
+      return { id: page.id, name: extractPageTitle(page), startDate: extractDateStart(page, dateProp) };
     }
   } catch {
     // Date-range filter may have failed (e.g. wrong property name) — fall through
@@ -143,7 +144,7 @@ async function fetchPowerZonePage(targetDate) {
     if (response.results.length > 0) {
       const page = response.results[0];
       console.warn('[warn] PowerZone date filter failed — using most recent page as fallback');
-      return { id: page.id, name: extractPageTitle(page) };
+      return { id: page.id, name: extractPageTitle(page), startDate: extractDateStart(page, dateProp) };
     }
   } catch (err) {
     console.warn(`[warn] Could not fetch PowerZone page: ${err.message}`);
@@ -155,6 +156,11 @@ async function fetchPowerZonePage(targetDate) {
 function extractPageTitle(page) {
   const titleProp = Object.values(page.properties || {}).find(p => p.type === 'title');
   return titleProp?.title?.[0]?.plain_text ?? 'Unknown Block';
+}
+
+function extractDateStart(page, propName) {
+  const prop = page.properties?.[propName];
+  return prop?.date?.start ?? null;
 }
 
 // ── Data gate ─────────────────────────────────────────────────────────────
@@ -253,6 +259,98 @@ function computeDailyCalorieContext(todayRow, yesterdayRow) {
   return { energy_kj, kj_source, estTdee, calories, protein_g, deficit };
 }
 
+// ── Coaching variable derivations ─────────────────────────────────────────
+
+/**
+ * Maps Oura r_hrv_balance (0-100) to low/normal/high.
+ * Falls back to comparing sleep avg_hrv against a rolling baseline if the
+ * readiness score is missing.
+ */
+function deriveHrvCategory(readiness, sleep, hrvBaseline) {
+  const balance = readiness?.r_hrv_balance;
+  if (balance != null) {
+    if (balance >= 80) return 'high';
+    if (balance >= 60) return 'normal';
+    return 'low';
+  }
+  // Fallback: compare avg_hrv from sleep against 30-day baseline
+  const hrv = sleep?.avg_hrv ?? sleep?.sleep_avg_hrv;
+  if (hrv != null && hrvBaseline != null) {
+    const pct = (hrv - hrvBaseline) / hrvBaseline;
+    if (pct >= 0.15)  return 'high';
+    if (pct <= -0.15) return 'low';
+    return 'normal';
+  }
+  return 'unavailable';
+}
+
+/**
+ * Maps Oura sleep metrics to a 1-5 scale where 3 = typical disrupted night.
+ * Based on total sleep duration and efficiency.
+ */
+function deriveSleepScore(sleep) {
+  if (!sleep) return 'unavailable';
+  const hours = (sleep.total_sleep_sec ?? 0) / 3600;
+  const eff   = sleep.efficiency ?? 0;
+  if (hours === 0) return 'unavailable';
+  if (hours >= 6 && eff >= 85) return 5;
+  if (hours >= 5 && eff >= 80) return 4;
+  if (hours >= 4)              return 3;
+  if (hours >= 3 || eff < 70)  return 2;
+  return 1;
+}
+
+/**
+ * Derives the "feeling good" flag from today's physical state energy_level.
+ * "yes" is a caution signal (risk of overextension), not a green light.
+ */
+function deriveFeelingGoodFlag(physicalState) {
+  const level = physicalState?.energy_level?.toLowerCase() ?? '';
+  if (['high', 'great', 'excellent', 'very high'].includes(level)) return 'yes';
+  return 'no';
+}
+
+/**
+ * Combines physical state notes and body_signals into a single string.
+ */
+function deriveNotes(physicalState) {
+  const notes   = physicalState?.notes ?? '';
+  const signals = Array.isArray(physicalState?.body_signals)
+    ? physicalState.body_signals.join(', ')
+    : (physicalState?.body_signals ?? '');
+  const parts = [notes, signals].filter(Boolean);
+  return parts.length ? parts.join(' | ') : 'none';
+}
+
+/**
+ * Aggregates all TODAY'S VARIABLES values from available data sources.
+ */
+function deriveCoachingVars({ yesterdayRow, todayRow, calendarWorkout, hrvBaseline, lastWeight }) {
+  const sleep    = yesterdayRow?.sleep     ?? {};
+  const readiness= yesterdayRow?.readiness ?? {};
+  const physState= todayRow?.physical_state ?? {};
+  const nutrition= yesterdayRow?.nutrition ?? {};
+  const workouts = yesterdayRow?.workouts  ?? [];
+
+  const tssTotal = workouts.reduce((s, w) => s + (w?.tss ?? 0), 0);
+
+  const weight = todayRow?.nutrition?.weight_kg
+    ?? yesterdayRow?.nutrition?.weight_kg
+    ?? lastWeight;
+
+  return {
+    plannedWorkout:  calendarWorkout?.title ?? 'not available',
+    hrvCategory:     deriveHrvCategory(readiness, sleep, hrvBaseline),
+    sleepScore:      deriveSleepScore(sleep),
+    tss:             tssTotal > 0 ? Math.round(tssTotal) : 'rest',
+    calories:        nutrition.calories    != null ? Math.round(nutrition.calories)  : 'not logged',
+    protein:         nutrition.protein_g   != null ? Math.round(nutrition.protein_g) : 'not logged',
+    weight:          weight != null ? weight : 'not logged',
+    feelingGood:     deriveFeelingGoodFlag(physState),
+    notes:           deriveNotes(physState),
+  };
+}
+
 // ── Main export ───────────────────────────────────────────────────────────
 
 export async function buildDailyContext() {
@@ -284,7 +382,11 @@ export async function buildDailyContext() {
     readiness: yesterdayRow?.readiness ?? null,
   };
 
-  const lastStravaSync = await getLastStravaSyncStatus(4);
+  const [lastStravaSync, hrvBaseline, lastWeight] = await Promise.all([
+    getLastStravaSyncStatus(4),
+    getHrvBaseline(30),
+    getLastRecordedWeight(),
+  ]);
   const calorieContext = computeDailyCalorieContext(todayRow, yesterdayRow);
   const dataGate       = buildDataGate(todayRow, yesterdayRow, lastStravaSync);
 
@@ -302,12 +404,21 @@ export async function buildDailyContext() {
     }
   }
 
-  // Notion fetches (in parallel — failures are warned, not thrown)
-  const [workoutPageIds, dpsPageId, powerZone] = await Promise.all([
+  // Notion + calendar fetches (in parallel — failures are warned, not thrown)
+  const [workoutPageIds, dpsPageId, powerZone, calendarWorkout] = await Promise.all([
     fetchWorkoutPageIds(today),
     fetchDpsPageId(today),
     fetchPowerZonePage(today),
+    fetchTodayWorkout(process.env.ICS_CALENDAR_URL, today),
   ]);
+
+  const coachingVars = deriveCoachingVars({
+    yesterdayRow,
+    todayRow,
+    calendarWorkout,
+    hrvBaseline,
+    lastWeight,
+  });
 
   return {
     mode:             'daily',
@@ -320,8 +431,9 @@ export async function buildDailyContext() {
     lastNightOura,
     calorieContext,
     dataGate,
+    coachingVars,
     notionRefs: {
-      powerZone,                           // { id, name } | null
+      powerZone,                           // { id, name, startDate } | null
       dpsPageId,                           // string | null
       workoutPageIds,                      // string[]
     },

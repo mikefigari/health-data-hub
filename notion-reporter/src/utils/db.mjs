@@ -236,6 +236,46 @@ ORDER BY d.day DESC;
 `;
 
 /**
+ * Return the most recently recorded body weight from nutrition_daily.
+ * Returns null if no weight has ever been logged.
+ */
+export async function getLastRecordedWeight() {
+  try {
+    const rows = await queryRows(
+      `SELECT weight_kg FROM nutrition_daily
+       WHERE weight_kg IS NOT NULL
+       ORDER BY day DESC
+       LIMIT 1`,
+    );
+    return rows[0]?.weight_kg != null ? parseFloat(rows[0].weight_kg) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Return the 30-day rolling average HRV (avg_hrv from long_sleep sessions).
+ * Used as a personal baseline for classifying today's HRV as low/normal/high.
+ * Returns null if insufficient data.
+ */
+export async function getHrvBaseline(days = 30) {
+  try {
+    const rows = await queryRows(
+      `SELECT AVG(avg_hrv)::numeric(5,1) AS baseline
+       FROM oura_sleep_raw
+       WHERE day >= CURRENT_DATE - ($1 || ' days')::interval
+         AND avg_hrv IS NOT NULL
+         AND raw_json->>'type' = 'long_sleep'`,
+      [days],
+    );
+    const val = rows[0]?.baseline;
+    return val != null ? parseFloat(val) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Return the most recent strava_sync_log entry within the last `windowHours` hours.
  * Returns null if the table doesn't exist or no rows are found.
  */

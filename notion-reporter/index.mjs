@@ -139,12 +139,6 @@ async function run() {
     return;
   }
 
-  // ── Daily: Claude analysis disabled pending prompt rewrite ──────────
-  if (mode === 'daily') {
-    console.log('[daily] Claude analysis disabled — prompt under revision. Exiting.');
-    return;
-  }
-
   // ── Claude analysis ──────────────────────────────────────────────────
   console.log('Context assembled. Calling Claude...');
   const analysis = await analyzeHealth(context, mode);
@@ -162,16 +156,28 @@ async function run() {
 
 // Lazy-import prompt builders (avoids loading Anthropic SDK in dry-run path)
 async function importPromptBuilders() {
-  // Expose internal builders for dry-run inspection
+  const { analyzeHealth: _analyze, ...rest } = await import('./src/anthropic/analyzeHealth.mjs');
+  void rest;
   return {
-    buildDailyUserMessage: ctx => JSON.stringify({
-      data_gate:           ctx.dataGate,
-      today:               ctx.todayRow,
-      last_night_oura:     ctx.lastNightOura,
-      yesterday_nutrition: ctx.yesterdayRow?.nutrition ?? null,
-      last3Nights:         ctx.last3Nights,
-      calorie_context:     ctx.calorieContext,
-    }, null, 2),
+    buildDailyUserMessage: ctx => {
+      const v = ctx.coachingVars ?? {};
+      return [
+        'TODAY\'S VARIABLES (as will be sent to Claude):',
+        '',
+        `  Planned workout:           ${v.plannedWorkout ?? 'not available'}`,
+        `  HRV vs baseline:           ${v.hrvCategory ?? 'unavailable'}`,
+        `  Sleep last night:          ${v.sleepScore ?? 'unavailable'} / 5`,
+        `  Yesterday's TSS:           ${v.tss ?? 'rest'}`,
+        `  Calories yesterday:        ${v.calories ?? 'not logged'}`,
+        `  Protein yesterday:         ${v.protein != null ? v.protein + 'g' : 'not logged'}`,
+        `  Weight this morning:       ${v.weight != null ? v.weight + 'kg' : 'not logged'}`,
+        `  Feeling good flag:         ${v.feelingGood ?? 'no'}`,
+        `  Notes:                     ${v.notes ?? 'none'}`,
+        '',
+        'Data gate:',
+        JSON.stringify(ctx.dataGate, null, 2),
+      ].join('\n');
+    },
     buildWeeklyUserMessage: ctx => JSON.stringify({
       last14Days:       ctx.days,
       quarterSummary:   ctx.windowSummary,

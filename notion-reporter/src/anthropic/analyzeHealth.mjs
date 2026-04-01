@@ -6,6 +6,12 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { join, dirname } from 'path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PROMPT_MD_PATH = join(__dirname, '..', '..', '..', 'prompt.md');
 
 // ── System prompts ────────────────────────────────────────────────────────
 // NOTE: Daily prompt disabled pending rewrite — only weekly is active.
@@ -178,11 +184,43 @@ or vice versa — be specific about what the numbers suggest.
 One paragraph. Synthesise all three dimensions into the single most important
 signal from this week's data. This is an observation, not an instruction.`;
 
-// ── User message builders ─────────────────────────────────────────────────
+// ── Daily coaching prompt builder ─────────────────────────────────────────
 
-/* buildDailyUserMessage — disabled with daily prompt
-function buildDailyUserMessage(context) { ... }
-*/
+/**
+ * Reads prompt.md and replaces the TODAY'S VARIABLES section with live data.
+ * Returns the filled-in text as the system prompt for the coaching session.
+ */
+function buildCoachingSystemPrompt(context) {
+  const template = readFileSync(PROMPT_MD_PATH, 'utf8');
+  const v = context.coachingVars ?? {};
+
+  const filledVars = [
+    `════════════════════════════════════`,
+    `TODAY'S VARIABLES (filled in daily)`,
+    `════════════════════════════════════`,
+    `- Planned workout: ${v.plannedWorkout ?? 'not available'}`,
+    `- HRV vs your baseline: ${v.hrvCategory ?? 'unavailable'}`,
+    `- Sleep last night: ${v.sleepScore ?? 'unavailable'} (1-5, where 3 = typical disrupted night)`,
+    `- Yesterday's TSS or ride time: ${v.tss ?? 'rest'}`,
+    `- Calories yesterday: ${v.calories ?? 'not logged'}`,
+    `- Protein yesterday: ${v.protein != null ? v.protein + 'g' : 'not logged'}`,
+    `- Weight this morning: ${v.weight != null ? v.weight + 'kg' : 'not logged'}`,
+    `- Feeling good flag: ${v.feelingGood ?? 'no'}`,
+    `  → If yes, this is a caution signal, not a green light`,
+    `- Notes: ${v.notes ?? 'none'}`,
+  ].join('\n');
+
+  // Replace the TODAY'S VARIABLES section (between the two ════ delimiters
+  // that wrap it) with the filled-in version.
+  const sectionRegex = /════+\nTODAY'S VARIABLES \(filled in daily\)\n════+[\s\S]*?(?=\n════)/;
+  if (!sectionRegex.test(template)) {
+    console.warn("[coaching] Could not find TODAY'S VARIABLES section in prompt.md — appending vars");
+    return template + '\n\n' + filledVars;
+  }
+  return template.replace(sectionRegex, filledVars);
+}
+
+// ── User message builders ─────────────────────────────────────────────────
 
 function buildWeeklyUserMessage(context) {
   const { days, windowSummary, deficitAdherenceStr, plannedNextWeek } = context;
@@ -204,13 +242,22 @@ function buildWeeklyUserMessage(context) {
 export async function analyzeHealth(context, mode) {
   const client = new Anthropic();
 
-  if (mode !== 'weekly') throw new Error('analyzeHealth: daily mode disabled — prompt under revision');
+  let systemPrompt, userMessage, model;
 
-  const systemPrompt = WEEKLY_SYSTEM_PROMPT;
-  const userMessage = buildWeeklyUserMessage(context);
+  if (mode === 'daily') {
+    systemPrompt = buildCoachingSystemPrompt(context);
+    userMessage  = 'Please give me today\'s coaching brief.';
+    model        = 'claude-sonnet-4-6';
+  } else if (mode === 'weekly') {
+    systemPrompt = WEEKLY_SYSTEM_PROMPT;
+    userMessage  = buildWeeklyUserMessage(context);
+    model        = 'claude-opus-4-6';
+  } else {
+    throw new Error(`analyzeHealth: unknown mode "${mode}"`);
+  }
 
   const response = await client.messages.create({
-    model: 'claude-opus-4-6',
+    model,
     max_tokens: 1500,
     system: systemPrompt,
     messages: [{ role: 'user', content: userMessage }],
