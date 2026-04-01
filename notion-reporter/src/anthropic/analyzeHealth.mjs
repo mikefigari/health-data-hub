@@ -7,8 +7,10 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 
-// ── System prompts (mirroring morning_briefing.py / weekly_plan.py) ────────
+// ── System prompts ────────────────────────────────────────────────────────
+// NOTE: Daily prompt disabled pending rewrite — only weekly is active.
 
+/* DAILY PROMPT (commented out)
 const DATA_GATE_PREAMBLE = `\
 DATA AVAILABILITY RULES — read data_gate before writing any section:
 
@@ -113,6 +115,7 @@ Render this table using CALORIE_CONTEXT values:
 If kj_source contains 'no ride data', add the line: "Ride not yet recorded — using
 athlete default of 500 kJ for planning."
 Note if today's planned TSS is significantly higher or lower than recent days.`;
+*/ // end DAILY PROMPT
 
 const WEEKLY_SYSTEM_PROMPT = `\
 You are a weekly data analyst for an endurance athlete losing 27kg while
@@ -177,25 +180,9 @@ signal from this week's data. This is an observation, not an instruction.`;
 
 // ── User message builders ─────────────────────────────────────────────────
 
-function buildDailyUserMessage(context) {
-  const { todayRow, yesterdayRow, lastNightOura, last3Nights, calorieContext, dataGate } = context;
-
-  const gateJson = JSON.stringify(dataGate ?? {}, null, 2);
-  const todayJson = JSON.stringify(todayRow ?? {}, null, 2);
-  const lastNightJson = JSON.stringify(lastNightOura ?? {}, null, 2);
-  const ydayNutrJson = JSON.stringify(yesterdayRow?.nutrition ?? null, null, 2);
-  const last3Json = JSON.stringify(last3Nights ?? [], null, 2);
-  const ctxJson = JSON.stringify(calorieContext, null, 2);
-
-  return (
-    `DATA_GATE: ${gateJson}\n\n` +
-    `TODAY_DATA: ${todayJson}\n\n` +
-    `LAST_NIGHT_OURA: ${lastNightJson}\n\n` +
-    `YESTERDAY_NUTRITION: ${ydayNutrJson}\n\n` +
-    `LAST_3_NIGHTS_SLEEP: ${last3Json}\n\n` +
-    `CALORIE_CONTEXT: ${ctxJson}`
-  );
-}
+/* buildDailyUserMessage — disabled with daily prompt
+function buildDailyUserMessage(context) { ... }
+*/
 
 function buildWeeklyUserMessage(context) {
   const { days, windowSummary, deficitAdherenceStr, plannedNextWeek } = context;
@@ -217,14 +204,14 @@ function buildWeeklyUserMessage(context) {
 export async function analyzeHealth(context, mode) {
   const client = new Anthropic();
 
-  const systemPrompt = mode === 'weekly' ? WEEKLY_SYSTEM_PROMPT : DAILY_SYSTEM_PROMPT;
-  const userMessage = mode === 'weekly'
-    ? buildWeeklyUserMessage(context)
-    : buildDailyUserMessage(context);
+  if (mode !== 'weekly') throw new Error('analyzeHealth: daily mode disabled — prompt under revision');
+
+  const systemPrompt = WEEKLY_SYSTEM_PROMPT;
+  const userMessage = buildWeeklyUserMessage(context);
 
   const response = await client.messages.create({
     model: 'claude-opus-4-6',
-    max_tokens: mode === 'weekly' ? 1500 : 700,
+    max_tokens: 1500,
     system: systemPrompt,
     messages: [{ role: 'user', content: userMessage }],
   });

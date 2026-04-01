@@ -349,11 +349,11 @@ def upsert_workout(notion: Client, database_id: str, row: dict):
         page_id = created["id"]
         print(f"Created workout {workout_id}: {name}")
 
-    if page_id and _is_cycling_workout(row):
-        try:
-            _sync_power_zone_cover(page_id, workout_id)
-        except Exception as exc:
-            print(f"[Notion] Power-zone graph upload failed for workout {workout_id}: {exc}")
+    # if page_id and _is_cycling_workout(row):
+    #     try:
+    #         _sync_power_zone_cover(page_id, workout_id)
+    #     except Exception as exc:
+    #         print(f"[Notion] Power-zone graph upload failed for workout {workout_id}: {exc}")
 
     return page_id
 

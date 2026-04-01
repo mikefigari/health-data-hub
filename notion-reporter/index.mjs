@@ -139,6 +139,12 @@ async function run() {
     return;
   }
 
+  // ── Daily: Claude analysis disabled pending prompt rewrite ──────────
+  if (mode === 'daily') {
+    console.log('[daily] Claude analysis disabled — prompt under revision. Exiting.');
+    return;
+  }
+
   // ── Claude analysis ──────────────────────────────────────────────────
   console.log('Context assembled. Calling Claude...');
   const analysis = await analyzeHealth(context, mode);
