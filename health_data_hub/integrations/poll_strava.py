@@ -33,12 +33,12 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 3600  # 60 minutes (backstop; real-time handled by webhook receiver)
 
-# Circuit breaker — records the Unix timestamp of the last StravaAuthError.
-# Subsequent poll cycles back off for _AUTH_BACKOFF_SECONDS before retrying.
-# Clears automatically on a successful token refresh (no service restart needed).
-# None means no failure has occurred.
-_auth_failed_at: float | None = None
-_AUTH_BACKOFF_SECONDS = 21600  # 6 hours between retries after auth failure (matches Strava token lifetime)
+# Consecutive-failure counter — incremented each poll cycle that gets a StravaAuthError,
+# reset to 0 on any successful token refresh.  An alert is sent once this reaches
+# _ALERT_THRESHOLD, meaning Strava auth has been failing for roughly that many hours.
+# A single transient 401 just waits for the next poll cycle — no backoff, no lockout.
+_consecutive_auth_failures: int = 0
+_ALERT_THRESHOLD = 4  # alert after ~4 consecutive hourly failures (~4 hours)
 
 _POLL_HOUR_START = 6   # earliest hour to run the fallback poller (inclusive)
 _POLL_HOUR_END   = 22  # hour at which polling stops (exclusive, i.e. last poll is 21:xx)
@@ -100,33 +100,7 @@ def get_last_synced_activity_time():
 # -------------------------------------------------------------------
 
 def poll_once():
-    global _auth_failed_at
-
-    # Time-of-day gate: no workouts happen overnight, so skip the token refresh
-    # and API call entirely.  The webhook handles real-time; this poller is just
-    # a backstop for events missed during 6am–10pm.
-    current_hour = datetime.now().hour
-    if not (_POLL_HOUR_START <= current_hour < _POLL_HOUR_END):
-        logger.debug(
-            "Strava fallback poller: outside active hours (%02d:00–%02d:00), skipping.",
-            _POLL_HOUR_START, _POLL_HOUR_END,
-        )
-        return
-
-    # Circuit breaker: back off for 6 hours after a StravaAuthError, then
-    # retry automatically.  Clears on success so no service restart is needed
-    # if it was a transient Strava API blip.
-    if _auth_failed_at is not None:
-        elapsed = time.time() - _auth_failed_at
-        if elapsed < _AUTH_BACKOFF_SECONDS:
-            remaining = int(_AUTH_BACKOFF_SECONDS - elapsed)
-            logger.debug(
-                "Strava poller in auth backoff — retrying in %ds.", remaining
-            )
-            return
-        logger.info(
-            "Strava auth backoff elapsed (%.0fs) — retrying token refresh.", elapsed
-        )
+    global _consecutive_auth_failures
 
     logger.info("=== Poll cycle start ===")
 
@@ -136,36 +110,70 @@ def poll_once():
     logger.info("Checking Strava OAuth token...")
     try:
         access_token = get_valid_access_token()
-        if _auth_failed_at is not None:
-            logger.info("Strava token refresh recovered after backoff — resuming normal polling.")
-            _auth_failed_at = None
-    except StravaAuthError as e:
-        first_failure = _auth_failed_at is None
-        _auth_failed_at = time.time()
-        _write_sync_log("auth_error", error_message=str(e))
-        if first_failure:
-            logger.warning(
-                "Strava auth failed (401) — backing off %ds before retry. "
-                "This may be a transient Strava API blip. %s",
-                _AUTH_BACKOFF_SECONDS, e,
+        if _consecutive_auth_failures > 0:
+            logger.info(
+                "Strava token refresh recovered after %d consecutive failure(s) — resuming normal polling.",
+                _consecutive_auth_failures,
             )
-        else:
-            logger.critical("Strava auth still failing after backoff — poller suspended. %s", e)
+            _consecutive_auth_failures = 0
+    except StravaAuthError as e:
+        _consecutive_auth_failures += 1
+        _write_sync_log("auth_error", error_message=str(e))
+        logger.warning(
+            "Strava auth failed (401) — consecutive failures: %d. "
+            "Will retry next poll cycle (~60 min). %s",
+            _consecutive_auth_failures, e,
+        )
+        if _consecutive_auth_failures >= _ALERT_THRESHOLD:
+            logger.critical(
+                "Strava auth has been failing for %d+ consecutive poll cycles — sending alert.",
+                _consecutive_auth_failures,
+            )
             send_alert(
-                subject="Strava poller suspended — re-authorization required",
+                subject="Strava auth failing — action may be required",
                 body=(
-                    f"Auth has been failing for over {_AUTH_BACKOFF_SECONDS // 3600} hours.\n\n"
-                    f"{e}\n\n"
-                    "The poller will keep retrying automatically.\n\n"
-                    "If this persists, the refresh token may be revoked. Re-authorize:\n\n"
+                    f"Strava token refresh has failed {_consecutive_auth_failures} consecutive times "
+                    f"(~{_consecutive_auth_failures} hours).\n\n"
+                    f"Error: {e}\n\n"
+                    "The poller is still retrying automatically every hour.\n\n"
+                    "--- Step 1: Test the refresh token manually ---\n\n"
+                    "  ssh mike@raspberrypi\n"
                     "  cd ~/projects/health-data-hub\n"
+                    "  source .venv/bin/activate\n"
+                    "  HEALTH_ENV=prod python3 -c \"\n"
+                    "  import json, requests\n"
+                    "  from health_data_hub.config.settings import STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, TOKEN_FILE\n"
+                    "  tok = json.load(open(TOKEN_FILE))\n"
+                    "  r = requests.post('https://www.strava.com/oauth/token', data={\n"
+                    "    'client_id': STRAVA_CLIENT_ID, 'client_secret': STRAVA_CLIENT_SECRET,\n"
+                    "    'grant_type': 'refresh_token', 'refresh_token': tok['refresh_token'],\n"
+                    "  }, timeout=30)\n"
+                    "  print(r.status_code, r.text[:200])\"\n\n"
+                    "If that returns 200: Strava had a transient outage — the service will self-heal.\n"
+                    "If that returns 401: the client_secret in prod.env may be wrong, or the refresh\n"
+                    "  token was revoked (e.g. you re-authorized the app on another device).\n\n"
+                    "--- Step 2: Only if Step 1 returns 401 ---\n\n"
+                    "Re-authorize from the Pi:\n"
                     "  HEALTH_ENV=prod python -m health_data_hub.etl.extract.strava_reauth_headless\n"
+                    "  sudo systemctl restart health-data-hub\n"
                 ),
             )
         return
     except Exception as e:
         _write_sync_log("error", error_message=f"Token refresh failed: {e}")
         raise
+
+    # Time-of-day gate: no workouts happen overnight, so skip the activity
+    # fetch entirely.  The webhook handles real-time; this poller is just
+    # a backstop for events missed during 6am–10pm.  Token refresh above runs
+    # unconditionally so the token never expires unattended overnight.
+    current_hour = datetime.now().hour
+    if not (_POLL_HOUR_START <= current_hour < _POLL_HOUR_END):
+        logger.debug(
+            "Strava fallback poller: outside active hours (%02d:00–%02d:00), skipping activity fetch.",
+            _POLL_HOUR_START, _POLL_HOUR_END,
+        )
+        return
 
     logger.info("Fetching recent activities...")
     try:
