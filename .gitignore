@@ -243,3 +243,12 @@ health_data_hub/config/oura_tokens.json
 health_data_hub/config/mfp_cookies.txt
 
 promp_example.md
+
+# Claude Code project instructions (local only)
+CLAUDE.md
+
+# Local test files
+tests/
+
+# Downloaded binaries
+*.deb

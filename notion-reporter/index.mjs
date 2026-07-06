@@ -39,6 +39,7 @@ import { closePool }          from './src/utils/db.mjs';
 const mode = process.env.REPORT_MODE || 'daily';
 const DAILY_RETRY_INTERVAL_MIN = Number(process.env.DAILY_RETRY_INTERVAL_MIN || '30');
 const DAILY_RETRY_ENABLED = String(process.env.DAILY_RETRY_ENABLED || 'true').toLowerCase() !== 'false';
+const DAILY_RETRY_MAX_ATTEMPTS = Number(process.env.DAILY_RETRY_MAX_ATTEMPTS || '16'); // 16 × 30 min = 8 h max
 const DAILY_REQUIRED_SOURCES = (process.env.DAILY_REQUIRED_SOURCES || 'oura_sleep,oura_readiness,nutrition,pmc,physical_state')
   .split(',')
   .map(s => s.trim())
@@ -84,15 +85,18 @@ async function buildDailyContextWithGate() {
       `[data_gate] Incomplete daily data (attempt ${attempt}) — missing required: ${missingText}; strava_sync_ok: ${stravaSyncOk}`,
     );
 
-    if (!DAILY_RETRY_ENABLED) {
+    if (!DAILY_RETRY_ENABLED || attempt >= DAILY_RETRY_MAX_ATTEMPTS) {
+      const reason = !DAILY_RETRY_ENABLED
+        ? 'retries disabled'
+        : `max attempts (${DAILY_RETRY_MAX_ATTEMPTS}) reached`;
       const err = new Error(
-        `Daily report skipped: missing required sources (${missingText}) or unhealthy Strava sync.`,
+        `Daily report skipped: missing required sources (${missingText}) — ${reason}.`,
       );
       err.code = 'INCOMPLETE_DAILY_DATA';
       throw err;
     }
 
-    console.log(`[retry] Waiting ${DAILY_RETRY_INTERVAL_MIN} minutes before retrying daily context...`);
+    console.log(`[retry] Waiting ${DAILY_RETRY_INTERVAL_MIN} minutes before retrying daily context... (attempt ${attempt}/${DAILY_RETRY_MAX_ATTEMPTS})`);
     await sleep(DAILY_RETRY_INTERVAL_MIN * 60 * 1000);
     attempt += 1;
   }

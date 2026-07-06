@@ -362,3 +362,27 @@ LEFT JOIN training  t ON t.day = d.day
 LEFT JOIN sleep     s ON s.day = d.day
 LEFT JOIN readiness r ON r.day = d.day
 ORDER BY d.day;
+
+-- ------------------------------------------------------------
+-- Monitoring: quality check run history
+-- Created automatically by storage.save_report() on first use.
+-- Included here so init_db.py also provisions it on fresh installs.
+-- ------------------------------------------------------------
+CREATE SCHEMA IF NOT EXISTS monitoring;
+
+CREATE TABLE IF NOT EXISTS monitoring.quality_check_runs (
+    id            SERIAL PRIMARY KEY,
+    run_id        UUID        NOT NULL,
+    run_at        TIMESTAMPTZ NOT NULL,
+    check_name    TEXT        NOT NULL,
+    severity      TEXT        NOT NULL,   -- 'warn' | 'error'
+    passed        BOOLEAN     NOT NULL,
+    message       TEXT,
+    rows_affected INT         DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_qcr_run_at
+    ON monitoring.quality_check_runs (run_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_qcr_check_name
+    ON monitoring.quality_check_runs (check_name, run_at DESC);
