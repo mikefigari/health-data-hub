@@ -247,6 +247,9 @@ promp_example.md
 # Claude Code project instructions (local only)
 CLAUDE.md
 
+# Personal AI coaching prompt — contains private health data
+prompt.md
+
 # Local test files
 tests/
 
