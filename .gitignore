@@ -224,6 +224,10 @@ logs/
 notion-reporter/.env
 notion-reporter/node_modules/
 
+# health-mcp
+health-mcp/node_modules/
+health-mcp/.env
+
 # Project-specific ignores
 config/*.env
 config/strava_tokens.json
