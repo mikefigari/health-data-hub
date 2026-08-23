@@ -1,0 +1,93 @@
+# Claude Code Prompt: Habits [DB] Inference Sync
+
+Paste this into a Claude Code session on the Pi, inside the `health-data-hub` repo.
+
+---
+
+## Context
+
+I have an existing pipeline called `health-data-hub` running as a systemd service
+(`scheduler_all.py`) on this Raspberry Pi. It already pulls data from Oura (sleep)
+and Strava (cycling activities) into PostgreSQL, and already has a working Notion
+API integration (used for posting to my Health Intelligence database).
+
+I want to add ONE new scheduled task to this existing pipeline — not a new tool,
+not a new service, not n8n, not Airflow. Just a new Python module that plugs into
+the existing scheduler, using the existing Postgres connection and existing Notion
+API credentials.
+
+## Goal
+
+Once daily (run this after both Oura and Strava data have typically synced —
+default to 7:00 AM local, but check what time `scheduler_all.py` already runs its
+other daily jobs and match that cadence if there's an existing pattern), the new
+task should:
+
+1. **Query Postgres for last night's sleep duration** from whichever table
+   currently stores Oura sleep data (inspect the existing schema — do not assume
+   a table/column name, find it).
+2. **Query Postgres for today's cycling activity** from whichever table currently
+   stores Strava/cycling activities (same — inspect first).
+3. **Find today's page in the Notion "Habits [DB]"** database
+   (`https://app.notion.com/p/00e9d126d8874f9a8e2e296957a597b8`,
+   data source `collection://a3077459-c306-4efe-b783-078b0afdb1f1`). Match on the
+   `Day` title property or `Created time`, whichever the existing Notion
+   integration code already uses elsewhere in this repo for daily page lookups.
+   If no page exists for today, create one using the database's default page
+   template.
+4. **Update these properties only if they are not already checked `true`:**
+   - `🚴‍♂️Cycling` → `true` if a cycling activity exists for today
+   - `💤 8hrs of sleep` → `true` if sleep duration ≥ 8 hours
+   - `Source` → `"inferred"`
+   - `Entry Confidence` → `"certain"` if sleep ≥ 8.25 hrs, otherwise
+     `"approximate"` if sleep is between 7.75–8.0 hrs (borderline). Cycling
+     inference is always `"certain"` since it's a binary activity-exists check.
+5. **Idempotency / safety rule:** If a checkbox is already `true` (set manually
+   or by voice earlier in the day), do NOT touch it or overwrite its `Source`/
+   `Entry Confidence` — only write to properties that are currently `false` or
+   empty. Never set a checked box back to `false`.
+6. **Logging:** Log what it inferred and wrote, using whatever logging pattern
+   the rest of `scheduler_all.py` already uses (don't introduce a new logging
+   library if one is already in place).
+
+## What NOT to do
+
+- Do not install or recommend n8n, Airflow, or any new orchestration tool —
+  this must run inside the existing `scheduler_all.py` process/scheduling
+  mechanism.
+- Do not create new Postgres tables — read from what already exists.
+- Do not touch the Habits [DB] `Weight`, `Progress`, `Push Ups > [DB]`,
+  `Rollup`, or manual-only habits (Meditation, Stretch, Journaling, Water,
+  YNAB, Log Meals, Strength Train) — those stay manual/voice-only for now and
+  are out of scope for this task.
+- Do not add any paid service, API, or subscription of any kind.
+
+## Steps
+
+1. Inspect the existing repo structure, `scheduler_all.py`, and the Postgres
+   schema (tables for Oura sleep and Strava/cycling) before writing any code.
+2. Inspect the existing Notion API integration code in this repo (there should
+   already be a working pattern for writing/updating Notion pages from a
+   previous task) and reuse its auth/client setup rather than writing a new one.
+3. Write the new module (e.g. `habits_inference_sync.py`) following the
+   existing code style and error-handling conventions in this repo.
+4. Wire it into `scheduler_all.py` on the appropriate daily cadence.
+5. Add a dry-run mode (env var, e.g. `HABITS_SYNC_DRY_RUN=true`) that logs what
+   it *would* write without calling the Notion API, so I can validate before
+   going live.
+6. Tell me exactly which Postgres tables/columns it ended up using and which
+   existing Notion helper functions it reused, so I can sanity-check against
+   what I know about my own schema.
+7. Run in dry-run mode first and show me the output before switching to live.
+
+## Notion property reference (for exact-match writes)
+
+Checkbox values: use `"__YES__"` for true, `"__NO__"` for false (or leave null).
+
+```
+🚴‍♂️Cycling        -> checkbox
+💤 8hrs of sleep    -> checkbox
+Source              -> select: "manual" | "voice" | "inferred"
+Entry Confidence    -> select: "certain" | "approximate"
+Day                 -> title (existing daily pages already have this set)
+```

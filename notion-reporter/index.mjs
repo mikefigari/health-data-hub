@@ -102,9 +102,18 @@ async function buildDailyContextWithGate() {
   }
 }
 
+// Daily coaching brief paused while training/logging habits are being rebuilt.
+// Resume by deleting this block once consistent tracking is back in place.
+const DAILY_PAUSED_UNTIL = '2026-07-31';
+
 async function run() {
   if (!['daily', 'weekly', 'dry'].includes(mode)) {
     throw new Error(`Unknown REPORT_MODE: "${mode}". Expected daily | weekly | dry`);
+  }
+
+  if (mode === 'daily' && new Date().toISOString().slice(0, 10) < DAILY_PAUSED_UNTIL) {
+    console.log(`\n[${new Date().toISOString()}] Daily report paused until ${DAILY_PAUSED_UNTIL} — skipping.`);
+    return;
   }
 
   console.log(`\n[${new Date().toISOString()}] Running ${mode} health intelligence report...`);
