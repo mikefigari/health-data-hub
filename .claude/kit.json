@@ -1,0 +1,42 @@
+{
+  "baseBranch": "main",
+  "commands": {
+    "test": "venv/Scripts/python -m pytest -q",
+    "lint": "",
+    "typecheck": "",
+    "build": ""
+  },
+  "doneWhenDefault": "venv/Scripts/python -m pytest -q",
+  "protectedPaths": [
+    "(^|/)o?auth[^/]*$",
+    "(^|/)o?auth/",
+    "(^|/)migrations?/",
+    "(^|/)db/",
+    "(^|/)\\.env",
+    "(^|/)secrets?/",
+    "^\\.github/",
+    "(^|/)Dockerfile$",
+    "(^|/)docker-compose[^/]*$",
+    "^infra/",
+    "^\\.claude/",
+    "(^|/)[^/]*\\.env[^/]*$",
+    "(^|/)[^/]*tokens?[^/]*.json$"
+  ],
+  "maxDiffLines": 400,
+  "bookkeepingFiles": [
+    "PLAN.md",
+    "LESSONS.md",
+    "RUNLOG.md"
+  ],
+  "notifyUrlEnv": "KIT_NOTIFY_URL",
+  "maxFixCycles": 2,
+  "gateMaxBlocks": 3,
+  "gateTimeout": 600,
+  "orchModel": "sonnet",
+  "reviewModel": "opus",
+  "orchMaxTurns": 400,
+  "reviewMaxTurns": 80,
+  "backoffStart": 900,
+  "backoffMax": 18000,
+  "maxLimitWaits": 8
+}
