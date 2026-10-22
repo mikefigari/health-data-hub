@@ -12,7 +12,8 @@ Jobs:
                            backstop only — catches any events missed by the webhook
     - Oura:                every 30 minutes, 5 AM – 3 PM
     - Notion Daily State:  every 30 minutes, 5 AM – 11 PM (configurable)
-    - Nutrition poller:    every hour, 6 AM – 11 PM PT
+    - Nutrition poller:    nightly at 22:00 (10 PM PT)
+    - Body measurements:   hourly at :20, 6 AM – 11 PM PT (Renpho weigh-ins via Health Auto Export)
 
 Environment variables (set in dev.env / prod.env):
     STRAVA_POLL_INTERVAL_MIN                Minutes between Strava fallback polls (default: 60)
@@ -42,6 +43,7 @@ from health_data_hub.integrations.strava_webhook import start_webhook_server
 from health_data_hub.integrations.oura.poll_oura import poll_oura
 from health_data_hub.integrations.notion.poll_notion_daily_state import poll_notion_daily_state
 from health_data_hub.integrations.apple_health.nutrition_poller import poll_once as poll_nutrition
+from health_data_hub.integrations.apple_health.body_poller import poll_once as poll_body
 from health_data_hub.integrations.notion.notion_strava_sync import sync_weekly_zone_summary
 
 # -------------------------------------------------------------------
@@ -104,6 +106,15 @@ def run_nutrition_poller():
         logger.error("Nutrition poll cycle failed", exc_info=True)
 
 
+def run_body_poller():
+    try:
+        exit_code = poll_body()
+        if exit_code != 0:
+            logger.warning("Body measurements poll completed with errors (exit_code=%d)", exit_code)
+    except Exception:
+        logger.error("Body measurements poll cycle failed", exc_info=True)
+
+
 def run_weekly_powerzone_summary():
     try:
         sync_weekly_zone_summary()
@@ -157,6 +168,16 @@ scheduler.add_job(
 )
 
 scheduler.add_job(
+    run_body_poller,
+    trigger="cron",
+    hour="6-23",
+    minute=20,
+    id="body_poller",
+    name="Body measurements poller",
+    max_instances=1,
+)
+
+scheduler.add_job(
     run_weekly_powerzone_summary,
     trigger="cron",
     day_of_week="sun",
@@ -173,6 +194,7 @@ logger.info(
     "Unified scheduler starting — Strava webhook on port %s, "
     "Strava fallback poll every %d min, Oura every 30 min (5am-3pm), "
     "Notion daily state every %d min (%02d:00-%02d:59), Nutrition poller nightly (10pm PT), "
+    "Body measurements poller hourly at :20 (6am-11pm), "
     "Weekly power-zone summary Sundays 21:00",
     os.getenv("STRAVA_WEBHOOK_PORT", "8765"),
     STRAVA_INTERVAL_MIN,
