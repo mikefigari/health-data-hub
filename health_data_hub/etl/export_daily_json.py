@@ -147,6 +147,11 @@ nutrition AS (
     FROM nutrition_daily
     WHERE day BETWEEN %(start_date)s AND %(end_date)s
 ),
+body AS (
+    SELECT day, weight_kg
+    FROM body_weight_daily
+    WHERE day BETWEEN %(start_date)s AND %(end_date)s
+),
 planned AS (
     SELECT
         planned_date AS day,
@@ -266,7 +271,7 @@ SELECT
         'sodium_mg',      nu.sodium_mg,
         'goal_calories',  nu.goal_calories,
         'logged_complete', nu.logged_complete,
-        'weight_kg',      nu.weight_kg
+        'weight_kg',      COALESCE(bw.weight_kg, nu.weight_kg)
     ) AS nutrition,
     json_build_object('ctl', pm.ctl, 'atl', pm.atl, 'tsb', pm.tsb) AS performance_management,
     COALESCE(pl.planned_workouts, '[]'::json) AS planned_workouts
@@ -278,6 +283,7 @@ LEFT JOIN hr_agg      hr ON hr.sleep_id = sl.sleep_id
 LEFT JOIN workouts    wo ON wo.day      = d.day
 LEFT JOIN phys        ph ON ph.day      = d.day
 LEFT JOIN nutrition   nu ON nu.day      = d.day
+LEFT JOIN body        bw ON bw.day      = d.day
 LEFT JOIN pmc         pm ON pm.day      = d.day
 LEFT JOIN planned     pl ON pl.day      = d.day
 ORDER BY d.day DESC;

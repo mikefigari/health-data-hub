@@ -153,6 +153,99 @@ async function handleGetLatest(env) {
 __name(handleGetLatest, "handleGetLatest");
 
 // ---------------------------------------------------------------------------
+// Body measurement routes (Renpho -> Apple Health -> Health Auto Export)
+// Payloads are stored raw; all parsing happens in Python on the Pi.
+// ---------------------------------------------------------------------------
+
+var BODY_PREFIX = "body:";
+var BODY_MAX_BYTES = 20 * 1024 * 1024;
+var BODY_DEFAULT_LOOKBACK_DAYS = 10;
+
+function jsonResponse(obj, status) {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+__name(jsonResponse, "jsonResponse");
+
+async function handleBodyPost(request, env) {
+  const contentLength = Number(request.headers.get("Content-Length") || 0);
+  if (contentLength > BODY_MAX_BYTES) {
+    return jsonResponse({ error: "payload too large" }, 413);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: "invalid json" }, 400);
+  }
+
+  // Accept both { data: { metrics: [...] } } and { metrics: [...] }
+  const metrics = body?.data?.metrics ?? body?.metrics;
+  if (!Array.isArray(metrics) || metrics.length === 0) {
+    return jsonResponse({ error: "missing metrics" }, 400);
+  }
+
+  const kept = metrics.filter((m) => Array.isArray(m?.data) && m.data.length > 0);
+  if (kept.length === 0) {
+    return jsonResponse({ status: "ok", stored: 0 }, 200);
+  }
+
+  const received_at = new Date().toISOString();
+  const key = `${BODY_PREFIX}${received_at}:${crypto.randomUUID().slice(0, 8)}`;
+  await env.NUTRITION_STORE.put(
+    key,
+    JSON.stringify({ received_at, metrics: kept }),
+    { expirationTtl: TTL_SECONDS }
+  );
+
+  return jsonResponse({ status: "ok", stored: kept.length, key }, 200);
+}
+__name(handleBodyPost, "handleBodyPost");
+
+async function handleBodyGet(url, env) {
+  let since = url.searchParams.get("since");
+  if (since === null || since === "") {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - BODY_DEFAULT_LOOKBACK_DAYS);
+    since = d.toISOString().slice(0, 10);
+  } else if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) {
+    return jsonResponse({ error: "invalid since, expected YYYY-MM-DD" }, 400);
+  }
+
+  const lowerBound = `${BODY_PREFIX}${since}`;
+  const names = [];
+  let cursor;
+  let page;
+  do {
+    page = await env.NUTRITION_STORE.list({ prefix: BODY_PREFIX, cursor });
+    for (const k of page.keys) {
+      if (k.name >= lowerBound) names.push(k.name);
+    }
+    cursor = page.cursor;
+  } while (!page.list_complete);
+
+  names.sort();
+  const payloads = [];
+  for (const name of names) {
+    const raw = await env.NUTRITION_STORE.get(name);
+    if (!raw) continue; // expired between list and get
+    let value;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    payloads.push({ key: name, received_at: value.received_at, metrics: value.metrics });
+  }
+
+  return jsonResponse({ payloads }, 200);
+}
+__name(handleBodyGet, "handleBodyGet");
+
+// ---------------------------------------------------------------------------
 // Strava webhook routes
 // These are unauthenticated — Strava manages its own auth via verify_token.
 // ---------------------------------------------------------------------------
@@ -225,6 +318,12 @@ var index_default = {
     }
     if (request.method === "GET" && path === "/health/latest") {
       return handleGetLatest(env);
+    }
+    if (request.method === "POST" && path === "/health/body") {
+      return handleBodyPost(request, env);
+    }
+    if (request.method === "GET" && path === "/health/body") {
+      return handleBodyGet(url, env);
     }
     const dateMatch = path.match(/^\/health\/(\d{4}-\d{2}-\d{2})$/);
     if (request.method === "GET" && dateMatch) {

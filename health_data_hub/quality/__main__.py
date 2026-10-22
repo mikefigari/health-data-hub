@@ -26,7 +26,7 @@ from .alerts import send_quality_alert
 from .checks_health import build_runner
 from .storage import save_report
 
-VALID_SOURCES = ("all", "workouts", "oura", "nutrition")
+VALID_SOURCES = ("all", "workouts", "oura", "nutrition", "body")
 
 
 def main() -> int:

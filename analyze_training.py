@@ -48,7 +48,7 @@ disproportionately risky during a caloric deficit.
 - CTL strategy: MAINTAIN current CTL. Do NOT attempt to build CTL during the \
 weight-loss phase — added training stress on a deficit risks injury and \
 hormonal suppression.
-- Weight is logged in kg via MFP (nutrition.weight_kg in each day record). \
+- Weight is the first weigh-in of the day from a Renpho smart scale via Apple Health, in kg (nutrition.weight_kg in each day record). \
 Calculate w/kg using avg_watts or np_watts from that day's workout. \
 Track the trend across the window and flag if power is eroding faster than \
 weight is dropping.

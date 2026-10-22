@@ -28,7 +28,7 @@ def build_runner(source: str = "all") -> CheckRunner:
     Return a CheckRunner with the full predefined suite filtered by source.
 
     Args:
-        source: "all" | "workouts" | "oura" | "nutrition"
+        source: "all" | "workouts" | "oura" | "nutrition" | "body"
     """
     checks = []
 
@@ -40,6 +40,9 @@ def build_runner(source: str = "all") -> CheckRunner:
 
     if source in ("all", "nutrition"):
         checks += _nutrition_checks()
+
+    if source in ("all", "body"):
+        checks += _body_checks()
 
     if source == "all":
         checks += _cross_source_checks()
@@ -132,6 +135,17 @@ def _nutrition_checks():
         # Nutrition poller runs once at 22:00; allow 3-hour window for late sync
         FreshnessCheck(
             "nutrition_daily", "day::timestamp", max_age_minutes=180,
+            severity="warn",
+        ),
+    ]
+
+
+def _body_checks():
+    return [
+        # Renpho weigh-ins arrive via Health Auto Export once a day; warn if the
+        # newest weigh-in day is more than 3 days old
+        FreshnessCheck(
+            "body_measurements", "local_day::timestamp", max_age_minutes=3 * 24 * 60,
             severity="warn",
         ),
     ]

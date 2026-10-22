@@ -52,11 +52,13 @@ router — cloudflared makes an outbound-only connection to Cloudflare's edge.
 | `oura_activity_raw` | 282 | Oura daily activity (steps, calories, activity minutes). |
 | `oura_hr_samples` | ~27.6k | High-resolution overnight HR/HRV samples. |
 | `nutrition_daily` | 47 | Daily nutrition totals + goals (Cronometer-sourced), meals as JSON. |
+| `body_measurements` | — | One row per Renpho smart-scale weigh-in (Apple Health via Health Auto Export): weight, body fat %, lean mass, BMI. `muscle_mass_kg` / `water_pct` stay NULL (not in HealthKit). |
 | `daily_physical_state` | 165 | Subjective daily state notes (energy, body signals), sourced from Notion. |
 | `planned_workouts` | 6 | Upcoming planned training sessions. |
 | `ftp_history` | 5 | FTP (watts) over time, used for power-zone calculations. |
 | `strava_sync_log` | 3,634 | Operational log of Strava sync runs (status, counts, errors) — not health data. |
 | `analysis_daily_rollup_10d` | — | Rollup view: daily training + sleep + readiness joined for the trailing window. |
+| `body_weight_daily` | — | View: first weigh-in of each local day from `body_measurements` (weight, body fat, lean mass, BMI, `n_weighins`). Feeds `nutrition.weight_kg` in the daily export. |
 
 All tables/views live in the `public` schema. `claude_readonly` has `SELECT`
 on all of them (including future tables, via `ALTER DEFAULT PRIVILEGES`) and
