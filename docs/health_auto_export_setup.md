@@ -2,7 +2,9 @@
 
 This guide configures the **Health Auto Export** iOS app (by Gregory Chicote) to push
 Apple Health nutrition data to the Cloudflare Worker, which the Pi poller then pulls
-from on an hourly schedule.
+nightly at 22:00. A second automation pushes Renpho body measurements (weight, body
+fat, lean mass, BMI) to a separate endpoint — see
+[Body measurements automation](#body-measurements-automation).
 
 ---
 
@@ -21,7 +23,7 @@ Enable the following Apple Health categories:
 
 | Data Type | Apple Health Identifier | Notes |
 |-----------|------------------------|-------|
-| Dietary Energy Consumed | `HKQuantityTypeIdentifierDietaryEnergyConsumed` | kcal preferred; Worker converts kJ automatically |
+| Dietary Energy Consumed | `HKQuantityTypeIdentifierDietaryEnergyConsumed` | must be kcal — the Worker does **not** convert kJ |
 | Dietary Protein | `HKQuantityTypeIdentifierDietaryProtein` | grams |
 | Dietary Carbohydrates | `HKQuantityTypeIdentifierDietaryCarbohydrates` | grams |
 | Dietary Fat (Total) | `HKQuantityTypeIdentifierDietaryFatTotal` | grams |
@@ -116,19 +118,77 @@ psql -U postgres -d health_pi -c "SELECT * FROM nutrition_daily WHERE day = '202
 
 ---
 
+## Body measurements automation
+
+Renpho scale → Renpho app → Apple Health → Health Auto Export → Worker → Pi.
+This is a **separate** automation from the nutrition one above; the nutrition
+`POST /health` endpoint is unchanged.
+
+1. Health Auto Export → **Automations** → **Add Automation** → **REST API / Webhook**.
+   Name it **Hub – Body**.
+2. Set:
+   - **URL**: `https://health.michaelfigari.com/health/body`
+   - **Method**: POST
+   - **Format**: JSON
+   - **Header**: `X-Health-Token` = *(the `HEALTH_TOKEN` value from prod.env)*
+3. **Data types**: select only the body types —
+   **Weight / Body Mass**, **Body Fat Percentage**, **Lean Body Mass**, **Body Mass Index**.
+   Do not add nutrition or workout types here.
+4. **Data range**: **Last 7 days**. Overlapping payloads are fine; the Pi de-duplicates
+   on the weigh-in timestamp.
+5. **Aggregation**: individual samples if offered (daily aggregates also work — one
+   weigh-in per day is assumed).
+6. **Schedule**: daily, any time after the usual morning weigh-in (more often is fine).
+
+**Full-history backfill (one-off).** Either run the Hub – Body automation once with the
+data range covering the whole history (the Pi ingests it automatically, as long as the
+payload is under 20 MB), or export the same body types to a JSON file in Health Auto
+Export, copy it to `~/projects/data/body/backfill/` on the Pi, and run:
+
+```bash
+cd ~/projects/health-data-hub
+.venv/bin/python backfill_body_measurements.py ~/projects/data/body/backfill/<file>.json --dry-run
+.venv/bin/python backfill_body_measurements.py ~/projects/data/body/backfill/<file>.json
+```
+
+**Checking it on the Pi:**
+
+```bash
+cd ~/projects/health-data-hub
+.venv/bin/python -m health_data_hub.integrations.apple_health.body_poller --dry-run --days-back 30
+psql -U postgres -d health_pi -c "SELECT * FROM body_weight_daily ORDER BY day DESC LIMIT 7;"
+```
+
+How it is stored:
+
+- `POST /health/body` stores each payload raw in KV under `body:<received_at>:<id>`
+  (30-day expiry). `GET /health/body?since=YYYY-MM-DD` returns them.
+- `body_poller` (in `scheduler_all.py`, hourly at :20, 6 AM – 11 PM) parses the payloads,
+  converts lb to kg, and upserts one row per weigh-in into `body_measurements`.
+- The `body_weight_daily` view takes the first weigh-in of each day; the daily export and
+  notion-reporter use it for `nutrition.weight_kg`.
+
+---
+
 ## Data flow summary
 
 ```
 iPhone (Health Auto Export)
-  → nightly POST at 9:30 PM
-  → https://health.michaelfigari.com/health   (Cloudflare Worker)
-  → stores in KV store
+  → nutrition automation: nightly POST at 9:30 PM
+      → https://health.michaelfigari.com/health        (Cloudflare Worker)
+      → stores nutrition:<date> in KV
+  → "Hub – Body" automation: daily POST
+      → https://health.michaelfigari.com/health/body   (Cloudflare Worker)
+      → stores the raw payload as body:<received_at>:<id> in KV
 
 Pi (health-data-hub.service / scheduler_all.py)
-  → nutrition_poller runs hourly (6am–midnight)
-  → GET https://health.michaelfigari.com/health/latest
-  → upserts into nutrition_daily (PostgreSQL)
-  → notion-reporter reads nutrition_daily each morning
+  → nutrition_poller runs nightly at 22:00
+      → GET https://health.michaelfigari.com/health/latest
+      → upserts into nutrition_daily (PostgreSQL)
+  → body_poller runs hourly at :20 (6am–11pm)
+      → GET https://health.michaelfigari.com/health/body?since=<10 days ago>
+      → upserts into body_measurements; body_weight_daily view = first weigh-in per day
+  → notion-reporter reads nutrition_daily + body_weight_daily each morning
 ```
 
 ---
@@ -141,4 +201,5 @@ Pi (health-data-hub.service / scheduler_all.py)
 | `404` from Worker on GET /latest | No data has been POSTed yet | Send a test POST from the app or via curl |
 | Poller logs "Nutrition already present" | Date already in DB | Normal — no action needed |
 | Morning report shows nutrition missing | Poller hasn't run since last POST | Run poller manually (Option A above) |
-| Energy in kJ instead of kcal | App configured to use kJ | The Worker converts automatically; or switch app units to kcal |
+| Energy in kJ instead of kcal | App configured to use kJ | The Worker does not convert kJ — switch the app's energy unit to kcal |
+| No rows in `body_measurements` | Hub – Body automation not posting, or unrecognised metric names | Run `body_poller --dry-run --days-back 30` and look for "Skipping unknown body metric" warnings |

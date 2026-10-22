@@ -109,6 +109,11 @@ nutrition AS (
     FROM nutrition_daily
     WHERE day BETWEEN $1 AND $2
 ),
+body AS (
+    SELECT day, weight_kg
+    FROM body_weight_daily
+    WHERE day BETWEEN $1 AND $2
+),
 planned AS (
     SELECT
         planned_date AS day,
@@ -218,7 +223,7 @@ SELECT
         'sodium_mg',       nu.sodium_mg,
         'goal_calories',   nu.goal_calories,
         'logged_complete', nu.logged_complete,
-        'weight_kg',       nu.weight_kg
+        'weight_kg',       COALESCE(bw.weight_kg, nu.weight_kg)
     ) AS nutrition,
     json_build_object('ctl', pm.ctl, 'atl', pm.atl, 'tsb', pm.tsb) AS performance_management,
     COALESCE(pl.planned_workouts, '[]'::json)  AS planned_workouts
@@ -230,17 +235,26 @@ LEFT JOIN hr_agg      hr ON hr.sleep_id = sl.sleep_id
 LEFT JOIN workouts    wo ON wo.day      = d.day
 LEFT JOIN phys        ph ON ph.day      = d.day
 LEFT JOIN nutrition   nu ON nu.day      = d.day
+LEFT JOIN body        bw ON bw.day      = d.day
 LEFT JOIN pmc         pm ON pm.day      = d.day
 LEFT JOIN planned     pl ON pl.day      = d.day
 ORDER BY d.day DESC;
 `;
 
 /**
- * Return the most recently recorded body weight from nutrition_daily.
- * Returns null if no weight has ever been logged.
+ * Return the most recently recorded body weight: the latest day in
+ * body_weight_daily (Renpho scale via Apple Health), falling back to
+ * nutrition_daily.weight_kg. Returns null if no weight has ever been logged.
  */
 export async function getLastRecordedWeight() {
   try {
+    const bodyRows = await queryRows(
+      `SELECT weight_kg FROM body_weight_daily
+       ORDER BY day DESC
+       LIMIT 1`,
+    );
+    if (bodyRows[0]?.weight_kg != null) return parseFloat(bodyRows[0].weight_kg);
+
     const rows = await queryRows(
       `SELECT weight_kg FROM nutrition_daily
        WHERE weight_kg IS NOT NULL
