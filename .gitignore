@@ -254,8 +254,5 @@ CLAUDE.md
 # Personal AI coaching prompt — contains private health data
 prompt.md
 
-# Local test files
-tests/
-
 # Downloaded binaries
 *.deb

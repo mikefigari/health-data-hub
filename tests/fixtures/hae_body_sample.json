@@ -1,0 +1,42 @@
+{
+  "data": {
+    "metrics": [
+      {
+        "name": "weight_body_mass",
+        "units": "lb",
+        "data": [
+          {"date": "2026-10-18 07:05:12 -0700", "qty": 170.0, "source": "Synthetic Scale"},
+          {"date": "2026-10-19 07:10:03 -0700", "qty": 169.5, "source": "Synthetic Scale"},
+          {"date": "2026-10-20 06:58:40 -0700", "qty": 169.0, "source": "Synthetic Scale"}
+        ]
+      },
+      {
+        "name": "body_fat_percentage",
+        "units": "%",
+        "data": [
+          {"date": "2026-10-18 07:05:14 -0700", "qty": 20.0, "source": "Synthetic Scale"},
+          {"date": "2026-10-19 07:10:05 -0700", "qty": 19.9, "source": "Synthetic Scale"},
+          {"date": "2026-10-20 06:58:42 -0700", "qty": 19.8, "source": "Synthetic Scale"}
+        ]
+      },
+      {
+        "name": "lean_body_mass",
+        "units": "lb",
+        "data": [
+          {"date": "2026-10-18 07:05:14 -0700", "qty": 136.0, "source": "Synthetic Scale"},
+          {"date": "2026-10-19 07:10:05 -0700", "qty": 135.8, "source": "Synthetic Scale"},
+          {"date": "2026-10-20 06:58:42 -0700", "qty": 135.5, "source": "Synthetic Scale"}
+        ]
+      },
+      {
+        "name": "body_mass_index",
+        "units": "count",
+        "data": [
+          {"date": "2026-10-18 07:05:12 -0700", "qty": 24.0, "source": "Synthetic Scale"},
+          {"date": "2026-10-19 07:10:03 -0700", "qty": 23.9, "source": "Synthetic Scale"},
+          {"date": "2026-10-20 06:58:40 -0700", "qty": 23.8, "source": "Synthetic Scale"}
+        ]
+      }
+    ]
+  }
+}
