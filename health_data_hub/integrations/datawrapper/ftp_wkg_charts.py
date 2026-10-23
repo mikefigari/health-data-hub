@@ -152,7 +152,11 @@ def sync_once(dry_run: bool = False) -> int:
         logger.error("Failed to read inputs: %s", e)
         return 1
 
-    rows = build_rows(ftp_rows, weight_rows)
+    try:
+        rows = build_rows(ftp_rows, weight_rows)
+    except Exception as e:  # never raise (poll_once convention)
+        logger.error("Failed to build rows: %s", e)
+        return 1
     csv_path = Path(FTP_WKG_CSV_PATH)
     try:
         csv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -190,7 +194,7 @@ def sync_once(dry_run: bool = False) -> int:
         state["charts"] = ids
         state["csv_sha256"] = digest
         _save_state(state)
-    except (ApiError, KeyError, ValueError, OSError) as e:
+    except Exception as e:  # never raise (poll_once convention)
         logger.error("Datawrapper sync failed: %s", e)
         return 1
 
