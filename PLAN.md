@@ -13,6 +13,7 @@ Branch: orch/ftp-wkg-charts
 - D2: W/kg rows -> every `body_weight_daily` day with a weight on or after the first FTP date, plus each FTP effective date. `ftp_w` is the latest FTP effective on or before the row date (step, carried forward). `weight_kg` is the measured value; on an FTP date with no weigh-in it is linearly interpolated between the previous and next weigh-in (any distance; weights before the first FTP date are used for this), or the single available neighbour if only one side exists. `wkg = round(ftp_w / weight_kg, 2)`.
 - D3: Data delivery -> the Pi job pushes CSV over the Datawrapper API (`PUT data` + `publish`). No public CSV URL, no Google Sheet, no n8n. Reason: Datawrapper's external-CSV mode needs a public HTTPS+CORS endpoint or stops refreshing 30 days after the last publish, and free-plan support for it is undocumented; API push has neither problem and stays within the free quota.
 - D4: Repo -> local main was reset to origin/main (backup branch `main-local-pre-rewrite`) and the kit commit re-applied (3fff400). CLAUDE.md stays untracked, per origin's .gitignore.
+- D5 (auto, T1): spec test_a passed only the D0 FTP row, so ftp_day is not an FTP date and D2 emits no row for it -> spec writer amends test_a to pass `[(D0, 200), (ftp_day, 200)]` [source: D2]
 ## Assumptions
 - A1: FTP dates are local dates: convert with `(effective_from AT TIME ZONE 'America/Los_Angeles')::date`. Safe: all 5 rows are 07:00/08:00 UTC = PT midnight.
 - A2: The CSV also carries a `weight_source` column (`measured` | `interpolated` | `nearest`) so interpolated points are auditable. The tidy columns requested (date, ftp_w, weight_kg, wkg) come first in that order.
@@ -28,15 +29,16 @@ Branch: orch/ftp-wkg-charts
 - No new dependencies (requests, psycopg2 already pinned).
 - Report needs-decision only for: user-visible behavior not covered above, data loss, security, cost, or a spec test that looks wrong.
 ## Tasks
-### T1: Build the FTP/weight/W-kg dataset [model: sonnet] [risk: normal] [status: todo] [deps: none]
+### T1: Build the FTP/weight/W-kg dataset [model: sonnet] [risk: normal] [status: done] [deps: none]
 **Outcome**: `build_rows(ftp_rows, weight_rows)` returns the D2 row set and `to_csv(rows)` returns a CSV string with header `date,ftp_w,weight_kg,wkg,weight_source`; `fetch_inputs(conn)` reads both tables per A1.
 **Files**: `health_data_hub/etl/transform/build_ftp_wkg.py` (new), `tests/test_build_ftp_wkg.py` (new)
 **Non-goals**: No API calls, no file writes outside `write_csv(rows, path)`, no scheduler changes, no DB writes.
 **Acceptance tests**: `tests/test_build_ftp_wkg.py`: (a) FTP date with weigh-ins 10 days before (100.0 kg) and 10 days after (102.0 kg) yields weight_kg 101.0, source `interpolated`; (b) FTP date with only an earlier weigh-in uses it, source `nearest`; (c) weigh-in rows carry the latest FTP on or before their date, source `measured`; (d) weigh-ins before the first FTP date are excluded from output but used for interpolation; (e) a weigh-in on an FTP date yields one row, source `measured`; (f) wkg = round(ftp/weight, 2), e.g. 215 W / 116.0 kg -> 1.85; (g) rows sorted ascending by date with unique dates; (h) CSV header and ISO dates exactly as specified; (i) `fetch_inputs` SQL converts `effective_from` with `AT TIME ZONE 'America/Los_Angeles'` (assert on the executed SQL string via a mock cursor); (j) empty FTP input returns [].
 **Done-when**: `venv/Scripts/python -m pytest -q tests/test_build_ftp_wkg.py && venv/Scripts/python -m pytest -q`
 **Decision rule**: Ties or gaps not covered by D2 -> pick the rule that keeps every FTP date in the output and log it in Notes.
-**Notes**:
-### T2: Datawrapper chart sync job [model: sonnet] [risk: high] [status: todo] [deps: T1]
+**Notes**: Spec test_a fixed per D5. Implementation follows D2; no gaps hit.
+Metrics: attempts=2 fix=0 review=none blocked=spec
+### T2: Datawrapper chart sync job [model: sonnet] [risk: high] [status: doing] [deps: T1]
 **Outcome**: `sync_once(dry_run=False) -> int` builds rows via T1, writes the CSV to `FTP_WKG_CSV_PATH`, and when the CSV SHA-256 differs from the stored one (or no chart IDs exist) creates missing charts, PATCHes styling, PUTs each chart's data, publishes both, then stores IDs + hash; returns 0 ok, 1 API/DB error, 2 token missing (no network calls).
 **Files**: `health_data_hub/integrations/datawrapper/__init__.py` (new), `health_data_hub/integrations/datawrapper/ftp_wkg_charts.py` (new), `health_data_hub/config/settings.py` (add `DATAWRAPPER_API_TOKEN`, `DATAWRAPPER_STATE_FILE` default `~/.config/health-data-hub/datawrapper_charts.json`, `FTP_WKG_CSV_PATH` default `PROJECT_ROOT / "exports" / "ftp_wkg.csv"`), `tests/test_ftp_wkg_charts.py` (new)
 **Non-goals**: No scheduler wiring, no Notion API calls, no export (PNG) calls, no external-CSV linking, no custom themes.
