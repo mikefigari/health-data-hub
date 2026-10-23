@@ -263,3 +263,6 @@ prompt.md
 .claude/runs/
 DECISIONS_NEEDED.md
 REVIEW_FIXES.md
+
+# generated datasets
+exports/
