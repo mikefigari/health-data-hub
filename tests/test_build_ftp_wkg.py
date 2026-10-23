@@ -30,7 +30,7 @@ D0 = date(2024, 1, 1)
 def test_a_interpolates_between_neighbours():
     ftp_day = date(2024, 3, 11)
     rows = b.build_rows(
-        [(D0, 200)],
+        [(D0, 200), (ftp_day, 200)],
         [(ftp_day - timedelta(days=10), 100.0), (ftp_day + timedelta(days=10), 102.0)],
     )
     r = by_date(rows)[ftp_day]
