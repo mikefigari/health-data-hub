@@ -48,11 +48,12 @@ Metrics: attempts=2 fix=0 review=none blocked=spec
 **Notes**: Live check post-merge: `custom-colors` keyed by column name, `text-annotations` entries `{x,y,text}`, `line-symbols-on: "last"`. Change detection hashes CSV only: docs should say delete the state file to force a re-PATCH.
 Lesson: For jobs that must never raise, end with a catch-all `except Exception` that logs and returns 1; listing specific exception types misses TypeError and AttributeError | `sync_once` / `poll_once`-style jobs
 Metrics: attempts=1 fix=0 review=PASS blocked=none
-### T3: Schedule the job, CLI entry point, README [model: sonnet] [risk: normal] [status: doing] [deps: T2]
+### T3: Schedule the job, CLI entry point, README [model: sonnet] [risk: normal] [status: done] [deps: T2]
 **Outcome**: `scheduler_all.py` runs `sync_once` hourly at minute 40 from 06–23 (id `ftp_wkg_charts`, `max_instances=1`, wrapped like `run_body_poller`), the startup log line mentions it, `python -m health_data_hub.integrations.datawrapper.ftp_wkg_charts [--dry-run]` works, `exports/` is gitignored, and `docs/ftp_wkg_charts.md` documents data source, D2 rules, refresh schedule, env vars, Pi setup and rebuild steps.
 **Files**: `scheduler_all.py` (copy `run_body_poller` at `scheduler_all.py:109` and its `add_job` block), `.gitignore`, `docs/ftp_wkg_charts.md` (new)
 **Non-goals**: No change to other jobs' triggers; no deploy to the Pi.
 **Acceptance tests**: none: wiring and docs; Done-when proves compile, job registration text and README sections.
 **Done-when**: `venv/Scripts/python -m py_compile scheduler_all.py && grep -q 'id="ftp_wkg_charts"' scheduler_all.py && grep -q '^exports/' .gitignore && grep -qi 'rebuild' docs/ftp_wkg_charts.md && grep -q 'DATAWRAPPER_API_TOKEN' docs/ftp_wkg_charts.md && venv/Scripts/python -m pytest -q`
 **Decision rule**: If the README needs a fact not in this plan, take it from D1–D4/A1–A6 and the code; do not invent setup steps.
-**Notes**:
+**Notes**: `run_ftp_wkg_charts` has a catch-all except. README notes deleting the state file drops chart IDs, so Notion embeds then need updating.
+Metrics: attempts=1 fix=0 review=none blocked=none
