@@ -38,15 +38,17 @@ Branch: orch/ftp-wkg-charts
 **Decision rule**: Ties or gaps not covered by D2 -> pick the rule that keeps every FTP date in the output and log it in Notes.
 **Notes**: Spec test_a fixed per D5. Implementation follows D2; no gaps hit.
 Metrics: attempts=2 fix=0 review=none blocked=spec
-### T2: Datawrapper chart sync job [model: sonnet] [risk: high] [status: doing] [deps: T1]
+### T2: Datawrapper chart sync job [model: sonnet] [risk: high] [status: done] [deps: T1]
 **Outcome**: `sync_once(dry_run=False) -> int` builds rows via T1, writes the CSV to `FTP_WKG_CSV_PATH`, and when the CSV SHA-256 differs from the stored one (or no chart IDs exist) creates missing charts, PATCHes styling, PUTs each chart's data, publishes both, then stores IDs + hash; returns 0 ok, 1 API/DB error, 2 token missing (no network calls).
 **Files**: `health_data_hub/integrations/datawrapper/__init__.py` (new), `health_data_hub/integrations/datawrapper/ftp_wkg_charts.py` (new), `health_data_hub/config/settings.py` (add `DATAWRAPPER_API_TOKEN`, `DATAWRAPPER_STATE_FILE` default `~/.config/health-data-hub/datawrapper_charts.json`, `FTP_WKG_CSV_PATH` default `PROJECT_ROOT / "exports" / "ftp_wkg.csv"`), `tests/test_ftp_wkg_charts.py` (new)
 **Non-goals**: No scheduler wiring, no Notion API calls, no export (PNG) calls, no external-CSV linking, no custom themes.
 **Acceptance tests**: `tests/test_ftp_wkg_charts.py`: (a) token unset -> returns 2 and `requests` is never called; (b) first run with no state file -> exactly 2 `POST /v3/charts` with `type` `d3-lines`, then PATCH, PUT data, publish for each, state file written with both IDs and the hash; (c) second run with unchanged data -> zero HTTP calls, returns 0; (d) changed data with existing IDs -> no create calls, PUT + publish for both; (e) FTP chart CSV has columns `date,FTP (W)`, W/kg chart CSV has `date,W/kg`, both with identical date column; (f) PATCH metadata sets: title `FTP` / `Power-to-weight`, `visualize.custom-colors` FTP `#3B6EA8` and W/kg `#E08A3C`, `visualize.y-grid` `off`, `visualize.line-symbols` true with `line-symbols-on` `last`, FTP chart `visualize.interpolation` `step-after`, FTP chart `visualize.text-annotations` with one entry per FTP change labelled `<watts> W`, `publish.autoDarkMode` true; (g) a 500 on any call -> returns 1, state hash not updated, token string absent from captured logs; (h) state file written atomically (temp file + `os.replace`); (i) `--dry-run` CLI path writes the CSV and makes zero HTTP calls.
 **Done-when**: `venv/Scripts/python -m pytest -q tests/test_ftp_wkg_charts.py && venv/Scripts/python -m pytest -q`
 **Decision rule**: A Datawrapper metadata key not listed in (f) -> omit it rather than guess, and list it in Notes for the post-merge live check.
-**Notes**:
-### T3: Schedule the job, CLI entry point, README [model: sonnet] [risk: normal] [status: todo] [deps: T2]
+**Notes**: Live check post-merge: `custom-colors` keyed by column name, `text-annotations` entries `{x,y,text}`, `line-symbols-on: "last"`. Change detection hashes CSV only: docs should say delete the state file to force a re-PATCH.
+Lesson: For jobs that must never raise, end with a catch-all `except Exception` that logs and returns 1; listing specific exception types misses TypeError and AttributeError | `sync_once` / `poll_once`-style jobs
+Metrics: attempts=1 fix=0 review=PASS blocked=none
+### T3: Schedule the job, CLI entry point, README [model: sonnet] [risk: normal] [status: doing] [deps: T2]
 **Outcome**: `scheduler_all.py` runs `sync_once` hourly at minute 40 from 06–23 (id `ftp_wkg_charts`, `max_instances=1`, wrapped like `run_body_poller`), the startup log line mentions it, `python -m health_data_hub.integrations.datawrapper.ftp_wkg_charts [--dry-run]` works, `exports/` is gitignored, and `docs/ftp_wkg_charts.md` documents data source, D2 rules, refresh schedule, env vars, Pi setup and rebuild steps.
 **Files**: `scheduler_all.py` (copy `run_body_poller` at `scheduler_all.py:109` and its `add_job` block), `.gitignore`, `docs/ftp_wkg_charts.md` (new)
 **Non-goals**: No change to other jobs' triggers; no deploy to the Pi.
