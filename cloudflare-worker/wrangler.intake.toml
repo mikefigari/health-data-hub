@@ -1,0 +1,23 @@
+# Deploys src/index.js as the "health-intake" Worker.
+#
+# Production routing on health.michaelfigari.com (zone routes, managed in the dashboard):
+#   /health*  -> health-intake  (this config: nutrition + body measurement routes)
+#   /*        -> health-worker  (wrangler.toml: Strava webhook)
+# The more specific /health* route wins, so changes to the /health routes only go
+# live when deployed with this config.
+#
+# Deploy: npx wrangler deploy -c wrangler.intake.toml
+# No routes here on purpose: the /health* route already points at this Worker,
+# and listing routes would risk reassigning /* away from health-worker.
+name = "health-intake"
+main = "src/index.js"
+compatibility_date = "2026-03-24"
+workers_dev = false
+
+[[kv_namespaces]]
+binding = "NUTRITION_STORE"
+id = "cc6ba232afda4072b8ea22bf85f7b116"
+
+# HEALTH_TOKEN is a secret on this Worker:
+#   npx wrangler secret put HEALTH_TOKEN -c wrangler.intake.toml
+# Do NOT put the token value here.
