@@ -45,6 +45,7 @@ from health_data_hub.integrations.notion.poll_notion_daily_state import poll_not
 from health_data_hub.integrations.apple_health.nutrition_poller import poll_once as poll_nutrition
 from health_data_hub.integrations.apple_health.body_poller import poll_once as poll_body
 from health_data_hub.integrations.notion.notion_strava_sync import sync_weekly_zone_summary
+from health_data_hub.integrations.datawrapper.ftp_wkg_charts import sync_once as sync_ftp_wkg_charts
 
 # -------------------------------------------------------------------
 # Configuration
@@ -115,6 +116,15 @@ def run_body_poller():
         logger.error("Body measurements poll cycle failed", exc_info=True)
 
 
+def run_ftp_wkg_charts():
+    try:
+        exit_code = sync_ftp_wkg_charts()
+        if exit_code != 0:
+            logger.warning("FTP/W-kg chart sync completed with errors (exit_code=%d)", exit_code)
+    except Exception:
+        logger.error("FTP/W-kg chart sync failed", exc_info=True)
+
+
 def run_weekly_powerzone_summary():
     try:
         sync_weekly_zone_summary()
@@ -178,6 +188,16 @@ scheduler.add_job(
 )
 
 scheduler.add_job(
+    run_ftp_wkg_charts,
+    trigger="cron",
+    hour="6-23",
+    minute=40,
+    id="ftp_wkg_charts",
+    name="FTP / W-kg Datawrapper charts",
+    max_instances=1,
+)
+
+scheduler.add_job(
     run_weekly_powerzone_summary,
     trigger="cron",
     day_of_week="sun",
@@ -195,6 +215,7 @@ logger.info(
     "Strava fallback poll every %d min, Oura every 30 min (5am-3pm), "
     "Notion daily state every %d min (%02d:00-%02d:59), Nutrition poller nightly (10pm PT), "
     "Body measurements poller hourly at :20 (6am-11pm), "
+    "FTP/W-kg charts hourly at :40 (6am-11pm), "
     "Weekly power-zone summary Sundays 21:00",
     os.getenv("STRAVA_WEBHOOK_PORT", "8765"),
     STRAVA_INTERVAL_MIN,
