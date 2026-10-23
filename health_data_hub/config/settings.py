@@ -94,6 +94,20 @@ HEALTH_TOKEN      = os.getenv("HEALTH_TOKEN")
 
 
 # -------------------------------------------------------------
+# Datawrapper (FTP / W-kg charts)
+# -------------------------------------------------------------
+
+DATAWRAPPER_API_TOKEN = os.getenv("DATAWRAPPER_API_TOKEN")
+DATAWRAPPER_STATE_FILE = Path(os.getenv(
+    "DATAWRAPPER_STATE_FILE",
+    str(Path.home() / ".config" / "health-data-hub" / "datawrapper_charts.json"),
+))
+FTP_WKG_CSV_PATH = Path(os.getenv(
+    "FTP_WKG_CSV_PATH", str(PROJECT_ROOT / "exports" / "ftp_wkg.csv")
+))
+
+
+# -------------------------------------------------------------
 # Anthropic API Configuration
 # -------------------------------------------------------------
 
