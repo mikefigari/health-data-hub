@@ -13,6 +13,7 @@ const BASELINE_SQL = path.join(DB_DIR, 'baseline/schema_2026-10.sql');
 const MIGRATIONS_DIR = path.join(DB_DIR, 'migrations');
 
 export const READONLY_TEST_PASSWORD = 'claude_readonly_test_pw';
+export const WRITER_TEST_PASSWORD = 'nutrition_writer_test_pw';
 
 const pools = new Set();
 
@@ -77,9 +78,19 @@ async function applyFile(file) {
   await adminPool().query(fs.readFileSync(file, 'utf8'));
 }
 
+// Give nutrition_writer (created by schema.sql / migration 01) a known test
+// password. The migrations never set one.
+async function setWriterPassword() {
+  const { rows } = await adminPool().query(`SELECT 1 FROM pg_roles WHERE rolname = 'nutrition_writer'`);
+  if (rows.length) {
+    await adminPool().query(`ALTER ROLE nutrition_writer WITH PASSWORD '${WRITER_TEST_PASSWORD}'`);
+  }
+}
+
 export async function freshInstall() {
   adminPool();
   await applyFile(SCHEMA_SQL);
+  await setWriterPassword();
 }
 
 export function migrationFiles(dir = MIGRATIONS_DIR) {
@@ -94,6 +105,7 @@ export async function upgradeInstall() {
   adminPool();
   await applyFile(BASELINE_SQL);
   for (const f of migrationFiles()) await applyFile(f);
+  await setWriterPassword();
 }
 
 export async function catalogSnapshot() {
@@ -119,6 +131,13 @@ export async function readonlyPool() {
   const u = testUrl();
   u.username = 'claude_readonly';
   u.password = READONLY_TEST_PASSWORD;
+  return makePool(u);
+}
+
+export async function writerPool() {
+  const u = testUrl();
+  u.username = 'nutrition_writer';
+  u.password = WRITER_TEST_PASSWORD;
   return makePool(u);
 }
 
