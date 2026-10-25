@@ -1,6 +1,6 @@
-import pg from 'pg';
 import { loadConfig } from './config.mjs';
 import { createApp } from './app.mjs';
+import { createPools } from './db.mjs';
 
 let config;
 try {
@@ -10,18 +10,9 @@ try {
   process.exit(1);
 }
 
-const pool = new pg.Pool({
-  host: config.DB_HOST,
-  port: Number(config.DB_PORT),
-  database: config.DB_NAME,
-  user: config.DB_USER,
-  password: config.DB_PASSWORD,
-  max: 5,
-  idleTimeoutMillis: 30000,
-  statement_timeout: Number(config.QUERY_TIMEOUT_MS),
-});
+const { read: pool, write: writePool } = createPools(config);
 
-const app = createApp({ config, pool });
+const app = createApp({ config, pool, writePool });
 
 app.listen(Number(config.PORT), '127.0.0.1', () => {
   console.log(`health-mcp listening on 127.0.0.1:${config.PORT}`);

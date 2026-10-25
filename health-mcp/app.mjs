@@ -3,8 +3,21 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createOAuthRouter } from './oauth.mjs';
 import { registerReadTools } from './tools/read.mjs';
+import { createWriteGuard } from './lib/write-guard.mjs';
 
-export function createApp({ config, pool }) {
+export const SERVER_INSTRUCTIONS =
+  'Food logging: the user tells you what they ate (text or photo). ' +
+  '(1) Call `search_foods` for each distinct food, using the food name only, without quantities. ' +
+  '(2) Prefer a favorite if one matches. Otherwise use a USDA match with a portion, otherwise your own estimate. ' +
+  '(3) Call `log_food` once with all the items and WITHOUT `confirm` (it defaults to false); this writes nothing and returns the would-be rows and projected day totals. ' +
+  '(4) Show the user a compact table: item, amount, kcal, P/C/F, confidence and source, plus the projected day total. ' +
+  'Set `confidence` honestly: high = favorite, or a weighed or packaged label; med = USDA match with a portion stated in standard units; ' +
+  'low = photo, vague portion, restaurant guess or mixed dish. Never present an estimate as exact. ' +
+  '(5) Only after the user agrees, call `log_food` again with the same items and `confirm: true`. ' +
+  'If something is eaten repeatedly, offer to `save_favorite`.';
+
+export function createApp({ config, pool, writePool = null, registerTools = null }) {
+  const guard = createWriteGuard(config);
   const { ALLOWED_HOST, MCP_API_KEY, OAUTH_STATE_PATH, ALLOWED_REDIRECT_URIS } = config;
 
   const ISSUER = `https://${ALLOWED_HOST}`;
@@ -22,9 +35,10 @@ export function createApp({ config, pool }) {
   function getServer() {
     const server = new McpServer(
       { name: 'health-mcp', version: '1.0.0' },
-      { capabilities: { tools: {} } }
+      { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS }
     );
     registerReadTools(server, { pool, config });
+    if (registerTools) registerTools(server, { pool, writePool, config, guard });
     return server;
   }
 
@@ -46,8 +60,16 @@ export function createApp({ config, pool }) {
     const auth = req.get('authorization') || '';
     const provided = auth.startsWith('Bearer ') ? auth.slice(7) : null;
 
-    if (provided && provided === MCP_API_KEY) return next(); // static key path (Claude Code, curl, laptop)
-    if (provided && validateAccessToken(provided)) return next(); // OAuth access token path (claude.ai web/mobile)
+    // authInfo deliberately omits the bearer token so handlers cannot log it.
+    if (provided && provided === MCP_API_KEY) {
+      req.auth = { token: '', clientId: 'static_key', scopes: [] }; // static key path (Claude Code, curl, laptop)
+      return next();
+    }
+    const entry = provided && validateAccessToken(provided);
+    if (entry) {
+      req.auth = { token: '', clientId: String(entry.client_id || 'oauth'), scopes: [] }; // OAuth access token path
+      return next();
+    }
 
     res.set('WWW-Authenticate', `Bearer resource_metadata="${RESOURCE_METADATA_URL}"`);
     res.status(401).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Unauthorized' }, id: null });
