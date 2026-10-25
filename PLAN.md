@@ -14,12 +14,13 @@ Branch: orch/nutrition-logging
 - D2 (Q2): Approved -> rename table `nutrition_daily` to `nutrition_daily_legacy` (frozen) and create VIEW `nutrition_daily` with identical column names, order and types. A day with any non-deleted `food_log` rows returns `food_log` totals with `source='food_log'`; otherwise it returns the legacy row. Never sum both. Nothing else writes `nutrition_daily`.
 - D3 (Q3): Yes -> add the write tools to the existing `/mcp` connector. They use a second `pg` pool as new role `nutrition_writer`. Read tools (including `search_foods` and `get_day_summary`) use the `claude_readonly` pool only.
 - D4 (Q4): Show the estimate before logging -> `log_food` takes `confirm` (boolean, default false). With `confirm: false` it validates, computes and returns the would-be rows plus projected day totals, and writes nothing. With `confirm: true` it inserts. The tool description and server `instructions` tell Claude to call without `confirm`, show the table, and call again with `confirm: true` only after the user agrees. This is not enforced by a token.
-- D5 (Q5): The goal is a 100 kg body-weight target -> `nutrition_goals(effective_from date PK, target_weight_kg numeric(5,1), weekly_loss_kg numeric(3,2), protein_g numeric(6,1), calorie_floor int, fixed_calories int NULL, notes text, created_at)`. For a day d: `goal_calories = coalesce(fixed_calories, greatest(calorie_floor, round(avg(oura_activity_raw.cal_total) over days d-28..d-1) - round(weekly_loss_kg*7700/7)))`. If there is no Oura data in that window, use `calorie_floor`. `goal_protein_g = protein_g`. `goal_carbs_g` and `goal_fat_g` are NULL. Seed row: `('2026-10-25', 100.0, 0.50, 180, 1800, NULL)`. `get_day_summary` also returns the latest `body_weight_daily.weight_kg`, its day, and `kg_to_target`.
+- D5 (Q5, revised 2026-10-25): The goal is a 100 kg body-weight target. Oura plays no part in calories; the only calories burned that count are from cycling with tracked watts and kJ -> `nutrition_goals(effective_from date PK, target_weight_kg numeric(5,1), base_calories int, cycling_kj_factor numeric(3,2) DEFAULT 1.00, protein_g numeric(6,1), notes text, created_at)`. For a day d: `cycling_kcal = round(cycling_kj_factor * coalesce(sum(workout_summary.kj), 0))` over rows with `sport_type = 'Ride' AND device_watts AND kj > 0 AND start_time::date = d`, and `goal_calories = base_calories + cycling_kcal`. `goal_protein_g = protein_g`. `goal_carbs_g` and `goal_fat_g` are NULL. Seed row: `('2026-10-25', 100.0, 2620, 1.00, 180)`. `get_day_summary` also returns `cycling_kcal`, the latest `body_weight_daily.weight_kg`, its day, and `kg_to_target`.
 - D6 (Q14): Run through the kit pipeline. The build-plan §4.3 `exercise_adjust`/`base_calories` goal design is replaced by D5.
 ## Assumptions
 - A1: Unanswered build-plan questions take the doc's recommendations. Meals are `breakfast|lunch|dinner|snack` (Q6). The `eaten_at` backfill window is 60 days (Q12). Days are always in America/Los_Angeles (Q13, per your brief).
 - A2: The 13 all-NULL `apple_health` legacy rows are kept (Q11). Deleting data was not approved, and they read the same as today.
-- A3: D5 numbers you didn't state: 0.5 kg/week, protein 180 g (1.8 g/kg of target), 1800 kcal floor. Today that is about 3170 − 550 ≈ 2620 kcal at ~116 kg. They live in one seed row and change with one UPDATE.
+- A3: D5 numbers: base 2620 kcal is the earlier estimate you accepted; cycling factor 1.00 (1 kJ of work ≈ 1 kcal burned at ~24% efficiency); protein 180 g (1.8 g/kg of target). They live in one seed row and change with one UPDATE. EBikeRide (no power meter) and rides without kJ add nothing.
+- A3b: A ride's day is `start_time::date`, the convention at `health_data_hub/etl/export_daily_json.py:120` and in `analysis_daily_rollup_10d`.
 - A4: Before launch you start the local Postgres 18 service (`postgresql-x64-18`, currently stopped), create database `hdh_test`, and set the user env var `TEST_DATABASE_URL=postgres://postgres:<pw>@localhost:5432/hdh_test`. Integration Done-when commands fail if it is unset.
 - A5: PR #1 (FTP charts + kit adoption) is merged first and this branch is rebased on the new `main`, so LESSONS.md and the kit files are in the base.
 - A6: Test fixtures are synthetic. No real health rows are committed.
@@ -168,7 +169,7 @@ Add to `health-mcp/test/integration/food_log_schema.int.test.mjs`: (f) with both
 - (b) After `food_log` rows on a fixture legacy day, that day returns `source='food_log'` and the `food_log` sums, not the sum of both.
 - (c) Soft-deleting those rows brings the legacy row back.
 - (d) `meals_json` keys come only from `breakfast, lunch, dinner, snacks`.
-- (e) Goal: Oura `cal_total` of 3200 on each of the 28 prior days and the seed row give `goal_calories` 2650. With no Oura rows it is 1800. With `fixed_calories=2500` it is 2500. `goal_protein_g` is 180.
+- (e) Goal with the seed row: a day with two `Ride` rows (`device_watts` true, kj 400 and 250), one `EBikeRide` (kj 300, `device_watts` false) and one `Ride` with kj NULL gives `goal_calories` 3270. A day with no rides gives 2620. `goal_protein_g` is 180. `pg_get_viewdef('nutrition_daily')` does not contain `oura`.
 - (f) `logged_complete` comes from `nutrition_day_status` for `food_log` days.
 - (g) `init_db`-equivalent: `freshInstall()` twice in a row succeeds.
 - (h) T2's catalog parity holds.
@@ -192,7 +193,7 @@ The three write tools go through the T5 write guard.
 - (a) With the clock frozen at `2026-10-25T23:30-07:00`, the default day is 2026-10-25.
 - (b) Items are ordered by `eaten_at` and carry their ids. Soft-deleted items are absent.
 - (c) A legacy-only day returns `source: "legacy"` and a `note`.
-- (d) `kg_to_target` = latest `body_weight_daily.weight_kg` − 100.
+- (d) `kg_to_target` = latest `body_weight_daily.weight_kg` − 100, and `cycling_kcal` equals the D5 sum for that day.
 - (e) Updating a favorite entry's `servings` from 1 to 2 with no nutrients doubles its nutrients and writes one `update` audit row.
 - (f) Moving an entry's `day` returns `day_totals` for both days.
 - (g) Updating a deleted entry gives `ALREADY_DELETED`.
