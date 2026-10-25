@@ -124,7 +124,7 @@ Add to `health-mcp/test/integration/food_log_schema.int.test.mjs`: (f) with both
 **Notes**: SDK forwards req.auth (authInfo={token:'',clientId,scopes:[]}); createPools/createWriteGuard(check, audit) in db.mjs and lib/write-guard.mjs (force-added past .gitignore `lib/`); test (f) is in pools.int.test.mjs. Advisory: SERVER_INSTRUCTIONS is sent even when writes are off; send the food-logging text only when config.WRITES_ENABLED.
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T6: log_food with preview and confirm [model: sonnet] [risk: high] [status: todo] [deps: T5]
+### T6: log_food with preview and confirm [model: sonnet] [risk: high] [status: done] [deps: T5]
 **Outcome**: Tool `log_food` per build-plan §5.3 plus D4. Without `confirm` it returns computed rows and projected `day_totals` and writes nothing. With `confirm: true` it inserts all items in one transaction (all or none), honors `request_id` idempotency, bumps favorite `use_count`/`last_used_at`, and returns stored rows, warnings and `day_totals`.
 **Files**: `health-mcp/tools/nutrition/common.mjs` (new; zod item schema, LA time resolution, meal inference, NUMERIC conversion, Atwater check), `health-mcp/tools/nutrition/log-food.mjs` (new), `health-mcp/tools/nutrition/index.mjs` (new; registers nutrition tools when writes are enabled), `health-mcp/test/unit/nutrition-common.test.mjs` (new), `health-mcp/test/integration/log_food.int.test.mjs` (new)
 **Non-goals**: No USDA computation: `match_source='usda'` requires explicit nutrients and an `fdc_id`. No goals in totals yet.
@@ -149,7 +149,9 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 - (n) The tool description contains `confirm` and `confidence`.
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: When the build-plan §5.3 text and D4 disagree, D4 wins. Any other gap: choose the behavior that writes nothing and returns `VALIDATION_ERROR`, and note it.
-**Notes**:
+**Notes**: Preview returns {preview:true,would_log,warnings,day_totals}; confirm returns {preview:false,logged,warnings,day_totals,duplicate}. Items validated in handler (own VALIDATION_ERROR with item_index/field). Order on confirm: request_id lookup (incl. soft-deleted) -> validate -> rate-limit token -> insert. server instructions now sent only when WRITES_ENABLED.
+Lesson: An idempotency-key lookup must include soft-deleted rows whenever the unique constraint covers them | applies: any request_id/dedupe check on tables with deleted_at
+Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T7: save_favorite and search_foods (favorites tier) [model: sonnet] [risk: high] [status: todo] [deps: T6]
 **Outcome**: `save_favorite` (build-plan §5.4) creates, updates and archives favorites and their aliases in one transaction. `search_foods` (§5.2) runs on the read pool and returns favorites ranked exact alias first, then `word_similarity`, then `use_count`, plus `usda: []` and a note that USDA is not loaded yet.
