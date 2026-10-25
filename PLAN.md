@@ -35,7 +35,7 @@ Branch: orch/nutrition-logging
 - Migrations are plain SQL with no psql meta-commands, and each guards itself: a first `DO` block raises if its name is already in `schema_migrations`, and the last statement inserts its name. Each has a `.down.sql`. `schema.sql` mirrors the end state.
 - Report needs-decision only for: user-visible behavior not covered above, data loss, security, cost, or a spec test that looks wrong.
 ## Tasks
-### T1: Split health-mcp into testable modules, no behavior change [model: sonnet] [risk: high] [status: todo] [deps: none]
+### T1: Split health-mcp into testable modules, no behavior change [model: sonnet] [risk: high] [status: done] [deps: none]
 **Outcome**: `server.mjs` only reads config and calls `createApp(...).listen`. The Express app, auth, the host check and the three read tools live in importable modules, and `npm test` runs unit tests that pin current behavior.
 **Files**: `health-mcp/server.mjs`, `health-mcp/app.mjs` (new; move lines 152–201 of server.mjs), `health-mcp/config.mjs` (new; move lines 8–30), `health-mcp/tools/read.mjs` (new; move lines 55–147), `health-mcp/package.json` (add `"test": "node --test \"test/unit/**/*.test.mjs\""`), `health-mcp/test/unit/read-tools.test.mjs` (new)
 **Non-goals**: No new tools, no pool or role changes, no change to tool names, descriptions, input schemas, the SQL guard or the HTTP status codes. `oauth.mjs` is untouched.
@@ -48,7 +48,8 @@ Branch: orch/nutrition-logging
 - (f) `config.mjs` throws when `DB_PASSWORD` is unset or `MCP_API_KEY` is shorter than 32 chars.
 **Done-when**: `cd health-mcp && npm ci --silent && npm test`
 **Decision rule**: If keeping behavior byte-identical conflicts with the module split, keep the behavior and note the boundary compromise.
-**Notes**:
+**Notes**: loadConfig(env) throws (server.mjs catches, logs, exits 1); createApp builds the OAuth router itself; read tools via registerReadTools(server,{pool,config}).
+Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T2: Integration test database harness and CI job [model: sonnet] [risk: high] [status: todo] [deps: T1]
 **Outcome**: `npm run test:integration` builds a throwaway schema in `TEST_DATABASE_URL` two ways, from `schema.sql` (fresh) and from a frozen baseline plus migrations (upgrade), and CI runs the unit and integration suites against a `postgres:18` service.
