@@ -107,7 +107,7 @@ GRANT CONNECT targets `current_database()` through `EXECUTE format(...)`. `CREAT
 Lesson: Database-name guards in test helpers don't protect roles (cluster-wide); use test-only role names or refuse if the role exists outside the test DB | applies: testdb.mjs and tests running ALTER ROLE / DROP ROLE
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T5: Writer pool, kill switch, rate limit, auth info [model: sonnet] [risk: high] [status: todo] [deps: T1, T4]
+### T5: Writer pool, kill switch, rate limit, auth info [model: sonnet] [risk: high] [status: done] [deps: T1, T4]
 **Outcome**: With `WRITE_TOOLS_ENABLED=true`, the app creates a second pool as `DB_WRITER_USER`/`DB_WRITER_PASSWORD` (max 3), passes `req.auth = {clientId}` (`static_key` for the API key) to tool handlers, and offers a write guard. The guard checks the kill switch, applies a per-process token bucket (`WRITE_RATE_LIMIT_PER_HOUR`, default 120) and emits the audit log line. The server sends §5.1 `instructions` amended per D4.
 **Files**: `health-mcp/config.mjs`, `health-mcp/app.mjs`, `health-mcp/db.mjs` (new; pool factory for `read` and `write`), `health-mcp/lib/write-guard.mjs` (new), `health-mcp/test/unit/write-guard.test.mjs` (new)
 **Non-goals**: No nutrition tools yet. `query` keeps its pool. `oauth.mjs` is untouched.
@@ -121,7 +121,8 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 Add to `health-mcp/test/integration/food_log_schema.int.test.mjs`: (f) with both pools configured, the `query` tool's `SELECT current_user AS u` returns `claude_readonly`.
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: If the MCP SDK does not forward `req.auth` to handlers, pass the client id through a per-request `getServer(ctx)` closure instead and note it.
-**Notes**:
+**Notes**: SDK forwards req.auth (authInfo={token:'',clientId,scopes:[]}); createPools/createWriteGuard(check, audit) in db.mjs and lib/write-guard.mjs (force-added past .gitignore `lib/`); test (f) is in pools.int.test.mjs. Advisory: SERVER_INSTRUCTIONS is sent even when writes are off; send the food-logging text only when config.WRITES_ENABLED.
+Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T6: log_food with preview and confirm [model: sonnet] [risk: high] [status: todo] [deps: T5]
 **Outcome**: Tool `log_food` per build-plan §5.3 plus D4. Without `confirm` it returns computed rows and projected `day_totals` and writes nothing. With `confirm: true` it inserts all items in one transaction (all or none), honors `request_id` idempotency, bumps favorite `use_count`/`last_used_at`, and returns stored rows, warnings and `day_totals`.
