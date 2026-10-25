@@ -21,8 +21,8 @@ Branch: orch/nutrition-logging
 - A2: The 13 all-NULL `apple_health` legacy rows are kept (Q11). Deleting data was not approved, and they read the same as today.
 - A3: D5 numbers: base 2620 kcal is the earlier estimate you accepted; cycling factor 1.00 (1 kJ of work ≈ 1 kcal burned at ~24% efficiency); protein 180 g (1.8 g/kg of target). They live in one seed row and change with one UPDATE. EBikeRide (no power meter) and rides without kJ add nothing.
 - A3b: A ride's day is `start_time::date`, the convention at `health_data_hub/etl/export_daily_json.py:120` and in `analysis_daily_rollup_10d`.
-- A4: Before launch you start the local Postgres 18 service (`postgresql-x64-18`, currently stopped), create database `hdh_test`, and set the user env var `TEST_DATABASE_URL=postgres://postgres:<pw>@localhost:5432/hdh_test`. Integration Done-when commands fail if it is unset.
-- A5: PR #1 (FTP charts + kit adoption) is merged first and this branch is rebased on the new `main`, so LESSONS.md and the kit files are in the base.
+- A4: Integration tests use a private, throwaway Postgres 18.1 cluster (data dir `%LOCALAPPDATA%\hdh-test-pg\data`, port 5433, trust auth, localhost only, database `hdh_test`), never the Pi. `TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test`. It does not survive a reboot. Restart it with `"/c/Program Files/PostgreSQL/18/bin/pg_ctl.exe" -D "$LOCALAPPDATA/hdh-test-pg/data" -l "$LOCALAPPDATA/hdh-test-pg/server.log" -o "-p 5433 -c listen_addresses=localhost" -w start >/dev/null 2>&1 </dev/null`. Integration Done-when commands fail if it is down or the env var is unset.
+- A5: Met. PR #1 was merged (ce9940a) and this branch was rebased on it, so LESSONS.md and the kit files are in the base.
 - A6: Test fixtures are synthetic. No real health rows are committed.
 - A7: The integration helper sets known passwords on `claude_readonly` and `nutrition_writer` only on the local or CI test cluster, guarded by host ∈ {localhost, 127.0.0.1} and database name ending in `_test`.
 ## Default policy
