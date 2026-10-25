@@ -69,7 +69,7 @@ The CI `node` job uses `actions/setup-node` (Node 22), a `postgres:18` service w
 Lesson: Run safety guards on connection strings over the config the driver will actually use (query params like ?host= override the URL host) | applies: destructive test-DB helpers, env-gated DB tooling
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T3: Migration ledger [model: haiku] [risk: high] [status: todo] [deps: T2]
+### T3: Migration ledger [model: haiku] [risk: high] [status: done] [deps: T2]
 **Outcome**: `public.schema_migrations(name text PK, applied_at timestamptz)` exists after upgrade or fresh install. Re-applying a guarded migration raises.
 **Files**: `health_data_hub/db/migrations/2026-11_00_migration_ledger.sql` (new; build-plan §4.1, plus a row for itself), `health_data_hub/db/migrations/2026-11_00_migration_ledger.down.sql` (new), `health_data_hub/db/schema.sql` (append the ledger table and both rows), `health-mcp/test/integration/ledger.int.test.mjs` (new)
 **Non-goals**: No other tables. No shell migration runner.
@@ -80,7 +80,8 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 - (d) The down script drops the table.
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: The guard pattern written here is the one later migrations copy. Write it as a short comment at the top of the file.
-**Notes**:
+**Notes**: Guard is a nested IF on to_regclass (PL/pgSQL can't combine it with EXISTS on a missing table); ledger inserts both baseline row and itself with ON CONFLICT DO NOTHING.
+Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T4: food_log, my_foods, audit and nutrition_writer schema [model: sonnet] [risk: high] [status: todo] [deps: T3]
 **Outcome**: Migration `01` creates the build-plan §4.2 objects: `pg_trgm`, `touch_updated_at`, `my_foods`, `my_food_aliases`, `food_log` with the generated LA `day`, `food_log_audit` and its trigger, view `food_log_daily`, and role `nutrition_writer` with its grants. `schema.sql` mirrors them.
