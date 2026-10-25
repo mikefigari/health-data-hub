@@ -35,7 +35,7 @@ export function createApp({ config, pool, writePool = null, registerTools = null
   function getServer() {
     const server = new McpServer(
       { name: 'health-mcp', version: '1.0.0' },
-      { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS }
+      { capabilities: { tools: {} }, instructions: config.WRITES_ENABLED ? SERVER_INSTRUCTIONS : undefined }
     );
     registerReadTools(server, { pool, config });
     if (registerTools) registerTools(server, { pool, writePool, config, guard });

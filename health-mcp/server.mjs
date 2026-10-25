@@ -1,6 +1,7 @@
 import { loadConfig } from './config.mjs';
 import { createApp } from './app.mjs';
 import { createPools } from './db.mjs';
+import { registerNutritionTools } from './tools/nutrition/index.mjs';
 
 let config;
 try {
@@ -12,7 +13,7 @@ try {
 
 const { read: pool, write: writePool } = createPools(config);
 
-const app = createApp({ config, pool, writePool });
+const app = createApp({ config, pool, writePool, registerTools: registerNutritionTools });
 
 app.listen(Number(config.PORT), '127.0.0.1', () => {
   console.log(`health-mcp listening on 127.0.0.1:${config.PORT}`);
