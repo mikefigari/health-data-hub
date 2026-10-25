@@ -6,3 +6,4 @@ notion-client
 numpy
 apscheduler
 Pillow
+pytest

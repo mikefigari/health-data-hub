@@ -212,7 +212,9 @@ config/dev.env
 config/prod.env
 
 # Claude Code
-.claude/
+.claude/*
+!.claude/kit.json
+!.claude/settings.json
 
 # Runtime output
 analysis_logs/
@@ -256,3 +258,11 @@ prompt.md
 
 # Downloaded binaries
 *.deb
+
+# kit
+.claude/runs/
+DECISIONS_NEEDED.md
+REVIEW_FIXES.md
+
+# generated datasets
+exports/
