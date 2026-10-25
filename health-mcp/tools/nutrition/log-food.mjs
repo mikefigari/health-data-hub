@@ -27,10 +27,10 @@ export const LOG_FOOD_DESCRIPTION =
   'match_source usda also needs fdc_id. Optional per item: meal, eaten_at (ISO; no offset means Los Angeles time), day (YYYY-MM-DD, with meal), ' +
   'quantity, unit, grams, fiber_g, sugar_g, sodium_mg, ref_label, notes. Use request_id (UUID) to make a confirmed call safe to retry.';
 
-const ITEM_COLUMNS = `id, eaten_at, day::text AS day, meal, description, quantity, unit, grams, calories, protein_g,
+export const ITEM_COLUMNS = `id, eaten_at, day::text AS day, meal, description, quantity, unit, grams, calories, protein_g,
   carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, confidence, match_source, my_food_id, fdc_id, ref_label, notes`;
 
-function mapDbRow(r, computed) {
+export function mapDbRow(r, computed) {
   const row = {
     id: Number(r.id),
     day: r.day,
@@ -73,7 +73,7 @@ function mapTotals(r) {
   };
 }
 
-async function dailyTotals(q, days) {
+export async function dailyTotals(q, days) {
   const { rows } = await q.query(
     `SELECT day::text AS day, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, items,
             items_missing_micros, low_confidence_items
@@ -85,7 +85,7 @@ async function dailyTotals(q, days) {
   return out;
 }
 
-const EMPTY_TOTALS = {
+export const EMPTY_TOTALS = {
   calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: null, sugar_g: null, sodium_mg: null,
   items: 0, items_missing_micros: 0, low_confidence_items: 0,
 };
