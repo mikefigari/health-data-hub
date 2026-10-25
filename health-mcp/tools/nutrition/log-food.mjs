@@ -100,7 +100,7 @@ function projectTotals(base, rows) {
   for (const [day, t] of Object.entries(base)) out[day] = { ...t };
   for (const r of rows) {
     const t = (out[r.day] ??= { ...EMPTY_TOTALS });
-    t.calories = round1(t.calories + r.calories);
+    t.calories = Math.round(t.calories + r.calories);
     t.protein_g = round1(t.protein_g + r.protein_g);
     t.carbs_g = round1(t.carbs_g + r.carbs_g);
     t.fat_g = round1(t.fat_g + r.fat_g);
@@ -213,10 +213,11 @@ function previewRow(r) {
 
 async function loggedByRequest(q, requestId) {
   const { rows } = await q.query(
-    `SELECT ${ITEM_COLUMNS} FROM food_log WHERE request_id = $1::uuid AND deleted_at IS NULL ORDER BY request_line`,
+    `SELECT ${ITEM_COLUMNS}, (deleted_at IS NOT NULL) AS is_deleted FROM food_log WHERE request_id = $1::uuid ORDER BY request_line`,
     [requestId]
   );
-  return rows;
+  // The unique constraint covers soft-deleted rows, so they count as "already logged" but are not returned.
+  return { exists: rows.length > 0, live: rows.filter((r) => !r.is_deleted) };
 }
 
 const INSERT_SQL = `
@@ -232,11 +233,11 @@ async function insertRows(writePool, rows, requestId) {
     await client.query('BEGIN');
     if (requestId) {
       const existing = await loggedByRequest(client, requestId);
-      if (existing.length > 0) {
-        const days = [...new Set(existing.map((r) => r.day))];
-        const totals = await dailyTotals(client, days);
+      if (existing.exists) {
+        const days = [...new Set(existing.live.map((r) => r.day))];
+        const totals = days.length > 0 ? await dailyTotals(client, days) : {};
         await client.query('COMMIT');
-        return { duplicate: true, logged: existing.map((r) => mapDbRow(r)), totals };
+        return { duplicate: true, logged: existing.live.map((r) => mapDbRow(r)), totals };
       }
     }
     const logged = [];
@@ -294,10 +295,25 @@ export function registerLogFood(server, { pool, writePool, guard }) {
           });
         }
 
-        const blocked = guard.check('log_food');
-        if (blocked) return blocked;
+        // Order: replay lookup (free), then validation, then rate-limit token.
+        if (request_id) {
+          const existing = await loggedByRequest(writePool, request_id);
+          if (existing.exists) {
+            const days = [...new Set(existing.live.map((r) => r.day))];
+            const totals = days.length > 0 ? await dailyTotals(writePool, days) : {};
+            return jsonResult({
+              preview: false,
+              logged: existing.live.map((r) => mapDbRow(r)),
+              warnings: [],
+              day_totals: totals,
+              duplicate: true,
+            });
+          }
+        }
 
         const { rows, warnings } = await buildRows(writePool, items, allow_backfill);
+        const blocked = guard.check('log_food');
+        if (blocked) return blocked;
         let result;
         try {
           result = await insertRows(writePool, rows, request_id);
