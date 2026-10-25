@@ -80,8 +80,17 @@ def _ftp_annotations(rows):
     out, prev = [], None
     for r in rows:
         if prev is not None and r["ftp_w"] != prev:
+            # Datawrapper's renderer fails (HTTP 500 on export, blank chart) unless
+            # every annotation field is present, so send the full object.
             out.append({"x": r["date"].isoformat(), "y": r["ftp_w"],
-                        "text": f"{r['ftp_w']} W"})
+                        "text": f"{r['ftp_w']} W", "dx": 8, "dy": -14, "bg": False,
+                        "size": 12, "align": "ml", "color": False, "underline": False,
+                        "italic": False, "bold": False, "showMobile": True,
+                        "showDesktop": True, "mobileFallback": False,
+                        "connectorLine": {"enabled": True, "type": "straight",
+                                          "arrowHead": "lines", "circle": False,
+                                          "stroke": 1, "targetPadding": 3,
+                                          "inheritColor": False}})
         prev = r["ftp_w"]
     return out
 
@@ -96,8 +105,15 @@ def _metadata(title, column, color, rows):
     if title == "FTP":
         visualize["interpolation"] = "step-after"
         visualize["text-annotations"] = _ftp_annotations(rows)
+        # pad the axis so labels above the top step and the bottom step stay inside
+        watts = [r["ftp_w"] for r in rows]
+        if watts:
+            visualize["custom-range-y"] = [str(min(watts) - 10), str(max(watts) + 10)]
     return {
         "title": title,
+        # a chart opened in the editor can get an external-data URL pointing at a
+        # CDN file that does not exist, which blanks the chart; clear it each sync
+        "externalData": None,
         "metadata": {"visualize": visualize, "publish": {"autoDarkMode": True}},
     }
 
