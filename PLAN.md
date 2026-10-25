@@ -51,7 +51,7 @@ Branch: orch/nutrition-logging
 **Notes**: loadConfig(env) throws (server.mjs catches, logs, exits 1); createApp builds the OAuth router itself; read tools via registerReadTools(server,{pool,config}).
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T2: Integration test database harness and CI job [model: sonnet] [risk: high] [status: todo] [deps: T1]
+### T2: Integration test database harness and CI job [model: sonnet] [risk: high] [status: done] [deps: T1]
 **Outcome**: `npm run test:integration` builds a throwaway schema in `TEST_DATABASE_URL` two ways, from `schema.sql` (fresh) and from a frozen baseline plus migrations (upgrade), and CI runs the unit and integration suites against a `postgres:18` service.
 **Files**: `health-mcp/test/helpers/testdb.mjs` (new), `health-mcp/test/integration/harness.int.test.mjs` (new), `health-mcp/package.json` (add `test:integration`), `health_data_hub/db/baseline/schema_2026-10.sql` (new; byte copy of the current `health_data_hub/db/schema.sql`), `.github/workflows/kit-ci.yml` (add a `node` job)
 **Non-goals**: No schema changes. No change to the Python CI job's steps.
@@ -65,7 +65,9 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 The CI `node` job uses `actions/setup-node` (Node 22), a `postgres:18` service with `POSTGRES_DB=hdh_test`, `npm ci` in `health-mcp`, then `npm test` and `npm run test:integration`. Every tool it runs must be installed by those steps (lesson: kit adoption/CI).
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: If `schema.sql` fails on a fresh Postgres 18, report needs-decision with the error. Do not edit `schema.sql` in this task.
-**Notes**:
+**Notes**: Helper exports resetDb/freshInstall/upgradeInstall/catalogSnapshot/readonlyPool; guard rejects any URL query string. Gotcha: root .gitignore has `lib/`, which would ignore T5's health-mcp/lib/write-guard.mjs.
+Lesson: Run safety guards on connection strings over the config the driver will actually use (query params like ?host= override the URL host) | applies: destructive test-DB helpers, env-gated DB tooling
+Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T3: Migration ledger [model: haiku] [risk: high] [status: todo] [deps: T2]
 **Outcome**: `public.schema_migrations(name text PK, applied_at timestamptz)` exists after upgrade or fresh install. Re-applying a guarded migration raises.
