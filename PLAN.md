@@ -172,7 +172,7 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 Lesson: After a caught unique violation (23505) inside a transaction, further queries fail unless a SAVEPOINT or ON CONFLICT DO NOTHING is used | applies: Postgres write tools that turn constraint errors into CONFLICT
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T8: Goals, day status and the nutrition_daily view [model: opus] [risk: high] [status: doing] [deps: T4]
+### T8: Goals, day status and the nutrition_daily view [model: opus] [risk: high] [status: done] [deps: T4]
 **Outcome**: Migration `02` creates `nutrition_goals` per D5 with its seed row, `nutrition_day_status`, renames the table to `nutrition_daily_legacy` (and its PK index), and creates VIEW `nutrition_daily` per D2 and build-plan §4.3, with goal columns per D5. `schema.sql` produces the same end state, and its `ALTER TABLE nutrition_daily ADD COLUMN` line targets `nutrition_daily_legacy`.
 **Files**: `health_data_hub/db/migrations/2026-11_02_nutrition_daily_view.sql` (new), `health_data_hub/db/migrations/2026-11_02_nutrition_daily_view.down.sql` (new), `health_data_hub/db/schema.sql`, `health-mcp/test/integration/nutrition_daily_view.int.test.mjs` (new), `health-mcp/test/fixtures/nutrition_daily_rows.sql` (new; about 10 synthetic rows covering the `myfitnesspal` source with `meals_json` and goals, the `apple_health` source, and all-NULL rows)
 **Non-goals**: No tool changes. No deletion of legacy rows (A2). No reader code changes.
@@ -189,7 +189,9 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 - (j) `claude_readonly` can SELECT the view and `nutrition_daily_legacy`.
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: Column types must equal the legacy table's (`calories int`, `*_g double precision`, `weight_kg numeric(5,2)`). If a cast choice is unclear, match `pg_typeof` of the legacy column.
-**Notes**:
+**Notes**: Re-spec of T2/T4 specs per D7. Added CHECKs on nutrition_goals; writer gets SELECT/INSERT/UPDATE on nutrition_day_status. schema.sql/init_db on a DB lacking migration 02 fails and rolls back, so apply 02 first (psql -1). Reviewer flag for planner: start_time::date (A3b) is UTC-based while food_log.day is LA, so late-evening rides count toward the next day's goal; also deploy T10 before migration 02 (insert_nutrition_daily.py would fail against the view).
+Lesson: Before comparing a naive TIMESTAMP's ::date to a local-date column, check the writer's timezone (Strava start_date is UTC) | applies: date joins across Strava/workout_summary and LA-day tables
+Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T9: get_day_summary, update/delete entries, mark_day_complete [model: sonnet] [risk: high] [status: todo] [deps: T7, T8]
 **Outcome**: These tools exist:
