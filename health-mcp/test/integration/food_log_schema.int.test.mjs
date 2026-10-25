@@ -34,6 +34,8 @@ const MIGRATIONS_DIR = path.join(REPO, 'health_data_hub/db/migrations');
 const UP = path.join(MIGRATIONS_DIR, '2026-11_01_food_log.sql');
 const DOWN = path.join(MIGRATIONS_DIR, '2026-11_01_food_log.down.sql');
 const MIGRATION_NAME = '2026-11_01_food_log';
+const MIGRATION_02 = '2026-11_02_nutrition_daily_view';
+const DOWN_02 = path.join(MIGRATIONS_DIR, `${MIGRATION_02}.down.sql`);
 
 const URL_ = process.env.TEST_DATABASE_URL;
 
@@ -410,6 +412,10 @@ describe('food_log schema (migration 01)', () => {
 
     test('drops every object, the role and the ledger row when food_log is empty', async () => {
       await q('DELETE FROM public.food_log');
+      // T8 / PLAN.md D2: migration 02's view depends on food_log, so undo 02 first.
+      if (fs.existsSync(DOWN_02) && (await ledgerNames()).includes(MIGRATION_02)) {
+        await q(readSql(DOWN_02));
+      }
       await q(readSql(DOWN));
       for (const rel of [
         'public.food_log_daily',

@@ -285,7 +285,8 @@ describe('database harness', () => {
           'monitoring.quality_check_runs:r',
           'public.body_measurements:r',
           'public.body_weight_daily:v',
-          'public.nutrition_daily:r',
+          // T8 / PLAN.md D2: nutrition_daily is a view over nutrition_daily_legacy.
+          'public.nutrition_daily:v',
           'public.workout_summary:r',
         ],
       );
@@ -388,7 +389,8 @@ describe('database harness', () => {
     test('cannot INSERT into nutrition_daily', async () => {
       await assert.rejects(
         ro.query(`INSERT INTO nutrition_daily (day, calories) VALUES ('2026-01-01', 1)`),
-        (err) => ['25006', '42501'].includes(err.code),
+        // 55000: since T8 (PLAN.md D2) nutrition_daily is a non-updatable view.
+        (err) => ['25006', '42501', '55000'].includes(err.code),
       );
       const [{ n }] = await q('SELECT count(*)::int AS n FROM nutrition_daily');
       assert.equal(n, 0);
