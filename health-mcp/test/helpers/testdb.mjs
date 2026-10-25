@@ -25,6 +25,11 @@ function testUrl() {
   } catch {
     throw new Error('TEST_DATABASE_URL is not a valid URL');
   }
+  // pg-connection-string copies query params (host=, user=, dbname=...) into the
+  // driver config, overriding what is checked below. Reject them outright.
+  if (u.search || u.hash) {
+    throw new Error('TEST_DATABASE_URL must not contain query parameters or a fragment');
+  }
   const db = decodeURIComponent(u.pathname.replace(/^\//, ''));
   if (!db.endsWith('_test')) throw new Error('TEST_DATABASE_URL database name must end in _test');
   if (u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') {
