@@ -153,7 +153,7 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 Lesson: An idempotency-key lookup must include soft-deleted rows whenever the unique constraint covers them | applies: any request_id/dedupe check on tables with deleted_at
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T7: save_favorite and search_foods (favorites tier) [model: sonnet] [risk: high] [status: todo] [deps: T6]
+### T7: save_favorite and search_foods (favorites tier) [model: sonnet] [risk: high] [status: done] [deps: T6]
 **Outcome**: `save_favorite` (build-plan §5.4) creates, updates and archives favorites and their aliases in one transaction. `search_foods` (§5.2) runs on the read pool and returns favorites ranked exact alias first, then `word_similarity`, then `use_count`, plus `usda: []` and a note that USDA is not loaded yet.
 **Files**: `health-mcp/tools/nutrition/favorites.mjs` (new), `health-mcp/tools/nutrition/search.mjs` (new), `health-mcp/tools/nutrition/index.mjs`, `health-mcp/test/integration/favorites.int.test.mjs` (new)
 **Non-goals**: No USDA queries. No `unaccent`.
@@ -167,7 +167,9 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 - (g) The favorite name is always stored as an alias.
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: The filler words stripped for the second query variant are exactly `my, usual, regular, normal, the`. Do not add more without a needs-decision.
-**Notes**:
+**Notes**: Exact-match rule: alias == normalized query, or filler-stripped alias == filler-stripped query (so 'oatmeal' is not exact for 'usual oatmeal'). Both tools register inside the WRITES_ENABLED gate. Archive deletes aliases and sets archived_at; updating an archived favorite gives ALREADY_DELETED. Create/rename run in a SAVEPOINT so CONFLICT lookup works after 23505.
+Lesson: After a caught unique violation (23505) inside a transaction, further queries fail unless a SAVEPOINT or ON CONFLICT DO NOTHING is used | applies: Postgres write tools that turn constraint errors into CONFLICT
+Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T8: Goals, day status and the nutrition_daily view [model: opus] [risk: high] [status: todo] [deps: T4]
 **Outcome**: Migration `02` creates `nutrition_goals` per D5 with its seed row, `nutrition_day_status`, renames the table to `nutrition_daily_legacy` (and its PK index), and creates VIEW `nutrition_daily` per D2 and build-plan §4.3, with goal columns per D5. `schema.sql` produces the same end state, and its `ALTER TABLE nutrition_daily ADD COLUMN` line targets `nutrition_daily_legacy`.
