@@ -16,6 +16,7 @@ Branch: orch/nutrition-logging
 - D4 (Q4): Show the estimate before logging -> `log_food` takes `confirm` (boolean, default false). With `confirm: false` it validates, computes and returns the would-be rows plus projected day totals, and writes nothing. With `confirm: true` it inserts. The tool description and server `instructions` tell Claude to call without `confirm`, show the table, and call again with `confirm: true` only after the user agrees. This is not enforced by a token.
 - D5 (Q5, revised 2026-10-25): The goal is a 100 kg body-weight target. Oura plays no part in calories; the only calories burned that count are from cycling with tracked watts and kJ -> `nutrition_goals(effective_from date PK, target_weight_kg numeric(5,1), base_calories int, cycling_kj_factor numeric(3,2) DEFAULT 1.00, protein_g numeric(6,1), notes text, created_at)`. For a day d: `cycling_kcal = round(cycling_kj_factor * coalesce(sum(workout_summary.kj), 0))` over rows with `sport_type = 'Ride' AND device_watts AND kj > 0 AND start_time::date = d`, and `goal_calories = base_calories + cycling_kcal`. `goal_protein_g = protein_g`. `goal_carbs_g` and `goal_fat_g` are NULL. Seed row: `('2026-10-25', 100.0, 2620, 1.00, 180)`. `get_day_summary` also returns `cycling_kcal`, the latest `body_weight_daily.weight_kg`, its day, and `kg_to_target`.
 - D6 (Q14): Run through the kit pipeline. The build-plan §4.3 `exercise_adjust`/`base_calories` goal design is replaced by D5.
+- D7 (auto, T8): T2 harness (c)/(e) and T4 (j) specs assume `nutrition_daily` stays a base table; may they be re-specced? -> Yes: D2 (approved) makes `nutrition_daily` a VIEW, so those assertions contradict it. Re-spec them minimally (relkind `v` allowed, INSERT via the view fails with any error, run 02's down before 01's down); a newer `T8-spec:` commit becomes their baseline per spec-integrity.sh [source: D2, spec-integrity.sh re-spec rule]
 ## Assumptions
 - A1: Unanswered build-plan questions take the doc's recommendations. Meals are `breakfast|lunch|dinner|snack` (Q6). The `eaten_at` backfill window is 60 days (Q12). Days are always in America/Los_Angeles (Q13, per your brief).
 - A2: The 13 all-NULL `apple_health` legacy rows are kept (Q11). Deleting data was not approved, and they read the same as today.
@@ -171,7 +172,7 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 Lesson: After a caught unique violation (23505) inside a transaction, further queries fail unless a SAVEPOINT or ON CONFLICT DO NOTHING is used | applies: Postgres write tools that turn constraint errors into CONFLICT
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T8: Goals, day status and the nutrition_daily view [model: opus] [risk: high] [status: todo] [deps: T4]
+### T8: Goals, day status and the nutrition_daily view [model: opus] [risk: high] [status: doing] [deps: T4]
 **Outcome**: Migration `02` creates `nutrition_goals` per D5 with its seed row, `nutrition_day_status`, renames the table to `nutrition_daily_legacy` (and its PK index), and creates VIEW `nutrition_daily` per D2 and build-plan §4.3, with goal columns per D5. `schema.sql` produces the same end state, and its `ALTER TABLE nutrition_daily ADD COLUMN` line targets `nutrition_daily_legacy`.
 **Files**: `health_data_hub/db/migrations/2026-11_02_nutrition_daily_view.sql` (new), `health_data_hub/db/migrations/2026-11_02_nutrition_daily_view.down.sql` (new), `health_data_hub/db/schema.sql`, `health-mcp/test/integration/nutrition_daily_view.int.test.mjs` (new), `health-mcp/test/fixtures/nutrition_daily_rows.sql` (new; about 10 synthetic rows covering the `myfitnesspal` source with `meals_json` and goals, the `apple_health` source, and all-NULL rows)
 **Non-goals**: No tool changes. No deletion of legacy rows (A2). No reader code changes.
@@ -237,7 +238,7 @@ The three write tools go through the T5 write guard.
 **Decision rule**: Keep check names in the existing `freshness_<table>` form.
 **Notes**:
 
-### T12: Consent text, README, user guide and deploy runbook [model: sonnet] [risk: high] [status: todo] [deps: T9, T10]
+### T12: Consent text, README, user guide and deploy runbook [model: sonnet] [risk: high] [status: hold] [deps: T9, T10]
 **Outcome**:
 - The OAuth consent page says the app "is requesting access to read your health data and log food".
 - `health-mcp/README.md` documents the 7 new tools, the `nutrition_writer` role, the new env vars, the write guards, and the corrected data model (sources MFP and Apple Health, not Cronometer).
@@ -260,7 +261,7 @@ The three write tools go through the T5 write guard.
 **Decision rule**: The runbook states only steps derivable from this plan, the build plan and `health-mcp/README.md`. Do not invent host names or paths.
 **Notes**:
 
-### T13: Promote the never-raise job lesson to a test [model: haiku] [risk: normal] [status: todo] [deps: T10]
+### T13: Promote the never-raise job lesson to a test [model: haiku] [risk: normal] [status: hold] [deps: T10]
 **Outcome**: A pytest test fails if any `run_*` job wrapper in `scheduler_all.py` lacks an `except Exception` handler. The lesson line ("catch-all `except Exception`", count 2) is deleted from LESSONS.md.
 **Files**: `tests/test_scheduler_wrappers.py` (new; parse `scheduler_all.py` with `ast`, no import), `LESSONS.md` (delete that one line)
 **Non-goals**: No changes to pollers or `scheduler_all.py`.
