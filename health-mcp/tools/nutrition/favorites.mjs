@@ -84,16 +84,22 @@ async function logRowFields(c, logId) {
 async function addAlias(c, foodId, alias) {
   const norm = normalizeText(alias);
   if (norm === '') throw validationError('alias must not be empty', 'aliases');
-  const { rowCount } = await c.query(
-    `INSERT INTO my_food_aliases (my_food_id, alias) VALUES ($1::bigint, $2) ON CONFLICT DO NOTHING`,
-    [foodId, alias.trim().replace(/\s+/g, ' ')]
-  );
-  if (rowCount === 1) return;
-  const { rows } = await c.query(`SELECT my_food_id FROM my_food_aliases WHERE alias_norm = $1`, [norm]);
-  const owner = rows.length ? Number(rows[0].my_food_id) : null;
-  if (owner !== null && owner !== foodId) {
-    throw new ToolError('CONFLICT', `Alias "${norm}" already belongs to favorite my_food_id ${owner}.`, { field: 'aliases' });
+  const cleaned = alias.trim().replace(/\s+/g, ' ');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { rowCount } = await c.query(
+      `INSERT INTO my_food_aliases (my_food_id, alias) VALUES ($1::bigint, $2) ON CONFLICT DO NOTHING`,
+      [foodId, cleaned]
+    );
+    if (rowCount === 1) return;
+    const { rows } = await c.query(`SELECT my_food_id FROM my_food_aliases WHERE alias_norm = $1`, [norm]);
+    const owner = rows.length ? Number(rows[0].my_food_id) : null;
+    if (owner === foodId) return;
+    if (owner !== null) {
+      throw new ToolError('CONFLICT', `Alias "${norm}" already belongs to favorite my_food_id ${owner}.`, { field: 'aliases' });
+    }
+    // owner vanished (concurrent archive): retry the insert once
   }
+  throw new ToolError('CONFLICT', `Alias "${norm}" could not be saved because of a concurrent change; retry.`, { field: 'aliases' });
 }
 
 async function nameConflict(c, name) {
@@ -123,6 +129,7 @@ async function run(c, args) {
       if (v[k] === undefined) throw validationError(`${k} is required to create a favorite`, k);
     }
     let rows;
+    await c.query('SAVEPOINT sp_name');
     try {
       ({ rows } = await c.query(
         `INSERT INTO my_foods (name, serving_qty, serving_unit, serving_grams, calories, protein_g, carbs_g, fat_g, fiber_g,
@@ -134,8 +141,12 @@ async function run(c, args) {
           v.fat_g, v.fiber_g ?? null, v.sugar_g ?? null, v.sodium_mg ?? null, v.confidence, v.basis, v.fdc_id ?? null, v.notes ?? null,
         ]
       ));
+      await c.query('RELEASE SAVEPOINT sp_name');
     } catch (err) {
-      if (err && err.code === '23505') throw await nameConflict(c, args.name);
+      if (err && err.code === '23505') {
+        await c.query('ROLLBACK TO SAVEPOINT sp_name');
+        throw await nameConflict(c, args.name);
+      }
       throw err;
     }
     const foodId = Number(rows[0].id);
@@ -146,6 +157,7 @@ async function run(c, args) {
 
   const food = await lockFood(c, id);
   if (food.archived_at !== null) throw new ToolError('ALREADY_DELETED', `Favorite ${id} is archived.`, { field: 'id' });
+  await c.query('SAVEPOINT sp_name');
   try {
     await c.query(
       `UPDATE my_foods SET
@@ -163,8 +175,12 @@ async function run(c, args) {
         v.confidence ?? null, v.basis ?? null, v.fdc_id ?? null, v.notes ?? null,
       ]
     );
+    await c.query('RELEASE SAVEPOINT sp_name');
   } catch (err) {
-    if (err && err.code === '23505') throw await nameConflict(c, args.name);
+    if (err && err.code === '23505') {
+      await c.query('ROLLBACK TO SAVEPOINT sp_name');
+      throw await nameConflict(c, args.name);
+    }
     throw err;
   }
   const finalName = args.name ?? food.name;
