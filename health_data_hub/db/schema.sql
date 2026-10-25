@@ -423,3 +423,15 @@ SELECT DISTINCT ON (local_day)
 FROM body_measurements
 WHERE weight_kg IS NOT NULL
 ORDER BY local_day, measured_at;           -- first weigh-in of the day
+
+-- ------------------------------------------------------------
+-- Migration ledger (mirrors migrations/2026-11_00_migration_ledger.sql)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.schema_migrations (
+    name        TEXT PRIMARY KEY,
+    applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.schema_migrations (name)
+VALUES ('2026-10_body_measurements'), ('2026-11_00_migration_ledger')
+ON CONFLICT DO NOTHING;
