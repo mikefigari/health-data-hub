@@ -4,8 +4,11 @@
   "type": "module",
   "description": "Posts daily and weekly health intelligence reports to Notion via Claude AI",
   "scripts": {
+    "test": "node --test \"test/unit/**/*.test.mjs\"",
+    "test:integration": "node --test --test-concurrency=1 \"test/integration/**/*.int.test.mjs\"",
     "daily": "cross-env REPORT_MODE=daily node index.mjs",
     "weekly": "cross-env REPORT_MODE=weekly node index.mjs",
+    "checkin": "cross-env REPORT_MODE=checkin node index.mjs",
     "dry": "cross-env REPORT_MODE=dry node index.mjs"
   },
   "dependencies": {

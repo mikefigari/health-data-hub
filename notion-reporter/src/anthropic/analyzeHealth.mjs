@@ -123,9 +123,9 @@ athlete default of 500 kJ for planning."
 Note if today's planned TSS is significantly higher or lower than recent days.`;
 */ // end DAILY PROMPT
 
-const WEEKLY_SYSTEM_PROMPT = `\
-You are a weekly data analyst for an endurance athlete losing 27kg while
-preserving cycling power (w/kg). You surface what the data shows — you do not
+export const WEEKLY_SYSTEM_PROMPT = `\
+You are a weekly data analyst for an endurance athlete losing weight at 0.75 kg/week
+while preserving cycling power (w/kg). You surface what the data shows — you do not
 prescribe training. The athlete controls all workout decisions.
 
 Your job is to give an honest, specific account of how the past week went across
@@ -143,7 +143,8 @@ Fatigue context:
   what the objective metrics show
 
 Weight loss context:
-- Goal is 27kg loss while preserving w/kg
+- Goal is the target weight in WEIGHT_TREND (kg_to_target remaining) at 0.75 kg/week
+  while preserving w/kg
 - A week where weight dropped AND w/kg held or improved is a win — say so
 - A week where weight dropped BUT power metrics suggest fatigue is accumulating
   is a warning sign — the deficit may be too aggressive
@@ -155,7 +156,11 @@ You will receive:
 - LAST_14_DAYS: full export including PMC, weight, nutrition, workouts,
   physical_state per day
 - QUARTER_SUMMARY: window_summary from last 90 days (CTL trend, TSB range)
-- DEFICIT_ADHERENCE: days on target, avg deficit, missed days with direction
+- NUTRITION_WEEK: JSON for the reviewed Monday-Sunday week (weekStart..weekEnd):
+  avg_deficit, target_daily (825), target_total (5,775), on_track, status,
+  n_usable, n_logged, n_marked_complete, projected_kg_per_week, maintenance_method
+- WEIGHT_TREND: JSON with latest_kg, kg_to_target, trend_kg_per_week,
+  target_date_at_rate, target_date_at_trend, reason
 - PLANNED_NEXT_WEEK: athlete's planned classes (context only — not for evaluation)
 
 Respond in this exact structure:
@@ -171,13 +176,22 @@ across multiple days (e.g. physical state poor on high-TSS days, sleep degrading
 mid-week). Two to three sentences.
 
 ## Nutrition
-Honest account of deficit adherence. Where did it break down if it did —
-which days, over or under? What does the 3-day protein trend look like?
-If adherence was good, confirm it clearly.
+Judge the 7-day average deficit from NUTRITION_WEEK against the target: 0.75 kg/week
+is 5,775 kcal for the week, i.e. an average of 825 kcal/day (judge against target_daily /
+target_total in NUTRITION_WEEK if present; defaults 825 / 5,775). Judge the 7-day average,
+never individual days — a single high or low day is not a failure. State coverage as
+"N of 7 days logged, M marked complete" (n_logged, n_marked_complete) and say that
+only usable days (n_usable) enter the average. State the maintenance method
+(maintenance_method: goal_calories = the daily goal figure, or scale_calibrated =
+estimated from intake and weight trend). When it is scale_calibrated, also report the
+goal-model average (goal_model_avg_deficit) next to the calibrated one for comparison. If status is no_data, say so plainly and
+do not estimate. Confirm clearly if on_track; if not, give the average shortfall.
 
 ## Weight and w/kg trend
-This week's weight change. Current w/kg estimate. Whether the 90-day direction
-is tracking toward the goal. Flag if weight loss is outpacing power preservation
+Use WEIGHT_TREND: latest weight, trend_kg_per_week vs the 0.75 kg/week plan, and
+kg_to_target. If reason is insufficient_weigh_ins, say the trend cannot be
+computed. Current w/kg estimate. Whether the 90-day direction is tracking toward
+the goal. Flag if weight loss is outpacing power preservation
 or vice versa — be specific about what the numbers suggest.
 
 ## What the data is saying
@@ -222,8 +236,8 @@ function buildCoachingSystemPrompt(context) {
 
 // ── User message builders ─────────────────────────────────────────────────
 
-function buildWeeklyUserMessage(context) {
-  const { days, windowSummary, deficitAdherenceStr, plannedNextWeek } = context;
+export function buildWeeklyUserMessage(context) {
+  const { days, windowSummary, nutritionWeek, weightTrend, plannedNextWeek } = context;
 
   const days14Json = JSON.stringify(days ?? [], null, 2);
   const quarterJson = JSON.stringify(windowSummary ?? null, null, 2);
@@ -232,7 +246,8 @@ function buildWeeklyUserMessage(context) {
   return (
     `LAST_14_DAYS: ${days14Json}\n\n` +
     `QUARTER_SUMMARY: ${quarterJson}\n\n` +
-    `DEFICIT_ADHERENCE: ${deficitAdherenceStr ?? 'no data'}\n\n` +
+    `NUTRITION_WEEK: ${JSON.stringify({ weekStart: context.weekStart, weekEnd: context.weekEnd, ...(nutritionWeek ?? {}) }, null, 2)}\n\n` +
+    `WEIGHT_TREND: ${JSON.stringify(weightTrend ?? null, null, 2)}\n\n` +
     `PLANNED_NEXT_WEEK: ${plannedJson}`
   );
 }
