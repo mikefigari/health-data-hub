@@ -109,7 +109,7 @@ async function withTx(writePool, fn) {
   }
 }
 
-async function updateEntry(writePool, id, patch, now) {
+async function updateEntry(writePool, id, patch, time) {
   return withTx(writePool, async (c) => {
     const cur = (await c.query(`SELECT ${ITEM_COLUMNS}, deleted_at FROM food_log WHERE id = $1::bigint FOR UPDATE`, [id])).rows[0];
     if (!cur) throw new ToolError('NOT_FOUND', `No food_log entry with id ${id}.`, { field: 'id' });
@@ -125,13 +125,11 @@ async function updateEntry(writePool, id, patch, now) {
       sets.push(`${col} = $${params.length}`);
     };
 
-    // Time: eaten_at wins; a bare day keeps the local time of day.
-    if (patch.eaten_at !== undefined) {
-      const { eaten_at } = resolveItemTime({ eaten_at: patch.eaten_at, day: patch.day }, { now: now(), allowBackfill: true });
-      put('eaten_at', eaten_at);
-    } else if (patch.day !== undefined) {
-      const day = parseDay(patch.day);
-      params.push(day);
+    // Time: eaten_at wins; a bare day keeps the local time of day (validated before the guard).
+    if (time.eaten_at !== undefined) {
+      put('eaten_at', time.eaten_at);
+    } else if (time.day !== undefined) {
+      params.push(time.day);
       sets.push(
         `eaten_at = ($${params.length}::date + (eaten_at AT TIME ZONE 'America/Los_Angeles')::time) AT TIME ZONE 'America/Los_Angeles'`
       );
@@ -154,10 +152,7 @@ async function updateEntry(writePool, id, patch, now) {
       if (!fav) throw new ToolError('NOT_FOUND', `my_food_id ${eff.my_food_id} not found`, { field: 'my_food_id' });
       const s = patch.servings;
       const scale = (v) => (v === null || v === undefined ? null : round1(Number(v) * s));
-      const explicitMacros = ['calories', 'protein_g', 'carbs_g', 'fat_g'].some((k) => patch[k] !== undefined);
-      if (!explicitMacros) {
-        for (const k of NUTRIENTS) if (patch[k] === undefined) values[k] = scale(fav[k]);
-      }
+      for (const k of NUTRIENTS) if (patch[k] === undefined) values[k] = scale(fav[k]);
       if (patch.quantity === undefined) values.quantity = round2(Number(fav.serving_qty) * s);
       if (patch.unit === undefined) values.unit = fav.serving_unit;
       if (patch.grams === undefined && fav.serving_grams !== null) values.grams = round1(Number(fav.serving_grams) * s);
@@ -217,9 +212,18 @@ export function registerEditTools(server, { writePool, guard, now }) {
         const parsed = patchSchema.safeParse(patch);
         if (!parsed.success) throw patchError(parsed.error);
         if (Object.keys(parsed.data).length === 0) throw validationError('patch must not be empty', 'patch');
+        const time = {};
+        if (parsed.data.eaten_at !== undefined) {
+          time.eaten_at = resolveItemTime(
+            { eaten_at: parsed.data.eaten_at, day: parsed.data.day },
+            { now: now(), allowBackfill: true }
+          ).eaten_at;
+        } else if (parsed.data.day !== undefined) {
+          time.day = parseDay(parsed.data.day);
+        }
         const blocked = guard.check('update_log_entry');
         if (blocked) return blocked;
-        const result = await updateEntry(writePool, id, parsed.data, now);
+        const result = await updateEntry(writePool, id, parsed.data, time);
         guard.audit({
           tool: 'update_log_entry',
           authInfo: extra && extra.authInfo,

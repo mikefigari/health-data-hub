@@ -30,7 +30,7 @@ const DAILY_SQL = `
     FROM nutrition_daily WHERE day = $1::date`;
 
 const GOAL_SQL = `
-  SELECT target_weight_kg, cycling_kj_factor FROM nutrition_goals
+  SELECT target_weight_kg, cycling_kj_factor, base_calories, protein_g FROM nutrition_goals
    WHERE effective_from <= $1::date ORDER BY effective_from DESC LIMIT 1`;
 
 // D5: powered Rides only; the ride day is start_time::date.
@@ -101,7 +101,11 @@ export async function buildDaySummary(pool, day, includeItems) {
   };
 
   if (!daily) {
-    return { ...out, totals: null, goals: null, remaining: null, by_meal: {}, items: [], logged_complete: null };
+    // No rows yet: the D5 goal still applies (base + cycling, nothing eaten).
+    const goals = goal
+      ? { calories: Number(goal.base_calories) + cycling_kcal, protein_g: num(goal.protein_g), carbs_g: null, fat_g: null }
+      : null;
+    return { ...out, totals: null, goals, remaining: goals ? { ...goals } : null, by_meal: {}, items: [], logged_complete: null };
   }
 
   out.totals = {
