@@ -51,7 +51,7 @@ test('(d) off track and surplus', () => {
 
 test('(d2) on_track boundary is >= 825 and judged on the average, not per day', () => {
   assert.equal(weeklyDeficit(run('2026-10-26', 7, 825)).on_track, true);
-  const mixed = [...run('2026-10-26', 3, 1500), ...run('2026-10-29', 4, 300)]; // avg ~842.9 despite 4 low days
+  const mixed = [...run('2026-10-26', 3, 1600), ...run('2026-10-29', 4, 300)]; // avg ~857.1 despite 4 low days
   assert.equal(weeklyDeficit(mixed).on_track, true);
 });
 
