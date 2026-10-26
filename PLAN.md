@@ -67,7 +67,7 @@ The CI `node` job uses `actions/setup-node` (Node 22), a `postgres:18` service w
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: If `schema.sql` fails on a fresh Postgres 18, report needs-decision with the error. Do not edit `schema.sql` in this task.
 **Notes**: Helper exports resetDb/freshInstall/upgradeInstall/catalogSnapshot/readonlyPool; guard rejects any URL query string. Gotcha: root .gitignore has `lib/`, which would ignore T5's health-mcp/lib/write-guard.mjs.
-Lesson: Run safety guards on connection strings over the config the driver will actually use (query params like ?host= override the URL host) | applies: destructive test-DB helpers, env-gated DB tooling
+Lesson (logged): Run safety guards on connection strings over the config the driver will actually use (query params like ?host= override the URL host) | applies: destructive test-DB helpers, env-gated DB tooling
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T3: Migration ledger [model: haiku] [risk: high] [status: done] [deps: T2]
@@ -105,7 +105,7 @@ GRANT CONNECT targets `current_database()` through `EXECUTE format(...)`. `CREAT
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: The DDL in build-plan §4.2 is the spec. If a statement there fails on Postgres 18, make the smallest change that passes and record it in Notes.
 **Notes**: §4.2 DDL applied with IF NOT EXISTS/CREATE OR REPLACE so one body serves migration and schema.sql; down script leaves pg_trgm. testdb.mjs exports writerPool() and WRITER_TEST_PASSWORD.
-Lesson: Database-name guards in test helpers don't protect roles (cluster-wide); use test-only role names or refuse if the role exists outside the test DB | applies: testdb.mjs and tests running ALTER ROLE / DROP ROLE
+Lesson (logged): Database-name guards in test helpers don't protect roles (cluster-wide); use test-only role names or refuse if the role exists outside the test DB | applies: testdb.mjs and tests running ALTER ROLE / DROP ROLE
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T5: Writer pool, kill switch, rate limit, auth info [model: sonnet] [risk: high] [status: done] [deps: T1, T4]
@@ -151,7 +151,7 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: When the build-plan §5.3 text and D4 disagree, D4 wins. Any other gap: choose the behavior that writes nothing and returns `VALIDATION_ERROR`, and note it.
 **Notes**: Preview returns {preview:true,would_log,warnings,day_totals}; confirm returns {preview:false,logged,warnings,day_totals,duplicate}. Items validated in handler (own VALIDATION_ERROR with item_index/field). Order on confirm: request_id lookup (incl. soft-deleted) -> validate -> rate-limit token -> insert. server instructions now sent only when WRITES_ENABLED.
-Lesson: An idempotency-key lookup must include soft-deleted rows whenever the unique constraint covers them | applies: any request_id/dedupe check on tables with deleted_at
+Lesson (logged): An idempotency-key lookup must include soft-deleted rows whenever the unique constraint covers them | applies: any request_id/dedupe check on tables with deleted_at
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T7: save_favorite and search_foods (favorites tier) [model: sonnet] [risk: high] [status: done] [deps: T6]
@@ -169,7 +169,7 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: The filler words stripped for the second query variant are exactly `my, usual, regular, normal, the`. Do not add more without a needs-decision.
 **Notes**: Exact-match rule: alias == normalized query, or filler-stripped alias == filler-stripped query (so 'oatmeal' is not exact for 'usual oatmeal'). Both tools register inside the WRITES_ENABLED gate. Archive deletes aliases and sets archived_at; updating an archived favorite gives ALREADY_DELETED. Create/rename run in a SAVEPOINT so CONFLICT lookup works after 23505.
-Lesson: After a caught unique violation (23505) inside a transaction, further queries fail unless a SAVEPOINT or ON CONFLICT DO NOTHING is used | applies: Postgres write tools that turn constraint errors into CONFLICT
+Lesson (logged): After a caught unique violation (23505) inside a transaction, further queries fail unless a SAVEPOINT or ON CONFLICT DO NOTHING is used | applies: Postgres write tools that turn constraint errors into CONFLICT
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T8: Goals, day status and the nutrition_daily view [model: opus] [risk: high] [status: done] [deps: T4]
@@ -190,7 +190,7 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: Column types must equal the legacy table's (`calories int`, `*_g double precision`, `weight_kg numeric(5,2)`). If a cast choice is unclear, match `pg_typeof` of the legacy column.
 **Notes**: Re-spec of T2/T4 specs per D7. Added CHECKs on nutrition_goals; writer gets SELECT/INSERT/UPDATE on nutrition_day_status. schema.sql/init_db on a DB lacking migration 02 fails and rolls back, so apply 02 first (psql -1). Reviewer flag for planner: start_time::date (A3b) is UTC-based while food_log.day is LA, so late-evening rides count toward the next day's goal; also deploy T10 before migration 02 (insert_nutrition_daily.py would fail against the view).
-Lesson: Before comparing a naive TIMESTAMP's ::date to a local-date column, check the writer's timezone (Strava start_date is UTC) | applies: date joins across Strava/workout_summary and LA-day tables
+Lesson (logged): Before comparing a naive TIMESTAMP's ::date to a local-date column, check the writer's timezone (Strava start_date is UTC) | applies: date joins across Strava/workout_summary and LA-day tables
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T9: get_day_summary, update/delete entries, mark_day_complete [model: sonnet] [risk: high] [status: done] [deps: T7, T8]
@@ -217,8 +217,8 @@ The three write tools go through the T5 write guard.
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: Patch fields not listed in build-plan §5.5 are rejected with `VALIDATION_ERROR`, not ignored.
 **Notes**: Tools: get_day_summary (read pool), update_log_entry, delete_log_entry (restore), mark_day_complete; clock injected via registerNutritionTools(..., {now}). Empty days return D5 goals from nutrition_goals. Any legacy row reports source 'legacy'. Exported 4 helpers from log-food.mjs.
-Lesson: Do every input check that needs no database before guard.check (it consumes a rate-limit token) | applies: all write tools in tools/nutrition
-Lesson: Day-summary or goal tools must cover days with no logged rows by working out goals from the goals table | applies: get_day_summary, readers of the nutrition_daily view
+Lesson (logged): Do every input check that needs no database before guard.check (it consumes a rate-limit token) | applies: all write tools in tools/nutrition
+Lesson (logged): Day-summary or goal tools must cover days with no logged rows by working out goals from the goals table | applies: get_day_summary, readers of the nutrition_daily view
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T10: Retire the Apple Health nutrition poller [model: sonnet] [risk: normal] [status: done] [deps: none]

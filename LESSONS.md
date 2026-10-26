@@ -7,3 +7,10 @@ the lesson to a lint rule, hook or test, and that task deletes the line. This fi
 
 - For jobs that must never raise, end with a catch-all `except Exception` that logs and returns 1; listing specific exception types misses TypeError and AttributeError | count: 2 | last: 2026-10-23 | applies: `sync_once` / `poll_once`-style jobs
 - When a PR adds a CI workflow, check that every tool it runs (e.g. pytest) is installed by the dependency files the workflow installs from | count: 1 | last: 2026-10-23 | applies: kit adoption / any task adding .github/workflows
+- Run safety guards on connection strings over the config the driver will actually use (query params like ?host= override the URL host) | count: 1 | last: 2026-10-26 | applies: applies: destructive test-DB helpers, env-gated DB tooling
+- Database-name guards in test helpers don't protect roles (cluster-wide); use test-only role names or refuse if the role exists outside the test DB | count: 1 | last: 2026-10-26 | applies: applies: testdb.mjs and tests running ALTER ROLE / DROP ROLE
+- An idempotency-key lookup must include soft-deleted rows whenever the unique constraint covers them | count: 1 | last: 2026-10-26 | applies: applies: any request_id/dedupe check on tables with deleted_at
+- After a caught unique violation (23505) inside a transaction, further queries fail unless a SAVEPOINT or ON CONFLICT DO NOTHING is used | count: 1 | last: 2026-10-26 | applies: applies: Postgres write tools that turn constraint errors into CONFLICT
+- Before comparing a naive TIMESTAMP's ::date to a local-date column, check the writer's timezone (Strava start_date is UTC) | count: 1 | last: 2026-10-26 | applies: applies: date joins across Strava/workout_summary and LA-day tables
+- Do every input check that needs no database before guard.check (it consumes a rate-limit token) | count: 1 | last: 2026-10-26 | applies: applies: all write tools in tools/nutrition
+- Day-summary or goal tools must cover days with no logged rows by working out goals from the goals table | count: 1 | last: 2026-10-26 | applies: applies: get_day_summary, readers of the nutrition_daily view
