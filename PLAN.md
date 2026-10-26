@@ -84,7 +84,7 @@ Check-in always uses goal_calories maintenance (Mon–Wed food only), never the 
 Lesson: When a plan Decision defines a model shared by several modes (e.g. maintenance calibration), every mode's spec must either apply it or say why it doesn't | applies: planner and spec-writer for multi-mode features
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T5: CI job for the reporter + post-merge runbook [model: haiku] [risk: high] [status: doing] [deps: T4]
+### T5: CI job for the reporter + post-merge runbook [model: haiku] [risk: high] [status: done] [deps: T4]
 **Outcome**: CI runs the reporter's unit and integration tests on every PR, and `docs/weekly-nutrition-review-runbook.md` lists the post-merge Pi steps in executable order.
 **Files**: `.github/workflows/kit-ci.yml` (add steps to the `node` job copying `:38-45`: `npm ci` in `health-mcp` (the harness imports `pg` from there) and in `notion-reporter`, then `npm test` and `npm run test:integration` in `notion-reporter`), `docs/weekly-nutrition-review-runbook.md` (new)
 **Non-goals**: no change to the Python job or existing health-mcp steps.
@@ -92,3 +92,7 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 **Done-when**: `cd notion-reporter && npm test && grep -q "working-directory: notion-reporter" ../.github/workflows/kit-ci.yml && grep -q "test:integration" ../.github/workflows/kit-ci.yml && f=../docs/weekly-nutrition-review-runbook.md && a=$(grep -n "git pull" $f | head -1 | cut -d: -f1) && b=$(grep -n "npm ci" $f | head -1 | cut -d: -f1) && c=$(grep -n "crontab" $f | head -1 | cut -d: -f1) && [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] && grep -q "0 6 \* \* 1" $f && grep -q "0 6 \* \* 4" $f && grep -q "CRON_TZ=America/Los_Angeles\|TZ=America/Los_Angeles" $f`
 **Decision rule**: The runbook's crontab lines are `0 6 * * 1` (weekly) and `0 6 * * 4` (checkin) with `CRON_TZ=America/Los_Angeles`, and say to remove the old Sunday `0 20 * * 0` weekly line.
 **Notes**:
+Runbook step 3 is a daily-path dry run only (no weekly dry mode exists); check-in run warns it posts live. CRON_TZ is ignored by vixie cron, so the runbook adds a timedatectl check.
+Lesson: A runbook "check" step must not have side effects in production, and must match what the mode actually does in the code | applies: runbooks and smoke-test steps
+Lesson: Cron instructions should be checked against the target OS's cron (CRON_TZ is cronie-only) and remove old lines by job, not by exact schedule | applies: Pi/cron runbooks
+Metrics: attempts=2 fix=1 review=FIX blocked=none
