@@ -259,7 +259,7 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: Migration 02 is unreleased (nothing applied outside test clusters), so edit it in place and keep `schema.sql` identical in end state.
 **Notes**: Ride-day expression switched to LA date of UTC start in migration 02, schema.sql and CYCLING_SQL. Gate needs TEST_DATABASE_URL exported in the Stop hook env (worker report blocked on that, gate passes with it).
-Lesson: notion-reporter/src/utils/db.mjs:79 and power_zone_graph.py:478 still group rides by UTC day (out of scope; planner to consider D8 follow-up).
+Lesson (logged): notion-reporter/src/utils/db.mjs:79 and power_zone_graph.py:478 still group rides by UTC day (out of scope; planner to consider D8 follow-up).
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T12: Consent text, README, user guide and deploy runbook [model: sonnet] [risk: high] [status: hold] [deps: T9, T10]

@@ -14,3 +14,4 @@ the lesson to a lint rule, hook or test, and that task deletes the line. This fi
 - Before comparing a naive TIMESTAMP's ::date to a local-date column, check the writer's timezone (Strava start_date is UTC) | count: 1 | last: 2026-10-26 | applies: applies: date joins across Strava/workout_summary and LA-day tables
 - Do every input check that needs no database before guard.check (it consumes a rate-limit token) | count: 1 | last: 2026-10-26 | applies: applies: all write tools in tools/nutrition
 - Day-summary or goal tools must cover days with no logged rows by working out goals from the goals table | count: 1 | last: 2026-10-26 | applies: applies: get_day_summary, readers of the nutrition_daily view
+- notion-reporter/src/utils/db.mjs:79 and power_zone_graph.py:478 still group rides by UTC day (out of scope; planner to consider D8 follow-up). | count: 1 | last: 2026-10-26 | applies: general
