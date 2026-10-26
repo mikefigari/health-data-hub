@@ -262,7 +262,7 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 Lesson (logged): notion-reporter/src/utils/db.mjs:79 and power_zone_graph.py:478 still group rides by UTC day (out of scope; planner to consider D8 follow-up).
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T12: Consent text, README, user guide and deploy runbook [model: sonnet] [risk: high] [status: todo] [deps: T9, T10]
+### T12: Consent text, README, user guide and deploy runbook [model: sonnet] [risk: high] [status: done] [deps: T9, T10]
 **Outcome**:
 - The OAuth consent page says the app "is requesting access to read your health data and log food".
 - `health-mcp/README.md` documents the 7 new tools, the `nutrition_writer` role, the new env vars, the write guards, and the corrected data model (sources MFP and Apple Health, not Cronometer).
@@ -284,9 +284,11 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && grep -q 'nutrition_writer' README.md && grep -q 'confirm' ../docs/nutrition_logging.md && grep -q 'pg_dump' ../docs/nutrition_deploy_runbook.md && grep -q 'ON_ERROR_STOP' ../docs/nutrition_deploy_runbook.md`
 **Decision rule**: The runbook states only steps derivable from this plan, the build plan and `health-mcp/README.md`. Do not invent host names or paths.
 The runbook orders the live steps so that the nutrition poller is retired (T10 code deployed) before migration 02 is applied, and migration 02 is applied on the Pi before the new code is deployed (`run_all.py` calls `init_db`, and `schema.sql` fails on a database without 02).
-**Notes**:
+**Notes**: Runbook has 9 steps (added stop health-data-hub before migrations); `git pull` in step 2 so migrations exist; rollback step 3 limited to health-mcp.
+Lesson: A runbook step that runs repo files (migrations, scripts) has to come after the step that puts those files on the host | applies: deploy runbooks and live-step docs
+Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T13: Promote the never-raise job lesson to a test [model: haiku] [risk: normal] [status: todo] [deps: T10]
+### T13: Promote the never-raise job lesson to a test [model: haiku] [risk: normal] [status: doing] [deps: T10]
 **Outcome**: A pytest test fails if any `run_*` job wrapper in `scheduler_all.py` lacks an `except Exception` handler. The lesson line ("catch-all `except Exception`", count 2) is deleted from LESSONS.md.
 **Files**: `tests/test_scheduler_wrappers.py` (new; parse `scheduler_all.py` with `ast`, no import), `LESSONS.md` (delete that one line)
 **Non-goals**: No changes to pollers or `scheduler_all.py`.
