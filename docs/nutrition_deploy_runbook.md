@@ -95,6 +95,8 @@ clean starts.
 In the Health Auto Export app, disable the nutrition export. The Cloudflare
 Worker is left as is.
 
+**Status (2026-10-25):** done. Steps 1-7 deployed on the Pi; step 8 pending.
+
 ## 8. End-to-end checklist
 
 From claude.ai mobile, and from Claude Code using the static key:
