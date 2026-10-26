@@ -39,7 +39,18 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: health-mcp/package-lock.json
+          cache-dependency-path: |
+            health-mcp/package-lock.json
+            notion-reporter/package-lock.json
       - run: npm ci
       - run: npm test
       - run: npm run test:integration
+      - name: notion-reporter install
+        working-directory: notion-reporter
+        run: npm ci
+      - name: notion-reporter unit tests
+        working-directory: notion-reporter
+        run: npm test
+      - name: notion-reporter integration tests
+        working-directory: notion-reporter
+        run: npm run test:integration
