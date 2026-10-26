@@ -1,301 +1,83 @@
-# Plan: Log food through Claude into health_pi (MVP + nutrition_daily migration)
-Branch: orch/nutrition-logging
+# Plan: Weekly nutrition deficit review + Thursday check-in in the health intelligence reporter
+Branch: orch/weekly-nutrition-review
 ## Context
-- Spec: `docs/nutrition-build-plan.md` (§4 DDL, §5 tool specs). Decisions below override it where they differ. This run = its Phases 0–2. USDA (Phase 3), Phase 4 extras and voice (Phase 5) are follow-up plans.
-- `health-mcp/`: Node 22 ESM, express + `@modelcontextprotocol/sdk` ^1.30 + `pg` + `zod`; no tests today. Python package `health_data_hub/` with pytest (`venv/Scripts/python -m pytest -q`).
-- Node checks: `cd health-mcp && npm ci --silent && npm test` (unit, no DB) and `npm run test:integration` (needs `TEST_DATABASE_URL` pointing at a local Postgres 18 database whose name ends in `_test`).
-- Prod: Postgres 18.3 `health_pi` on the Pi; `claude_readonly` role (SELECT-only, `default_transaction_read_only=on`); default privileges grant it SELECT on new `public` tables.
-- `nutrition_daily` readers that must keep working unchanged: `health_data_hub/etl/export_daily_json.py:134`, `notion-reporter/src/utils/db.mjs:105`, `health_data_hub/integrations/apple_health/nutrition_reader.py:50`, `health_data_hub/quality/checks_health.py:124`.
-- Protected paths (merge gate holds): `health_data_hub/db/`, `migrations/`, `health-mcp/oauth.mjs`, `.github/`.
-- No-touch: `cloudflare-worker/`, `notion-reporter/`, `health_data_hub/config/*.env`, all pollers except the nutrition poller, `query`/`list_tables`/`describe_table` behavior.
-- No live steps in this run: Pi backup, migrations on the Pi, writer password, deploy and claude.ai end-to-end happen after merge per the T12 runbook.
+- `notion-reporter/`: Node 22 ESM (`pg`, `@anthropic-ai/sdk`, `@notionhq/client`), no tests today. Entry `index.mjs` switches on `REPORT_MODE` (daily | weekly | dry). Weekly = `src/utils/buildWeeklyContext.mjs` → `src/anthropic/analyzeHealth.mjs` (WEEKLY_SYSTEM_PROMPT, Opus) → `src/notion/postReport.mjs` (Health Intelligence DB).
+- Node tests follow `health-mcp/package.json:9-10`: `node --test "test/unit/**/*.test.mjs"` and `node --test --test-concurrency=1 "test/integration/**/*.int.test.mjs"`. Shared DB harness: `health-mcp/test/helpers/testdb.mjs` (`freshInstall`, `resetDb`), needs `TEST_DATABASE_URL`.
+- Local test PG: private cluster on localhost:5433, db `hdh_test` (see A9). Never the Pi.
+- Data: `nutrition_daily` VIEW (calories, protein_g, goal_calories, logged_complete per LA day; goal = `nutrition_goals.base_calories` 2620 + powered Ride kJ, never Oura), `body_weight_daily` (day, weight_kg; sparse: 2 weigh-ins in Oct), `nutrition_goals.target_weight_kg` = 100.0.
+- Protected paths (merge gate holds): `.github/`, `health_data_hub/db/`, `migrations/`. This plan needs no migration.
+- No-touch: daily mode (`buildDailyContext.mjs`, the commented DAILY prompt, `prompt.md`), `health-mcp/` source (test helper is imported, not edited), `health_data_hub/` Python, `cloudflare-worker/`.
+- Known, out of scope: daily mode reads `prompt.md` at repo root, which is not in the repo (likely Pi-only).
+- Post-merge live step (not in this run): Pi `git pull`, `npm ci`, crontab per the T5 runbook.
 ## Decisions
-- D1 (build-plan Q1): You are turning off the Health Auto Export nutrition export -> remove the 22:00 `nutrition_poller` job from `scheduler_all.py` and move `nutrition_poller.py`, `insert_nutrition_daily.py` and `lock_nutrition.py` to `archive/`. The Cloudflare Worker is left as is.
-- D2 (Q2): Approved -> rename table `nutrition_daily` to `nutrition_daily_legacy` (frozen) and create VIEW `nutrition_daily` with identical column names, order and types. A day with any non-deleted `food_log` rows returns `food_log` totals with `source='food_log'`; otherwise it returns the legacy row. Never sum both. Nothing else writes `nutrition_daily`.
-- D3 (Q3): Yes -> add the write tools to the existing `/mcp` connector. They use a second `pg` pool as new role `nutrition_writer`. Read tools (including `search_foods` and `get_day_summary`) use the `claude_readonly` pool only.
-- D4 (Q4): Show the estimate before logging -> `log_food` takes `confirm` (boolean, default false). With `confirm: false` it validates, computes and returns the would-be rows plus projected day totals, and writes nothing. With `confirm: true` it inserts. The tool description and server `instructions` tell Claude to call without `confirm`, show the table, and call again with `confirm: true` only after the user agrees. This is not enforced by a token.
-- D5 (Q5, revised 2026-10-25): The goal is a 100 kg body-weight target. Oura plays no part in calories; the only calories burned that count are from cycling with tracked watts and kJ -> `nutrition_goals(effective_from date PK, target_weight_kg numeric(5,1), base_calories int, cycling_kj_factor numeric(3,2) DEFAULT 1.00, protein_g numeric(6,1), notes text, created_at)`. For a day d: `cycling_kcal = round(cycling_kj_factor * coalesce(sum(workout_summary.kj), 0))` over rows with `sport_type = 'Ride' AND device_watts AND kj > 0 AND start_time::date = d`, and `goal_calories = base_calories + cycling_kcal`. `goal_protein_g = protein_g`. `goal_carbs_g` and `goal_fat_g` are NULL. Seed row: `('2026-10-25', 100.0, 2620, 1.00, 180)`. `get_day_summary` also returns `cycling_kcal`, the latest `body_weight_daily.weight_kg`, its day, and `kg_to_target`.
-- D6 (Q14): Run through the kit pipeline. The build-plan §4.3 `exercise_adjust`/`base_calories` goal design is replaced by D5.
-- D7 (auto, T8): T2 harness (c)/(e) and T4 (j) specs assume `nutrition_daily` stays a base table; may they be re-specced? -> Yes: D2 (approved) makes `nutrition_daily` a VIEW, so those assertions contradict it. Re-spec them minimally (relkind `v` allowed, INSERT via the view fails with any error, run 02's down before 01's down); a newer `T8-spec:` commit becomes their baseline per spec-integrity.sh [source: D2, spec-integrity.sh re-spec rule]
-- D8 (user, 2026-10-25): A ride's day is the LA date of its UTC start time, `(start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date`, because `workout_summary.start_time` is a naive UTC timestamp (`insert_workout.py:30`). Supersedes A3b. On prod, 34 of 191 powered rides in the last 365 days were on the wrong day with `start_time::date`.
+- D1: Loss rate -> 0.75 kg/week. Weekly deficit target = round(0.75 × 7700) = 5,775 kcal; daily-average target = 825 kcal.
+- D2: Judge the week on the 7-day AVERAGE deficit, never individual days. Remove the per-day 400–800 "on target" band and `days_on_target` from the weekly path.
+- D3: Maintenance ("burn") model = calibrate from scale. Until calibration data exists, maintenance for a day = `nutrition_daily.goal_calories`; deficit = maintenance − calories. Once A4's thresholds are met, maintenance = scale-calibrated estimate. The report states which method it used.
+- D4: Weekly only. Runs every Monday 06:00 America/Los_Angeles and reviews the prior Monday–Sunday. Daily mode untouched.
+- D5: Keep all existing weekly sections (Week in numbers, Recovery and fatigue, Weight and w/kg, What the data is saying); rewrite Nutrition and its inputs; replace the stale "27kg loss" goal with the DB target (`nutrition_goals.target_weight_kg`) and current trend weight.
+- D6: Usable day = has food (`calories > 0`) AND `logged_complete IS DISTINCT FROM false` AND `goal_calories IS NOT NULL`. The report states "N of 7 days logged, M marked complete".
+- D7: Thursday check-in: new `REPORT_MODE=checkin`, Thursday 06:00 America/Los_Angeles, covers Mon–Wed of the current week. Posts to the Health Intelligence DB ONLY when not on track. Content is computed numbers, no Claude call: Mon–Wed average deficit × 3 vs pace 2,475 (= round(5775 × 3/7)), shortfall, and the average daily deficit needed Thu–Sun to still reach 5,775.
+- D8: If Mon–Wed has zero usable days, the check-in posts a nudge page: "No food logged since Monday — the week can't be judged yet."
 ## Assumptions
-- A1: Unanswered build-plan questions take the doc's recommendations. Meals are `breakfast|lunch|dinner|snack` (Q6). The `eaten_at` backfill window is 60 days (Q12). Days are always in America/Los_Angeles (Q13, per your brief).
-- A2: The 13 all-NULL `apple_health` legacy rows are kept (Q11). Deleting data was not approved, and they read the same as today.
-- A3: D5 numbers: base 2620 kcal is the earlier estimate you accepted; cycling factor 1.00 (1 kJ of work ≈ 1 kcal burned at ~24% efficiency); protein 180 g (1.8 g/kg of target). They live in one seed row and change with one UPDATE. EBikeRide (no power meter) and rides without kJ add nothing.
-- A3b (superseded by D8): A ride's day is `start_time::date`, the convention at `health_data_hub/etl/export_daily_json.py:120` and in `analysis_daily_rollup_10d`.
-- A4: Integration tests use a private, throwaway Postgres 18.1 cluster (data dir `%LOCALAPPDATA%\hdh-test-pg\data`, port 5433, trust auth, localhost only, database `hdh_test`), never the Pi. `TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test`. It does not survive a reboot. Restart it with `"/c/Program Files/PostgreSQL/18/bin/pg_ctl.exe" -D "$LOCALAPPDATA/hdh-test-pg/data" -l "$LOCALAPPDATA/hdh-test-pg/server.log" -o "-p 5433 -c listen_addresses=localhost" -w start >/dev/null 2>&1 </dev/null`. Integration Done-when commands fail if it is down or the env var is unset.
-- A5: Met. PR #1 was merged (ce9940a) and this branch was rebased on it, so LESSONS.md and the kit files are in the base.
-- A6: Test fixtures are synthetic. No real health rows are committed.
-- A7: The integration helper sets known passwords on `claude_readonly` and `nutrition_writer` only on the local or CI test cluster, guarded by host ∈ {localhost, 127.0.0.1} and database name ending in `_test`.
+- A1: Loss rate lives in env `WEEKLY_LOSS_TARGET_KG` (default 0.75), not a DB column, so no migration and no protected path. Kcal per kg = 7700 constant.
+- A2: Weekly math: day_deficit = maintenance − calories (positive = deficit). avg = Σ day_deficit / n_usable; projected_week_total = avg × 7; on_track = avg ≥ 825; status = `deficit` if avg > 0, `surplus` if avg ≤ 0, `no_data` if n_usable = 0; projected_kg_per_week = round(avg × 7 / 7700, 2).
+- A3: Weight trend: least-squares slope over `body_weight_daily` in the trailing 28 days ending the report's last day, needs ≥ 2 weigh-ins spanning ≥ 7 days, else trend = null with reason `insufficient_weigh_ins`. Outputs: latest weigh-in (kg, day), days_since_weigh_in, trend kg/week, kg_to_target, projected target date at 0.75 kg/week and at the current trend (only when the trend is losing).
+- A4: Scale calibration applies when the trailing 28 days have ≥ 21 usable days AND ≥ 4 weigh-ins spanning ≥ 21 days: maintenance_est = avg intake over usable days + (−slope_kg_per_day × 7700). Below that, method = `goal_calories`. With calibration on, the goal-model average is also reported for comparison.
+- A5: Thursday on_track = Mon–Wed average deficit ≥ 825 (same rule as D2, applied to usable Mon–Wed days). needed_per_day_thu_sun = ceil((5775 − avg × 3) / 4).
+- A6: Check-in page: Report Type select `Check-in` (the Notion API creates a missing select option), title `Check-in · Week <ISO week>`. If the Notion call fails, the existing `failed_reports/` fallback in `postReport.mjs` saves it.
+- A7: "Today" for weekly and check-in is the America/Los_Angeles date, not `new Date().toISOString()` (UTC).
+- A8: The reporter's `EXPORT_SQL` groups rides by UTC day (`db.mjs:79`, `:139`, LESSONS). Fixed here to the LA date `(start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date` so the weekly report's per-day workouts match `nutrition_daily`'s ride days. `health_data_hub/etl/export_daily_json.py` keeps UTC (out of scope).
+- A9: Integration tests use `TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test`. Restart the cluster with `"/c/Program Files/PostgreSQL/18/bin/pg_ctl.exe" -D "$LOCALAPPDATA/hdh-test-pg/data" -l "$LOCALAPPDATA/hdh-test-pg/server.log" -o "-p 5433 -c listen_addresses=localhost" -w start >/dev/null 2>&1 </dev/null`. Integration Done-when fails if it is down or the variable is unset.
+- A10: Fixtures are synthetic. No real health rows are committed.
 ## Default policy
-- If ambiguous, follow the existing pattern in `health-mcp/server.mjs:101` (zod input, parameterized `pool.query`, `isError` result) and log the choice in the task's Notes.
-- Tool errors return `isError: true` with JSON `{"error":{"code","message","item_index"?,"field"?}}`. Codes: `VALIDATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `ALREADY_DELETED`, `WRITES_DISABLED`, `RATE_LIMITED`, `DB_ERROR` (generic message; details go to stderr).
-- SQL: bound parameters only, no SQL text built from tool input. Convert NUMERIC to JS numbers inside `health-mcp/tools/nutrition/` only. Never change the global `pg` type parsers.
-- Tests: `node:test` + `node:assert/strict`. Unit tests go in `health-mcp/test/unit/*.test.mjs`, integration tests in `health-mcp/test/integration/*.int.test.mjs` via `health-mcp/test/helpers/testdb.mjs`. Python tests follow the FakeConn style in `tests/test_body_freshness.py`.
-- No new npm or pip dependencies.
-- Write-tool logging: one `console.log` JSON line `{evt:"write",tool,client,ids,kcal_delta}`. Never log descriptions, tokens or SQL.
-- Migrations are plain SQL with no psql meta-commands, and each guards itself: a first `DO` block raises if its name is already in `schema_migrations`, and the last statement inserts its name. Each has a `.down.sql`. `schema.sql` mirrors the end state.
+- If ambiguous, follow the existing pattern in `notion-reporter/src/utils/buildWeeklyContext.mjs:28` (pure computation over `days` rows) and log the choice in the task's Notes.
+- Pure math goes in `notion-reporter/src/utils/nutritionWeek.mjs` with no I/O; DB access stays in `src/utils/db.mjs`; Notion access stays in `src/notion/`.
+- Tests: unit in `notion-reporter/test/unit/*.test.mjs`, integration in `notion-reporter/test/integration/*.int.test.mjs`, `node:test` + `node:assert/strict`. No new npm dependencies.
+- Logging: `console.log` / `console.warn` with a `[weekly]` or `[checkin]` prefix, matching `index.mjs`.
+- Numbers shown to the user are integers for kcal, one decimal for kg, two decimals for kg/week.
 - Report needs-decision only for: user-visible behavior not covered above, data loss, security, cost, or a spec test that looks wrong.
 ## Tasks
-### T1: Split health-mcp into testable modules, no behavior change [model: sonnet] [risk: high] [status: done] [deps: none]
-**Outcome**: `server.mjs` only reads config and calls `createApp(...).listen`. The Express app, auth, the host check and the three read tools live in importable modules, and `npm test` runs unit tests that pin current behavior.
-**Files**: `health-mcp/server.mjs`, `health-mcp/app.mjs` (new; move lines 152–201 of server.mjs), `health-mcp/config.mjs` (new; move lines 8–30), `health-mcp/tools/read.mjs` (new; move lines 55–147), `health-mcp/package.json` (add `"test": "node --test \"test/unit/**/*.test.mjs\""`), `health-mcp/test/unit/read-tools.test.mjs` (new)
-**Non-goals**: No new tools, no pool or role changes, no change to tool names, descriptions, input schemas, the SQL guard or the HTTP status codes. `oauth.mjs` is untouched.
-**Acceptance tests**: `health-mcp/test/unit/read-tools.test.mjs`:
-- (a) `assertReadOnlySql` accepts `SELECT 1`, `with x as (select 1) select * from x`, `SELECT 1;`, and rejects `SELECT 1; SELECT 2`, `INSERT INTO t VALUES (1)`, `select 1 where 'x' = 'drop'`, `DELETE FROM t`, `update t set a=1`.
-- (b) The `query` tool sends `SELECT * FROM (<sql>) AS _q LIMIT 1000` to a fake pool.
-- (c) A request with Host `evil.example` gets 421.
-- (d) POST `/mcp` with no bearer gets 401 and a `WWW-Authenticate` header containing `resource_metadata=`.
-- (e) A static-key `tools/list` returns exactly `list_tables`, `describe_table`, `query`, with descriptions byte-identical to the strings at `server.mjs:83`, `:105` and `:127–129`.
-- (f) `config.mjs` throws when `DB_PASSWORD` is unset or `MCP_API_KEY` is shorter than 32 chars.
-**Done-when**: `cd health-mcp && npm ci --silent && npm test`
-**Decision rule**: If keeping behavior byte-identical conflicts with the module split, keep the behavior and note the boundary compromise.
-**Notes**: loadConfig(env) throws (server.mjs catches, logs, exits 1); createApp builds the OAuth router itself; read tools via registerReadTools(server,{pool,config}).
-Metrics: attempts=1 fix=0 review=PASS blocked=none
+### T1: Pure weekly nutrition + weight math module [model: sonnet] [risk: normal] [status: todo] [deps: none]
+**Outcome**: `notion-reporter/src/utils/nutritionWeek.mjs` exports pure functions implementing D1–D3, D6–D8 and A2–A5, and `cd notion-reporter && npm test` runs their unit tests green.
+**Files**: `notion-reporter/src/utils/nutritionWeek.mjs` (new; copy the row-shape handling at `notion-reporter/src/utils/buildWeeklyContext.mjs:34-45`), `notion-reporter/package.json` (add `"test"` script copied from `health-mcp/package.json:9`), `notion-reporter/test/unit/nutritionWeek.test.mjs` (new)
+**Non-goals**: no DB, Notion or Anthropic calls; no edits to buildWeeklyContext/analyzeHealth/index.
+**Acceptance tests**: `notion-reporter/test/unit/nutritionWeek.test.mjs`: (a) `laToday(now)` returns the America/Los_Angeles date (e.g. 2026-11-02T07:30Z → 2026-11-01); (b) `priorWeekBounds('2026-11-02')` → Mon 2026-10-26..Sun 2026-11-01, and `currentWeekMonWed('2026-11-05')` → 2026-11-02..2026-11-04; (c) `weeklyDeficit` with 7 usable days averaging 900 → on_track true, status `deficit`, projected_week_total 6300, target_total 5775 at rate 0.75; (d) average 500 → on_track false; average −200 → status `surplus`; (e) usable-day filter per D6: calories 0, `logged_complete=false`, or `goal_calories` null are excluded; `logged_complete` null with calories > 0 counts; counts n_logged and n_marked_complete; (f) zero usable days → status `no_data`, avg null; (g) `weightTrend`: 4 weigh-ins over 21 days losing 0.5 kg/week → kg/week ≈ −0.50 (±0.01), days_since_weigh_in, kg_to_target vs 100.0, projected date at 0.75 kg/week; 1 weigh-in → trend null with reason `insufficient_weigh_ins`; (h) `calibratedMaintenance`: below A4 thresholds → null and method `goal_calories`; at thresholds → avg intake + (−slope × 7700); (i) `thursdayCheck`: Mon–Wed avg 900 → on_track true; avg 400 → on_track false, shortfall = 2475 − 1200 = 1275, needed_per_day_thu_sun = ceil((5775 − 1200)/4) = 1144; zero usable days → `{status:'no_data', post:true}`; (j) rate from `WEEKLY_LOSS_TARGET_KG=0.5` → target_total 3850.
+**Done-when**: `cd notion-reporter && npm test`
+**Decision rule**: If a formula edge case is not covered by A2–A5, pick the reading that never reports a deficit larger than the logged data supports, and record it in Notes.
+**Notes**:
 
-### T2: Integration test database harness and CI job [model: sonnet] [risk: high] [status: done] [deps: T1]
-**Outcome**: `npm run test:integration` builds a throwaway schema in `TEST_DATABASE_URL` two ways, from `schema.sql` (fresh) and from a frozen baseline plus migrations (upgrade), and CI runs the unit and integration suites against a `postgres:18` service.
-**Files**: `health-mcp/test/helpers/testdb.mjs` (new), `health-mcp/test/integration/harness.int.test.mjs` (new), `health-mcp/package.json` (add `test:integration`), `health_data_hub/db/baseline/schema_2026-10.sql` (new; byte copy of the current `health_data_hub/db/schema.sql`), `.github/workflows/kit-ci.yml` (add a `node` job)
-**Non-goals**: No schema changes. No change to the Python CI job's steps.
-**Acceptance tests**: `health-mcp/test/integration/harness.int.test.mjs`:
-- (a) The helper throws before connecting when `TEST_DATABASE_URL` is unset, when its database name does not end in `_test`, or when its host is not localhost or 127.0.0.1.
-- (b) `resetDb()` drops schemas `public`, `monitoring` and `usda` if present, recreates `public`, ensures role `claude_readonly` exists with `default_transaction_read_only=on` and a known test password, and runs `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO claude_readonly`.
-- (c) `freshInstall()` applies `schema.sql`. `upgradeInstall()` applies the baseline, then every `health_data_hub/db/migrations/*.sql` except `*.down.sql`, in lexical order.
-- (d) `catalogSnapshot()` (relation kind, columns, types, nullability and grants for `public`) is equal after `freshInstall()` and after `upgradeInstall()`.
-- (e) A pool logged in as `claude_readonly` can SELECT `nutrition_daily`, and an INSERT through it fails.
+### T2: DB inputs for the weekly review + LA ride day in EXPORT_SQL [model: sonnet] [risk: normal] [status: todo] [deps: T1]
+**Outcome**: `db.mjs` exports `getNutritionWeekInputs(startDay, endDay)` returning nutrition rows, weigh-ins (trailing 28 days before endDay through endDay) and the current `nutrition_goals` row, and `EXPORT_SQL` buckets workouts by LA date; integration tests pass against the 5433 test cluster.
+**Files**: `notion-reporter/src/utils/db.mjs` (copy query style at `notion-reporter/src/utils/db.mjs:249-265`; fix `:79`, `:97-98`, `:139`), `notion-reporter/package.json` (add `"test:integration"` copied from `health-mcp/package.json:10`), `notion-reporter/test/integration/nutrition_week_inputs.int.test.mjs` (new; harness pattern at `health-mcp/test/integration/ride_day.int.test.mjs:1-40`)
+**Non-goals**: no edits under `health-mcp/` or `health_data_hub/`; no schema changes; no change to EXPORT_SQL columns or row shape.
+**Acceptance tests**: `notion-reporter/test/integration/nutrition_week_inputs.int.test.mjs` (imports `freshInstall`/`resetDb` from `../../../health-mcp/test/helpers/testdb.mjs`; sets `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD` by parsing `TEST_DATABASE_URL` and refuses to run unless the parsed host is localhost/127.0.0.1 and the database name ends in `_test` — the guard checks the same values `db.mjs` connects with): (a) synthetic `food_log` rows for 3 days + one `nutrition_day_status` row with `logged_complete=false` come back with calories, goal_calories and logged_complete per day; (b) a day with no food rows is absent or has null calories (never invents intake); (c) weigh-ins from `body_measurements`/`body_weight_daily` in the 28-day window are returned ordered by day, ones outside are not; (d) the goals row returns target_weight_kg 100.0 and base_calories 2620; (e) a ride with `start_time` 2026-10-27 05:30 (naive UTC) appears under day 2026-10-26 in `exportDays` output, and the PMC lookback join uses the same LA day; (f) the test fails, not skips, when `TEST_DATABASE_URL` is unset.
+**Done-when**: `cd notion-reporter && npm test && npm run test:integration`
+**Decision rule**: If fixture insertion needs columns the harness doesn't document, read `health_data_hub/db/schema.sql` and insert as the test superuser; never alter roles (LESSONS: role guards are cluster-wide).
+**Notes**:
 
-The CI `node` job uses `actions/setup-node` (Node 22), a `postgres:18` service with `POSTGRES_DB=hdh_test`, `npm ci` in `health-mcp`, then `npm test` and `npm run test:integration`. Every tool it runs must be installed by those steps (lesson: kit adoption/CI).
-**Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
-**Decision rule**: If `schema.sql` fails on a fresh Postgres 18, report needs-decision with the error. Do not edit `schema.sql` in this task.
-**Notes**: Helper exports resetDb/freshInstall/upgradeInstall/catalogSnapshot/readonlyPool; guard rejects any URL query string. Gotcha: root .gitignore has `lib/`, which would ignore T5's health-mcp/lib/write-guard.mjs.
-Lesson (logged): Run safety guards on connection strings over the config the driver will actually use (query params like ?host= override the URL host) | applies: destructive test-DB helpers, env-gated DB tooling
-Metrics: attempts=2 fix=1 review=FIX blocked=none
+### T3: Rewrite the weekly report's nutrition and weight inputs and prompt [model: sonnet] [risk: normal] [status: todo] [deps: T1, T2]
+**Outcome**: `REPORT_MODE=weekly` reviews the prior Mon–Sun (LA) with a `NUTRITION_WEEK` block (D2, D3, D6, A2, A4) and a `WEIGHT_TREND` block (A3), and WEEKLY_SYSTEM_PROMPT's Nutrition and Weight sections use them, with the hardcoded TDEE gone.
+**Files**: `notion-reporter/src/utils/buildWeeklyContext.mjs` (delete `TDEE_BASELINE` and `computeDeficitAdherence`; call T1/T2), `notion-reporter/src/anthropic/analyzeHealth.mjs` (WEEKLY_SYSTEM_PROMPT at `:126-185`, `buildWeeklyUserMessage` at `:225`; export both), `notion-reporter/index.mjs` (dry-run weekly printer at `:194-199`), `notion-reporter/src/notion/postReport.mjs` (weekly raw-prompt summary at `:141`), `notion-reporter/test/unit/weekly_prompt.test.mjs` (new)
+**Non-goals**: no changes to the daily path, the commented DAILY prompt, `buildDailyContext.mjs`, or the Recovery/fatigue prompt text beyond replacing the goal wording; no Claude model change.
+**Acceptance tests**: `notion-reporter/test/unit/weekly_prompt.test.mjs`: (a) exported WEEKLY_SYSTEM_PROMPT does not match `/27\s?kg/i` or `/2,?800/`, and mentions 0.75 kg/week, the 825 kcal/day average and the 5,775 kcal weekly target; (b) its `## Nutrition` instructions say to judge the 7-day average, not single days, and to state "N of 7 days logged" and the maintenance method; it keeps the headings `## Week in numbers`, `## Recovery and fatigue`, `## Nutrition`, `## Weight and w/kg trend`, `## What the data is saying`; (c) `buildWeeklyUserMessage(ctx)` includes `NUTRITION_WEEK:` and `WEIGHT_TREND:` JSON and no `DEFICIT_ADHERENCE:`; (d) `buildWeeklyContext` source has no `TDEE_BASELINE` (read the file text); (e) a `buildWeeklyContextFrom(rows, {today:'2026-11-02'})` (pure, exported) reviews 2026-10-26..2026-11-01 only.
+**Done-when**: `cd notion-reporter && npm test`
+**Decision rule**: Keep existing section headings so `postReport.mjs` `extractKeyInsight`/`extractAnomalies` keep working; if a heading must change, update the extractor in the same task and log it.
+**Notes**:
 
-### T3: Migration ledger [model: haiku] [risk: high] [status: done] [deps: T2]
-**Outcome**: `public.schema_migrations(name text PK, applied_at timestamptz)` exists after upgrade or fresh install. Re-applying a guarded migration raises.
-**Files**: `health_data_hub/db/migrations/2026-11_00_migration_ledger.sql` (new; build-plan §4.1, plus a row for itself), `health_data_hub/db/migrations/2026-11_00_migration_ledger.down.sql` (new), `health_data_hub/db/schema.sql` (append the ledger table and both rows), `health-mcp/test/integration/ledger.int.test.mjs` (new)
-**Non-goals**: No other tables. No shell migration runner.
-**Acceptance tests**: `health-mcp/test/integration/ledger.int.test.mjs`:
-- (a) After `upgradeInstall()`, the ledger holds `2026-10_body_measurements` and `2026-11_00_migration_ledger`.
-- (b) A sample guarded migration string run twice raises `already applied` the second time.
-- (c) T2's catalog parity still holds.
-- (d) The down script drops the table.
-**Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
-**Decision rule**: The guard pattern written here is the one later migrations copy. Write it as a short comment at the top of the file.
-**Notes**: Guard is a nested IF on to_regclass (PL/pgSQL can't combine it with EXISTS on a missing table); ledger inserts both baseline row and itself with ON CONFLICT DO NOTHING.
-Metrics: attempts=1 fix=0 review=PASS blocked=none
+### T4: Thursday check-in mode [model: sonnet] [risk: normal] [status: todo] [deps: T3]
+**Outcome**: `REPORT_MODE=checkin` computes Mon–Wed (LA) via T1/T2 and posts a numbers-only `Check-in` page to the Health Intelligence DB only when off track or when nothing was logged (D7, D8, A5, A6); on track it logs `[checkin] on track` and posts nothing.
+**Files**: `notion-reporter/src/utils/buildCheckin.mjs` (new: `runCheckin({today, fetchInputs, post})` with injected I/O, `buildCheckinMarkdown(result)`), `notion-reporter/index.mjs` (mode switch at `:110`; header SCHEDULING/MODES docs: Monday 06:00 weekly, Thursday 06:00 checkin, America/Los_Angeles), `notion-reporter/package.json` (`"checkin"` script copied from `"weekly"`), `notion-reporter/src/notion/postReport.mjs` (checkin title/properties; Report Type `Check-in`; no relations), `notion-reporter/test/unit/checkin.test.mjs` (new)
+**Non-goals**: no Anthropic call in checkin mode; no change to weekly or daily output.
+**Acceptance tests**: `notion-reporter/test/unit/checkin.test.mjs`: (a) on-track inputs → `post` stub not called; (b) off-track inputs (Mon–Wed avg 400) → `post` called once with markdown containing the shortfall 1275 and needed 1144 kcal/day; (c) zero usable days → `post` called with the D8 nudge text; (d) `today` 2026-11-05 reads 2026-11-02..2026-11-04 only; (e) the Anthropic SDK is never imported on the checkin path (stub `analyzeHealth` throws if called); (f) postReport builds title `Check-in · Week 45` and Report Type `Check-in` for mode `checkin` (test the exported property builder, no network).
+**Done-when**: `cd notion-reporter && npm test`
+**Decision rule**: If postReport's property builder isn't exported, export it rather than duplicating it.
+**Notes**:
 
-### T4: food_log, my_foods, audit and nutrition_writer schema [model: sonnet] [risk: high] [status: done] [deps: T3]
-**Outcome**: Migration `01` creates the build-plan §4.2 objects: `pg_trgm`, `touch_updated_at`, `my_foods`, `my_food_aliases`, `food_log` with the generated LA `day`, `food_log_audit` and its trigger, view `food_log_daily`, and role `nutrition_writer` with its grants. `schema.sql` mirrors them.
-**Files**: `health_data_hub/db/migrations/2026-11_01_food_log.sql` (new), `health_data_hub/db/migrations/2026-11_01_food_log.down.sql` (new), `health_data_hub/db/schema.sql`, `health-mcp/test/integration/food_log_schema.int.test.mjs` (new), `health-mcp/test/helpers/testdb.mjs` (give `nutrition_writer` a known test password after install)
-**Non-goals**: No `nutrition_daily` change, no goals tables, no USDA. No role password in any file except the test helper's.
-**Acceptance tests**: `health-mcp/test/integration/food_log_schema.int.test.mjs`:
-- (a) `day` is 2026-10-25 for `2026-10-25T23:30-07:00` and 2026-10-26 for `2026-10-26T00:30-07:00`.
-- (b) `2026-11-01T01:30-07:00`, `2026-11-01T01:30-08:00` and `2026-11-02T07:59Z` are all 2026-11-01.
-- (c) Same as (a) with session `TimeZone='UTC'`.
-- (d) CHECKs reject `match_source='favorite'` with NULL `my_food_id`, `match_source='usda'` with NULL `fdc_id`, `calories=-1`, and `meal='brunch'`.
-- (e) A duplicate `(request_id, request_line)` is rejected.
-- (f) Insert, update, soft delete and restore write audit actions `insert`, `update`, `soft_delete`, `restore`.
-- (g) As `nutrition_writer`: INSERT into `food_log` works with no sequence grant; DELETE on `food_log` fails; `UPDATE food_log SET created_via=...` fails; SELECT on `workout_samples` fails.
-- (h) As `claude_readonly`: SELECT on `food_log` and `food_log_daily` works; INSERT fails.
-- (i) `food_log_daily` excludes soft-deleted rows, and `sum(fiber_g)` is NULL when every item's fiber is NULL.
-- (j) The down script raises when `food_log` has rows and drops everything, role included, when it is empty.
-- (k) T2's catalog parity holds.
-
-GRANT CONNECT targets `current_database()` through `EXECUTE format(...)`. `CREATE ROLE` is skipped if the role exists.
-**Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
-**Decision rule**: The DDL in build-plan §4.2 is the spec. If a statement there fails on Postgres 18, make the smallest change that passes and record it in Notes.
-**Notes**: §4.2 DDL applied with IF NOT EXISTS/CREATE OR REPLACE so one body serves migration and schema.sql; down script leaves pg_trgm. testdb.mjs exports writerPool() and WRITER_TEST_PASSWORD.
-Lesson (logged): Database-name guards in test helpers don't protect roles (cluster-wide); use test-only role names or refuse if the role exists outside the test DB | applies: testdb.mjs and tests running ALTER ROLE / DROP ROLE
-Metrics: attempts=1 fix=0 review=PASS blocked=none
-
-### T5: Writer pool, kill switch, rate limit, auth info [model: sonnet] [risk: high] [status: done] [deps: T1, T4]
-**Outcome**: With `WRITE_TOOLS_ENABLED=true`, the app creates a second pool as `DB_WRITER_USER`/`DB_WRITER_PASSWORD` (max 3), passes `req.auth = {clientId}` (`static_key` for the API key) to tool handlers, and offers a write guard. The guard checks the kill switch, applies a per-process token bucket (`WRITE_RATE_LIMIT_PER_HOUR`, default 120) and emits the audit log line. The server sends §5.1 `instructions` amended per D4.
-**Files**: `health-mcp/config.mjs`, `health-mcp/app.mjs`, `health-mcp/db.mjs` (new; pool factory for `read` and `write`), `health-mcp/lib/write-guard.mjs` (new), `health-mcp/test/unit/write-guard.test.mjs` (new)
-**Non-goals**: No nutrition tools yet. `query` keeps its pool. `oauth.mjs` is untouched.
-**Acceptance tests**: `health-mcp/test/unit/write-guard.test.mjs`:
-- (a) With `WRITE_TOOLS_ENABLED` unset, `tools/list` equals T1(e) and no write pool is created.
-- (b) With `WRITE_TOOLS_ENABLED=true` and no `DB_WRITER_PASSWORD`, `config.mjs` throws.
-- (c) Call N+1 within the window returns `RATE_LIMITED`.
-- (d) The guard's log line parses as JSON with keys `evt, tool, client, ids, kcal_delta`, and contains neither the item description nor the bearer token.
-- (e) Handlers receive `authInfo.clientId`.
-
-Add to `health-mcp/test/integration/food_log_schema.int.test.mjs`: (f) with both pools configured, the `query` tool's `SELECT current_user AS u` returns `claude_readonly`.
-**Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
-**Decision rule**: If the MCP SDK does not forward `req.auth` to handlers, pass the client id through a per-request `getServer(ctx)` closure instead and note it.
-**Notes**: SDK forwards req.auth (authInfo={token:'',clientId,scopes:[]}); createPools/createWriteGuard(check, audit) in db.mjs and lib/write-guard.mjs (force-added past .gitignore `lib/`); test (f) is in pools.int.test.mjs. Advisory: SERVER_INSTRUCTIONS is sent even when writes are off; send the food-logging text only when config.WRITES_ENABLED.
-Metrics: attempts=1 fix=0 review=PASS blocked=none
-
-### T6: log_food with preview and confirm [model: sonnet] [risk: high] [status: done] [deps: T5]
-**Outcome**: Tool `log_food` per build-plan §5.3 plus D4. Without `confirm` it returns computed rows and projected `day_totals` and writes nothing. With `confirm: true` it inserts all items in one transaction (all or none), honors `request_id` idempotency, bumps favorite `use_count`/`last_used_at`, and returns stored rows, warnings and `day_totals`.
-**Files**: `health-mcp/tools/nutrition/common.mjs` (new; zod item schema, LA time resolution, meal inference, NUMERIC conversion, Atwater check), `health-mcp/tools/nutrition/log-food.mjs` (new), `health-mcp/tools/nutrition/index.mjs` (new; registers nutrition tools when writes are enabled), `health-mcp/test/unit/nutrition-common.test.mjs` (new), `health-mcp/test/integration/log_food.int.test.mjs` (new)
-**Non-goals**: No USDA computation: `match_source='usda'` requires explicit nutrients and an `fdc_id`. No goals in totals yet.
-**Acceptance tests**:
-
-`nutrition-common.test.mjs`:
-- (a) `eaten_at` `2026-10-25T08:00` (no offset) resolves to 15:00Z.
-- (b) `day=2026-10-24` with `meal=dinner` resolves to 2026-10-24 19:00 LA. Defaults: breakfast 08:00, lunch 12:30, snack 15:30.
-- (c) Meal inference: LA 09:00 → breakfast, 13:00 → lunch, 18:00 → dinner.
-- (d) A 90-day-old `eaten_at` fails unless `allow_backfill`, and `now+7h` fails.
-- (e) Atwater warning when `|4P+4C+9F−kcal| > max(60, 25%)`.
-- (f) A 26-item batch is rejected.
-
-`log_food.int.test.mjs`:
-- (g) No `confirm`: returns 3 computed rows, and the `food_log` count is unchanged.
-- (h) `confirm: true` with 3 items: 3 rows and `day_totals` that match `food_log_daily`.
-- (i) An invalid item 2 inserts nothing and returns `VALIDATION_ERROR` with `item_index: 1`.
-- (j) The same `request_id` twice gives one set of rows, and the second response has `duplicate: true`.
-- (k) A favorite with `servings: 1.5` and no nutrients stores 1.5× the favorite's values, with `computed_by_server: true`.
-- (l) An archived or unknown `my_food_id` gives `NOT_FOUND`.
-- (m) With `WRITE_TOOLS_ENABLED=false` the tool is absent.
-- (n) The tool description contains `confirm` and `confidence`.
-**Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
-**Decision rule**: When the build-plan §5.3 text and D4 disagree, D4 wins. Any other gap: choose the behavior that writes nothing and returns `VALIDATION_ERROR`, and note it.
-**Notes**: Preview returns {preview:true,would_log,warnings,day_totals}; confirm returns {preview:false,logged,warnings,day_totals,duplicate}. Items validated in handler (own VALIDATION_ERROR with item_index/field). Order on confirm: request_id lookup (incl. soft-deleted) -> validate -> rate-limit token -> insert. server instructions now sent only when WRITES_ENABLED.
-Lesson (logged): An idempotency-key lookup must include soft-deleted rows whenever the unique constraint covers them | applies: any request_id/dedupe check on tables with deleted_at
-Metrics: attempts=2 fix=1 review=FIX blocked=none
-
-### T7: save_favorite and search_foods (favorites tier) [model: sonnet] [risk: high] [status: done] [deps: T6]
-**Outcome**: `save_favorite` (build-plan §5.4) creates, updates and archives favorites and their aliases in one transaction. `search_foods` (§5.2) runs on the read pool and returns favorites ranked exact alias first, then `word_similarity`, then `use_count`, plus `usda: []` and a note that USDA is not loaded yet.
-**Files**: `health-mcp/tools/nutrition/favorites.mjs` (new), `health-mcp/tools/nutrition/search.mjs` (new), `health-mcp/tools/nutrition/index.mjs`, `health-mcp/test/integration/favorites.int.test.mjs` (new)
-**Non-goals**: No USDA queries. No `unaccent`.
-**Acceptance tests**: `health-mcp/test/integration/favorites.int.test.mjs`:
-- (a) Creating "Usual oatmeal" with alias "usual oatmeal" means `search_foods("my usual oatmeal")` returns it first with `exact: true`.
-- (b) `search_foods("oatmeal")` returns it with `exact: false` and a score of at least 0.4.
-- (c) Saving another favorite with alias "Usual  Oatmeal " gives `CONFLICT` naming the owning `my_food_id`.
-- (d) `from_log_id` copies nutrients and serving from that `food_log` row.
-- (e) `archive: true` removes it from search results and frees its aliases.
-- (f) The `search_foods` handler runs on the read pool (asserted with a pool spy).
-- (g) The favorite name is always stored as an alias.
-**Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
-**Decision rule**: The filler words stripped for the second query variant are exactly `my, usual, regular, normal, the`. Do not add more without a needs-decision.
-**Notes**: Exact-match rule: alias == normalized query, or filler-stripped alias == filler-stripped query (so 'oatmeal' is not exact for 'usual oatmeal'). Both tools register inside the WRITES_ENABLED gate. Archive deletes aliases and sets archived_at; updating an archived favorite gives ALREADY_DELETED. Create/rename run in a SAVEPOINT so CONFLICT lookup works after 23505.
-Lesson (logged): After a caught unique violation (23505) inside a transaction, further queries fail unless a SAVEPOINT or ON CONFLICT DO NOTHING is used | applies: Postgres write tools that turn constraint errors into CONFLICT
-Metrics: attempts=2 fix=1 review=FIX blocked=none
-
-### T8: Goals, day status and the nutrition_daily view [model: opus] [risk: high] [status: done] [deps: T4]
-**Outcome**: Migration `02` creates `nutrition_goals` per D5 with its seed row, `nutrition_day_status`, renames the table to `nutrition_daily_legacy` (and its PK index), and creates VIEW `nutrition_daily` per D2 and build-plan §4.3, with goal columns per D5. `schema.sql` produces the same end state, and its `ALTER TABLE nutrition_daily ADD COLUMN` line targets `nutrition_daily_legacy`.
-**Files**: `health_data_hub/db/migrations/2026-11_02_nutrition_daily_view.sql` (new), `health_data_hub/db/migrations/2026-11_02_nutrition_daily_view.down.sql` (new), `health_data_hub/db/schema.sql`, `health-mcp/test/integration/nutrition_daily_view.int.test.mjs` (new), `health-mcp/test/fixtures/nutrition_daily_rows.sql` (new; about 10 synthetic rows covering the `myfitnesspal` source with `meals_json` and goals, the `apple_health` source, and all-NULL rows)
-**Non-goals**: No tool changes. No deletion of legacy rows (A2). No reader code changes.
-**Acceptance tests**: `health-mcp/test/integration/nutrition_daily_view.int.test.mjs`:
-- (a) On the baseline plus fixture with an empty `food_log`, `SELECT *, pg_typeof(...)` of every column `FROM nutrition_daily ORDER BY day` is identical before and after the migration.
-- (b) After `food_log` rows on a fixture legacy day, that day returns `source='food_log'` and the `food_log` sums, not the sum of both.
-- (c) Soft-deleting those rows brings the legacy row back.
-- (d) `meals_json` keys come only from `breakfast, lunch, dinner, snacks`.
-- (e) Goal with the seed row: a day with two `Ride` rows (`device_watts` true, kj 400 and 250), one `EBikeRide` (kj 300, `device_watts` false) and one `Ride` with kj NULL gives `goal_calories` 3270. A day with no rides gives 2620. `goal_protein_g` is 180. `pg_get_viewdef('nutrition_daily')` does not contain `oura`.
-- (f) `logged_complete` comes from `nutrition_day_status` for `food_log` days.
-- (g) `init_db`-equivalent: `freshInstall()` twice in a row succeeds.
-- (h) T2's catalog parity holds.
-- (i) The down script restores table `nutrition_daily`, and (a) passes again.
-- (j) `claude_readonly` can SELECT the view and `nutrition_daily_legacy`.
-**Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
-**Decision rule**: Column types must equal the legacy table's (`calories int`, `*_g double precision`, `weight_kg numeric(5,2)`). If a cast choice is unclear, match `pg_typeof` of the legacy column.
-**Notes**: Re-spec of T2/T4 specs per D7. Added CHECKs on nutrition_goals; writer gets SELECT/INSERT/UPDATE on nutrition_day_status. schema.sql/init_db on a DB lacking migration 02 fails and rolls back, so apply 02 first (psql -1). Reviewer flag for planner: start_time::date (A3b) is UTC-based while food_log.day is LA, so late-evening rides count toward the next day's goal; also deploy T10 before migration 02 (insert_nutrition_daily.py would fail against the view).
-Lesson (logged): Before comparing a naive TIMESTAMP's ::date to a local-date column, check the writer's timezone (Strava start_date is UTC) | applies: date joins across Strava/workout_summary and LA-day tables
-Metrics: attempts=1 fix=0 review=PASS blocked=none
-
-### T9: get_day_summary, update/delete entries, mark_day_complete [model: sonnet] [risk: high] [status: done] [deps: T7, T8]
-**Outcome**: These tools exist:
-- `get_day_summary` (§5.7, read pool): defaults to today in LA, returns goals and remaining calories from `nutrition_daily`, plus latest weight and `kg_to_target` per D5.
-- `update_log_entry` (§5.5).
-- `delete_log_entry` with `restore` (§5.6).
-- `mark_day_complete` (§5.8).
-
-The three write tools go through the T5 write guard.
-**Files**: `health-mcp/tools/nutrition/summary.mjs` (new), `health-mcp/tools/nutrition/edit.mjs` (new), `health-mcp/tools/nutrition/index.mjs`, `health-mcp/test/integration/summary_edit.int.test.mjs` (new)
-**Non-goals**: No USDA recompute. No hard deletes.
-**Acceptance tests**: `health-mcp/test/integration/summary_edit.int.test.mjs`:
-- (a) With the clock frozen at `2026-10-25T23:30-07:00`, the default day is 2026-10-25.
-- (b) Items are ordered by `eaten_at` and carry their ids. Soft-deleted items are absent.
-- (c) A legacy-only day returns `source: "legacy"` and a `note`.
-- (d) `kg_to_target` = latest `body_weight_daily.weight_kg` − 100, and `cycling_kcal` equals the D5 sum for that day.
-- (e) Updating a favorite entry's `servings` from 1 to 2 with no nutrients doubles its nutrients and writes one `update` audit row.
-- (f) Moving an entry's `day` returns `day_totals` for both days.
-- (g) Updating a deleted entry gives `ALREADY_DELETED`.
-- (h) Deleting `[id, 999999]` gives `NOT_FOUND` and changes nothing. Deleting twice reports `unchanged`. `restore: true` brings the entry back.
-- (i) `mark_day_complete` sets `nutrition_daily.logged_complete` for that day.
-- (j) The `delete_log_entry` description asks for confirmation before deleting more than 3 items.
-**Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
-**Decision rule**: Patch fields not listed in build-plan §5.5 are rejected with `VALIDATION_ERROR`, not ignored.
-**Notes**: Tools: get_day_summary (read pool), update_log_entry, delete_log_entry (restore), mark_day_complete; clock injected via registerNutritionTools(..., {now}). Empty days return D5 goals from nutrition_goals. Any legacy row reports source 'legacy'. Exported 4 helpers from log-food.mjs.
-Lesson (logged): Do every input check that needs no database before guard.check (it consumes a rate-limit token) | applies: all write tools in tools/nutrition
-Lesson (logged): Day-summary or goal tools must cover days with no logged rows by working out goals from the goals table | applies: get_day_summary, readers of the nutrition_daily view
-Metrics: attempts=2 fix=1 review=FIX blocked=none
-
-### T10: Retire the Apple Health nutrition poller [model: sonnet] [risk: normal] [status: done] [deps: none]
-**Outcome**: `scheduler_all.py` no longer imports or schedules the nutrition poller. `nutrition_poller.py`, `insert_nutrition_daily.py` and `lock_nutrition.py` live under `archive/` with an ARCHIVED.md entry dated 2026-10-25 citing D1.
-**Files**: `scheduler_all.py` (remove the lines at :45, :100–106 and the `add_job` block at :160–167, and update the docstring job list), `archive/ARCHIVED.md` (copy the entry format at :41), `archive/nutrition_poller.py` (git mv), `archive/insert_nutrition_daily.py` (git mv), `archive/lock_nutrition.py` (git mv)
-**Non-goals**: No change to `nutrition_reader.py`, the Worker, or other jobs.
-**Acceptance tests**: none: removal and moves. Done-when proves the import is gone, the module compiles and the suite passes.
-**Done-when**: `venv/Scripts/python -m py_compile scheduler_all.py && ! grep -rq --include='*.py' 'nutrition_poller\|insert_nutrition_daily' scheduler_all.py health_data_hub && test -f archive/lock_nutrition.py && test ! -f lock_nutrition.py && venv/Scripts/python -m pytest -q`
-**Decision rule**: If any non-archived module still imports a moved file, report needs-decision rather than moving more files.
-**Notes**: Files were at apple_health/, etl/load/ and repo root; git mv'd to archive/. Follow-up for planner: docs/health_auto_export_setup.md:14,76,185 and TECHNICAL_ANALYSIS.md:42 still mention the 22:00 nutrition_poller job.
-Metrics: attempts=1 fix=0 review=PASS blocked=none
-
-### T11: Nutrition quality checks follow food_log [model: haiku] [risk: normal] [status: done] [deps: none]
-**Outcome**: `_nutrition_checks()` replaces the `nutrition_daily` freshness check (180 min) with `FreshnessCheck("food_log", "created_at", max_age_minutes=1440, severity="warn")` and adds `ValueRangeCheck("food_log_daily", "calories", 0, 8000)`. The `nutrition_daily` NullCheck and RowCountCheck stay.
-**Files**: `health_data_hub/quality/checks_health.py` (edit at :124), `tests/test_nutrition_checks.py` (new; copy the pattern in `tests/test_body_freshness.py`)
-**Non-goals**: No change to `checks.py` or other check groups.
-**Acceptance tests**: `tests/test_nutrition_checks.py`:
-- (a) `_nutrition_checks()` contains a FreshnessCheck on `food_log.created_at` with 1440 min and severity `warn`.
-- (b) It has no FreshnessCheck on `nutrition_daily`.
-- (c) It contains a ValueRangeCheck on `food_log_daily.calories` with bounds 0–8000.
-- (d) A FakeConn returning a `created_at` 25 h old makes the freshness check fail.
-**Done-when**: `venv/Scripts/python -m pytest -q tests/test_nutrition_checks.py && venv/Scripts/python -m pytest -q`
-**Decision rule**: Keep check names in the existing `freshness_<table>` form.
-**Notes**: food_log freshness (1440, warn) and food_log_daily calories range added; nutrition_daily calories range/NullCheck kept; RowCountCheck lives in _cross_source_checks.
-Metrics: attempts=1 fix=0 review=none blocked=none
-
-### T14: Ride day uses the LA date of the UTC start time [model: sonnet] [risk: high] [status: done] [deps: T9]
-**Outcome**: Every ride-day expression (the `rides` CTE SELECT and GROUP BY in migration 02, the matching view body in `schema.sql`, and `CYCLING_SQL` in `summary.mjs` with its comment) uses `(start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date` per D8.
-**Files**: `health_data_hub/db/migrations/2026-11_02_nutrition_daily_view.sql` (unreleased, edit in place), `health_data_hub/db/schema.sql`, `health-mcp/tools/nutrition/summary.mjs` (:36-40), `health-mcp/test/integration/ride_day.int.test.mjs` (new)
-**Non-goals**: No change to `export_daily_json.py` or `analysis_daily_rollup_10d`. No change to column names or types. The only wording change in the migration besides the CTE is the comment on `nutrition_writer` legacy access: it should say the writer can read legacy rows through the view's owner rights.
-**Acceptance tests**: `health-mcp/test/integration/ride_day.int.test.mjs`:
-- (a) A powered Ride (`device_watts` true, kj 500) at `2026-10-26T02:00:00` UTC counts toward `nutrition_daily.goal_calories` on 2026-10-25 (3120 with the seed row) and not on 2026-10-26 (2620).
-- (b) `get_day_summary` for 2026-10-25 returns `cycling_kcal` 500 for the same ride.
-- (c) A Ride at `2026-10-25T20:00:00` UTC (13:00 PT) still counts toward 2026-10-25.
-- (d) Existing T8 and T9 specs still pass. If one asserts the UTC-day behavior, report needs-decision and do not edit it.
-- (e) T2's catalog parity holds after `freshInstall()` and `upgradeInstall()`.
-**Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
-**Decision rule**: Migration 02 is unreleased (nothing applied outside test clusters), so edit it in place and keep `schema.sql` identical in end state.
-**Notes**: Ride-day expression switched to LA date of UTC start in migration 02, schema.sql and CYCLING_SQL. Gate needs TEST_DATABASE_URL exported in the Stop hook env (worker report blocked on that, gate passes with it).
-Lesson (logged): notion-reporter/src/utils/db.mjs:79 and power_zone_graph.py:478 still group rides by UTC day (out of scope; planner to consider D8 follow-up).
-Metrics: attempts=1 fix=0 review=PASS blocked=none
-
-### T12: Consent text, README, user guide and deploy runbook [model: sonnet] [risk: high] [status: done] [deps: T9, T10]
-**Outcome**:
-- The OAuth consent page says the app "is requesting access to read your health data and log food".
-- `health-mcp/README.md` documents the 7 new tools, the `nutrition_writer` role, the new env vars, the write guards, and the corrected data model (sources MFP and Apple Health, not Cronometer).
-- `docs/nutrition_logging.md` gives the D4 confirm-first conversation flow for text, photo, corrections and favorites, plus the confidence rubric from build-plan §5.1.
-- `docs/nutrition_deploy_runbook.md` lists the live steps in order:
-  1. `pg_dump -Fc` and an off-Pi copy
-  2. apply migrations 00–02 with `psql -v ON_ERROR_STOP=1 --single-transaction -f`
-  3. set the `nutrition_writer` password
-  4. add `DB_WRITER_*` and `WRITE_TOOLS_ENABLED=true` to `health-mcp.env`
-  5. deploy the code and restart `health-mcp` and `health-data-hub`
-  6. turn off the HAE nutrition export
-  7. the end-to-end checklist from build-plan T1.6 and T2.3
-  8. the rollback ladder from build-plan §10
-**Files**: `health-mcp/oauth.mjs` (consent string at :127 only), `health-mcp/README.md`, `docs/nutrition_logging.md` (new), `docs/nutrition_deploy_runbook.md` (new), `health-mcp/test/unit/consent.test.mjs` (new)
-**Non-goals**: No OAuth logic change (token lifetimes, storage, scopes).
-**Acceptance tests**: `health-mcp/test/unit/consent.test.mjs`:
-- (a) GET `/authorize` for a registered client renders "log food" and no longer contains "read-only access".
-- (b) PKCE and redirect checks still return 400 on a missing `code_challenge`.
-**Done-when**: `cd health-mcp && npm ci --silent && npm test && grep -q 'nutrition_writer' README.md && grep -q 'confirm' ../docs/nutrition_logging.md && grep -q 'pg_dump' ../docs/nutrition_deploy_runbook.md && grep -q 'ON_ERROR_STOP' ../docs/nutrition_deploy_runbook.md`
-**Decision rule**: The runbook states only steps derivable from this plan, the build plan and `health-mcp/README.md`. Do not invent host names or paths.
-The runbook orders the live steps so that the nutrition poller is retired (T10 code deployed) before migration 02 is applied, and migration 02 is applied on the Pi before the new code is deployed (`run_all.py` calls `init_db`, and `schema.sql` fails on a database without 02).
-**Notes**: Runbook has 9 steps (added stop health-data-hub before migrations); `git pull` in step 2 so migrations exist; rollback step 3 limited to health-mcp.
-Lesson (logged): A runbook step that runs repo files (migrations, scripts) has to come after the step that puts those files on the host | applies: deploy runbooks and live-step docs
-Metrics: attempts=2 fix=1 review=FIX blocked=none
-
-### T13: Promote the never-raise job lesson to a test [model: haiku] [risk: normal] [status: done] [deps: T10]
-**Outcome**: A pytest test fails if any `run_*` job wrapper in `scheduler_all.py` lacks an `except Exception` handler. The lesson line ("catch-all `except Exception`", count 2) is deleted from LESSONS.md.
-**Files**: `tests/test_scheduler_wrappers.py` (new; parse `scheduler_all.py` with `ast`, no import), `LESSONS.md` (delete that one line)
-**Non-goals**: No changes to pollers or `scheduler_all.py`.
-**Acceptance tests**: `tests/test_scheduler_wrappers.py`:
-- (a) Every top-level `def run_*` in `scheduler_all.py` contains a `Try` node whose handlers include `except Exception`.
-- (b) The test fails on an in-memory source string whose `run_x` catches only `ValueError` (checked with a helper that takes source text).
-**Done-when**: `venv/Scripts/python -m pytest -q tests/test_scheduler_wrappers.py && ! grep -q 'catch-all .except Exception' LESSONS.md && venv/Scripts/python -m pytest -q`
-**Decision rule**: If LESSONS.md in the base has no such line (A5 not met), still add the test and note that the line was absent.
-**Notes**: Spec writer wrote the full test file (5 tests, all passing on current scheduler_all.py); worker deleted the LESSONS.md line.
-Metrics: attempts=1 fix=0 review=none blocked=none
+### T5: CI job for the reporter + post-merge runbook [model: haiku] [risk: high] [status: todo] [deps: T4]
+**Outcome**: CI runs the reporter's unit and integration tests on every PR, and `docs/weekly-nutrition-review-runbook.md` lists the post-merge Pi steps in executable order.
+**Files**: `.github/workflows/kit-ci.yml` (add steps to the `node` job copying `:38-45`: `npm ci` in `health-mcp` (the harness imports `pg` from there) and in `notion-reporter`, then `npm test` and `npm run test:integration` in `notion-reporter`), `docs/weekly-nutrition-review-runbook.md` (new)
+**Non-goals**: no change to the Python job or existing health-mcp steps.
+**Acceptance tests**: none: CI config and docs. Done-when checks that the workflow names both reporter commands and that the runbook orders `git pull` before `npm ci` before the crontab edit (LESSONS: a step that runs repo files comes after the step that puts them on the host; LESSONS: every tool a workflow runs must be installed by what it installs).
+**Done-when**: `cd notion-reporter && npm test && grep -q "working-directory: notion-reporter" ../.github/workflows/kit-ci.yml && grep -q "test:integration" ../.github/workflows/kit-ci.yml && f=../docs/weekly-nutrition-review-runbook.md && a=$(grep -n "git pull" $f | head -1 | cut -d: -f1) && b=$(grep -n "npm ci" $f | head -1 | cut -d: -f1) && c=$(grep -n "crontab" $f | head -1 | cut -d: -f1) && [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] && grep -q "0 6 \* \* 1" $f && grep -q "0 6 \* \* 4" $f && grep -q "CRON_TZ=America/Los_Angeles\|TZ=America/Los_Angeles" $f`
+**Decision rule**: The runbook's crontab lines are `0 6 * * 1` (weekly) and `0 6 * * 4` (checkin) with `CRON_TZ=America/Los_Angeles`, and say to remove the old Sunday `0 20 * * 0` weekly line.
+**Notes**:
