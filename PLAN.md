@@ -285,7 +285,7 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 **Decision rule**: The runbook states only steps derivable from this plan, the build plan and `health-mcp/README.md`. Do not invent host names or paths.
 The runbook orders the live steps so that the nutrition poller is retired (T10 code deployed) before migration 02 is applied, and migration 02 is applied on the Pi before the new code is deployed (`run_all.py` calls `init_db`, and `schema.sql` fails on a database without 02).
 **Notes**: Runbook has 9 steps (added stop health-data-hub before migrations); `git pull` in step 2 so migrations exist; rollback step 3 limited to health-mcp.
-Lesson: A runbook step that runs repo files (migrations, scripts) has to come after the step that puts those files on the host | applies: deploy runbooks and live-step docs
+Lesson (logged): A runbook step that runs repo files (migrations, scripts) has to come after the step that puts those files on the host | applies: deploy runbooks and live-step docs
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T13: Promote the never-raise job lesson to a test [model: haiku] [risk: normal] [status: done] [deps: T10]
