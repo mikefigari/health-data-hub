@@ -72,7 +72,7 @@ Calibrated runs also carry goal_model_avg_deficit; prompt defers to target_daily
 Lesson: When a plan Decision says "also report X for comparison", check that the context object actually carries X, not just the primary figure | applies: prompt/context-builder tasks
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T4: Thursday check-in mode [model: sonnet] [risk: normal] [status: doing] [deps: T3]
+### T4: Thursday check-in mode [model: sonnet] [risk: normal] [status: done] [deps: T3]
 **Outcome**: `REPORT_MODE=checkin` computes Mon–Wed (LA) via T1/T2 and posts a numbers-only `Check-in` page to the Health Intelligence DB only when off track or when nothing was logged (D7, D8, A5, A6); on track it logs `[checkin] on track` and posts nothing.
 **Files**: `notion-reporter/src/utils/buildCheckin.mjs` (new: `runCheckin({today, fetchInputs, post})` with injected I/O, `buildCheckinMarkdown(result)`), `notion-reporter/index.mjs` (mode switch at `:110`; header SCHEDULING/MODES docs: Monday 06:00 weekly, Thursday 06:00 checkin, America/Los_Angeles), `notion-reporter/package.json` (`"checkin"` script copied from `"weekly"`), `notion-reporter/src/notion/postReport.mjs` (checkin title/properties; Report Type `Check-in`; no relations), `notion-reporter/test/unit/checkin.test.mjs` (new)
 **Non-goals**: no Anthropic call in checkin mode; no change to weekly or daily output.
@@ -80,8 +80,11 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 **Done-when**: `cd notion-reporter && npm test`
 **Decision rule**: If postReport's property builder isn't exported, export it rather than duplicating it.
 **Notes**:
+Check-in always uses goal_calories maintenance (Mon–Wed food only), never the D3 scale calibration; may disagree with Monday's report once calibration activates (planner to decide).
+Lesson: When a plan Decision defines a model shared by several modes (e.g. maintenance calibration), every mode's spec must either apply it or say why it doesn't | applies: planner and spec-writer for multi-mode features
+Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T5: CI job for the reporter + post-merge runbook [model: haiku] [risk: high] [status: todo] [deps: T4]
+### T5: CI job for the reporter + post-merge runbook [model: haiku] [risk: high] [status: doing] [deps: T4]
 **Outcome**: CI runs the reporter's unit and integration tests on every PR, and `docs/weekly-nutrition-review-runbook.md` lists the post-merge Pi steps in executable order.
 **Files**: `.github/workflows/kit-ci.yml` (add steps to the `node` job copying `:38-45`: `npm ci` in `health-mcp` (the harness imports `pg` from there) and in `notion-reporter`, then `npm test` and `npm run test:integration` in `notion-reporter`), `docs/weekly-nutrition-review-runbook.md` (new)
 **Non-goals**: no change to the Python job or existing health-mcp steps.
