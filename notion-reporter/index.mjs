@@ -11,8 +11,13 @@
  *   # Daily briefing at 10:00 AM (moved from 8am — Oura syncs by 05:00, Notion by 08:30)
  *   0 10 * * * cd /path/to/health_data_hub/notion-reporter && node index.mjs >> /home/mike/logs/notion-reporter-daily.log 2>&1
  *
- *   # Weekly review every Sunday at 8:00 PM
- *   0 20 * * 0 cd /path/to/health_data_hub/notion-reporter && REPORT_MODE=weekly node index.mjs >> /home/mike/logs/notion-reporter-weekly.log 2>&1
+ *   # Weekly review every Monday at 06:00 America/Los_Angeles
+ *   0 6 * * 1 cd /path/to/health_data_hub/notion-reporter && REPORT_MODE=weekly node index.mjs >> /home/mike/logs/notion-reporter-weekly.log 2>&1
+ *
+ *   # Thursday check-in at 06:00 America/Los_Angeles (posts only when off track)
+ *   0 6 * * 4 cd /path/to/health_data_hub/notion-reporter && REPORT_MODE=checkin node index.mjs >> /home/mike/logs/notion-reporter-checkin.log 2>&1
+ *
+ * (Set CRON_TZ=America/Los_Angeles or TZ accordingly.)
  *
  * On Windows with Task Scheduler, create two tasks that run:
  *   node "C:\path\to\health_data_hub\notion-reporter\index.mjs"
@@ -20,7 +25,8 @@
  *
  * ── MODES ─────────────────────────────────────────────────────────────────
  *   REPORT_MODE=daily   → morning briefing (default)
- *   REPORT_MODE=weekly  → Sunday weekly review
+ *   REPORT_MODE=weekly  → Monday weekly review (prior Mon–Sun)
+ *   REPORT_MODE=checkin → Thursday numbers-only check-in (no Claude call)
  *   REPORT_MODE=dry     → assemble context + print prompt, no API calls
  *
  * ── SETUP ─────────────────────────────────────────────────────────────────
@@ -107,8 +113,23 @@ async function buildDailyContextWithGate() {
 const DAILY_PAUSED_UNTIL = '2026-07-31';
 
 async function run() {
-  if (!['daily', 'weekly', 'dry'].includes(mode)) {
-    throw new Error(`Unknown REPORT_MODE: "${mode}". Expected daily | weekly | dry`);
+  if (!['daily', 'weekly', 'checkin', 'dry'].includes(mode)) {
+    throw new Error(`Unknown REPORT_MODE: "${mode}". Expected daily | weekly | checkin | dry`);
+  }
+
+  if (mode === 'checkin') {
+    const [{ runCheckin }, { laToday }, { getNutritionWeekInputs }, { postReport: post }] = await Promise.all([
+      import('./src/utils/buildCheckin.mjs'),
+      import('./src/utils/nutritionWeek.mjs'),
+      import('./src/utils/db.mjs'),
+      import('./src/notion/postReport.mjs'),
+    ]);
+    await runCheckin({
+      today: laToday(),
+      fetchInputs: getNutritionWeekInputs,
+      post: (p) => post({ date: p.date, notionRefs: {}, days: [] }, p.markdown, 'checkin'),
+    });
+    return;
   }
 
   if (mode === 'daily' && new Date().toISOString().slice(0, 10) < DAILY_PAUSED_UNTIL) {

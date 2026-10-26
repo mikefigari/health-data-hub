@@ -5,7 +5,7 @@
  *
  * Actual DB property schema (as provided):
  *   Title                  title
- *   Report Type            select        ("Daily" | "Weekly")
+ *   Report Type            select        ("Daily" | "Weekly" | "Check-in")
  *   Created Date           date
  *   Key Insight            rich_text     ← synthesis section from analysis
  *   Anomalies/Flags        rich_text     ← flags section from analysis
@@ -50,6 +50,10 @@ function getISOWeekNumber(isoDate) {
 
 function formatWeeklyTitle(isoDate, powerZoneName) {
   return `Week ${getISOWeekNumber(isoDate)} · ${powerZoneName ?? 'Current Block'}`;
+}
+
+export function checkinTitle(isoDate) {
+  return `Check-in · Week ${getISOWeekNumber(isoDate)}`;
 }
 
 // ── Property value builders ───────────────────────────────────────────────
@@ -176,8 +180,16 @@ function buildRawPromptSummary(context, mode) {
 
 // ── Page properties builder ───────────────────────────────────────────────
 
-function buildPageProperties(context, analysis, mode) {
-  const { date, notionRefs } = context;
+export function buildPageProperties(context, analysis, mode) {
+  const { date } = context;
+  if (mode === 'checkin') {
+    return {
+      'Name':        titleProp(checkinTitle(date)),
+      'Report Type': selectProp('Check-in'),
+      'Action Items': richTextProp(''),
+    };
+  }
+  const notionRefs = context.notionRefs ?? {};
   const { powerZone, dpsPageId, workoutPageIds } = notionRefs;
 
   const title = mode === 'weekly'
