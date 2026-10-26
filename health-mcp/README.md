@@ -1,7 +1,9 @@
 # health-mcp
 
-Remote, read-only, natural-language access to the `health_pi` Postgres database
-(Peloton/Strava/Oura/Cronometer data), exposed as a remote MCP server reachable
+Remote natural-language access to the `health_pi` Postgres database
+(Peloton/Strava/Oura/MyFitnessPal/Apple Health data). Reads use the SELECT-only
+`claude_readonly` role; food logging writes go through a separate
+`nutrition_writer` role (see "Nutrition logging tools"). It is exposed as a remote MCP server reachable
 from claude.ai (desktop or mobile) as a custom connector.
 
 ## Architecture
@@ -30,7 +32,7 @@ Postgres (localhost:5432, database health_pi)
       │  role: claude_readonly — SELECT-only, default_transaction_read_only=on,
       │  no CONNECT on any other database, 5 connection cap
       ▼
-health_pi tables (Peloton/Strava/Oura/Cronometer data)
+health_pi tables (Peloton/Strava/Oura/MyFitnessPal/Apple Health data)
 ```
 
 The Cloudflare Tunnel (`18a4d3ef-25b8-4989-b22f-3f42264c2d5e`, named
@@ -51,7 +53,12 @@ router — cloudflared makes an outbound-only connection to Cloudflare's edge.
 | `oura_readiness_raw` | 281 | Oura daily readiness score + contributors. |
 | `oura_activity_raw` | 282 | Oura daily activity (steps, calories, activity minutes). |
 | `oura_hr_samples` | ~27.6k | High-resolution overnight HR/HRV samples. |
-| `nutrition_daily` | 47 | Daily nutrition totals + goals (Cronometer-sourced), meals as JSON. |
+| `nutrition_daily` | 55 | VIEW (after migration 02) with the same 18 columns as before. A day with any non-deleted `food_log` rows returns `food_log` totals with `source='food_log'`, otherwise the legacy row (sources: MyFitnessPal, Apple Health). Never sums both. |
+| `nutrition_daily_legacy` | 55 | Frozen original table (MyFitnessPal and Apple Health days). Nothing writes it. |
+| `food_log` | new | One row per logged food item (soft-deleted via `deleted_at`), each with its own nutrients, confidence and source. Audited in `food_log_audit`. |
+| `food_log_daily` | view | Per-day totals over non-deleted `food_log` rows. |
+| `my_foods`, `my_food_aliases` | new | Saved favorites and their aliases. |
+| `nutrition_goals` | new | Goal per `effective_from` date: `target_weight_kg`, `base_calories`, `cycling_kj_factor`, `protein_g`. |
 | `body_measurements` | — | One row per Renpho smart-scale weigh-in (Apple Health via Health Auto Export): weight, body fat %, lean mass, BMI. `muscle_mass_kg` / `water_pct` stay NULL (not in HealthKit). |
 | `daily_physical_state` | 165 | Subjective daily state notes (energy, body signals), sourced from Notion. |
 | `planned_workouts` | 6 | Upcoming planned training sessions. |
@@ -249,9 +256,66 @@ asking for your access key (the same value as `MCP_API_KEY` in
   DDL, and multi-statement input at the app layer as defense-in-depth; the
   Postgres role itself is read-only regardless). Results capped at 1000 rows.
 
+### Nutrition logging tools (7 new)
+
+Read tools use the `claude_readonly` pool. Write tools use a second `pg` pool
+as role `nutrition_writer` and are registered only when
+`WRITE_TOOLS_ENABLED=true`.
+
+| Tool | Kind | Purpose |
+|---|---|---|
+| `search_foods` | read | Search saved favorites by name or alias. Call with the food name only. |
+| `get_day_summary` | read | Items (with ids), totals, goals, `cycling_kcal`, latest body weight and `kg_to_target` for a day (default today, Los Angeles). Days with no rows still report goals. |
+| `log_food` | write | Log one or more items. `confirm` (boolean, default false): with `false` it validates and returns the would-be rows plus projected day totals and writes nothing; with `true` it inserts. `request_id` (UUID) makes a confirmed call safe to retry. |
+| `save_favorite` | write | Save a favorite, optionally `from_log_id`. |
+| `update_log_entry` | write | Patch one entry by id; totals are recomputed. |
+| `delete_log_entry` | write | Soft-delete entries by `ids`; `restore: true` brings them back. |
+| `mark_day_complete` | write | Mark a day as fully logged (or not), with an optional note. |
+
+Confirm-first is a convention, not a token: the tool descriptions and server
+`instructions` tell Claude to call `log_food` without `confirm`, show the
+table, and call again with `confirm: true` only after the user agrees.
+
+Goals: `goal_calories = base_calories + cycling_kcal`, where `cycling_kcal =
+round(cycling_kj_factor * sum(kj))` over rides with `sport_type = 'Ride'`,
+`device_watts` and `kj > 0`. A ride's day is the Los Angeles date of its UTC
+start time. Oura plays no part in calories. Carbs and fat goals are NULL.
+
+Errors return `isError: true` with `{"error":{"code","message","item_index"?,"field"?}}`.
+Codes: `VALIDATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `ALREADY_DELETED`,
+`WRITES_DISABLED`, `RATE_LIMITED`, `DB_ERROR`.
+
+### Environment variables for writes (`health-mcp.env`)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WRITE_TOOLS_ENABLED` | unset (off) | `true` registers the write tools. Anything else is off. |
+| `DB_WRITER_USER` | `nutrition_writer` | Role for the write pool. |
+| `DB_WRITER_PASSWORD` | none | Required when `WRITE_TOOLS_ENABLED=true`; startup fails without it. |
+| `WRITE_RATE_LIMIT_PER_HOUR` | `120` | Token bucket across all write tools. |
+
+The `nutrition_writer` role is created by migration 01 without a password; set
+it out-of-band (see `docs/nutrition_deploy_runbook.md`). It has `CONNECT`, a
+3-connection cap, `statement_timeout=5s`, INSERT/limited UPDATE on `food_log`,
+write access to `my_foods`/`my_food_aliases`, and INSERT-only on
+`food_log_audit`. It cannot touch any other table.
+
+### Write guards
+
+1. Kill switch: `WRITE_TOOLS_ENABLED=false` removes the write tools; reads keep working.
+2. Rate limit: token bucket (`WRITE_RATE_LIMIT_PER_HOUR`), returns `RATE_LIMITED`.
+3. Input checks run before the rate limit is consumed; all SQL uses bound parameters.
+4. Separate role and pool: the `query` tool's pool stays read-only.
+5. Every change to `food_log` is recorded by trigger in `food_log_audit`; deletes are soft.
+6. Audit log: one JSON line per write (`evt`, `tool`, `client`, `ids`, `kcal_delta`) in
+   `journalctl -u health-mcp`. Descriptions, tokens and SQL are never logged.
+7. Confirm-first: `log_food` writes nothing unless `confirm: true`.
+
+Docs: `docs/nutrition_logging.md` (user guide), `docs/nutrition_deploy_runbook.md` (live steps).
+
 ## Defense in depth
 
-1. `claude_readonly` Postgres role: `SELECT`-only grants, no write/DDL
+1. `claude_readonly` Postgres role (all read tools and `query`): `SELECT`-only grants, no write/DDL
    privileges, `default_transaction_read_only = on`, no `CONNECT` on any
    database other than `health_pi`, 5-connection cap.
 2. App-layer SQL guard: single-statement, `SELECT`/`WITH`-only, keyword

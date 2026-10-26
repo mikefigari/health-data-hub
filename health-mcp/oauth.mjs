@@ -124,7 +124,7 @@ export function createOAuthRouter({ issuer, resource, apiKey, allowedRedirectUri
 <html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
 <body style="font-family:system-ui,sans-serif;max-width:420px;margin:80px auto;padding:0 16px">
 <h2>Authorize health-mcp</h2>
-<p>${client.client_name ? escapeHtml(client.client_name) : 'This application'} is requesting read-only access to your health data.</p>
+<p>${client.client_name ? escapeHtml(client.client_name) : 'This application'} is requesting access to read your health data and log food.</p>
 <form method="POST" action="/authorize/approve">
   <input type="hidden" name="req" value="${reqId}">
   <input type="password" name="key" placeholder="Access key" style="width:100%;padding:10px;font-size:16px;box-sizing:border-box" autofocus required>
