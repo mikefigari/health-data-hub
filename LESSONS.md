@@ -5,7 +5,6 @@ Written by kit-run from reviewer findings. The planner reads it before planning 
 folds matching lessons into task blocks. At count >= 2 the planner schedules a task that promotes
 the lesson to a lint rule, hook or test, and that task deletes the line. This file should shrink. -->
 
-- For jobs that must never raise, end with a catch-all `except Exception` that logs and returns 1; listing specific exception types misses TypeError and AttributeError | count: 2 | last: 2026-10-23 | applies: `sync_once` / `poll_once`-style jobs
 - When a PR adds a CI workflow, check that every tool it runs (e.g. pytest) is installed by the dependency files the workflow installs from | count: 1 | last: 2026-10-23 | applies: kit adoption / any task adding .github/workflows
 - Run safety guards on connection strings over the config the driver will actually use (query params like ?host= override the URL host) | count: 1 | last: 2026-10-26 | applies: applies: destructive test-DB helpers, env-gated DB tooling
 - Database-name guards in test helpers don't protect roles (cluster-wide); use test-only role names or refuse if the role exists outside the test DB | count: 1 | last: 2026-10-26 | applies: applies: testdb.mjs and tests running ALTER ROLE / DROP ROLE
