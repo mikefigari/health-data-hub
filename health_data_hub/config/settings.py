@@ -105,6 +105,9 @@ DATAWRAPPER_STATE_FILE = Path(os.getenv(
 FTP_WKG_CSV_PATH = Path(os.getenv(
     "FTP_WKG_CSV_PATH", str(PROJECT_ROOT / "exports" / "ftp_wkg.csv")
 ))
+NUTRITION_CHARTS_DIR = Path(os.getenv(
+    "NUTRITION_CHARTS_DIR", str(PROJECT_ROOT / "exports" / "nutrition_charts")
+))
 
 
 # -------------------------------------------------------------
