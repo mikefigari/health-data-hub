@@ -18,6 +18,7 @@ Branch: orch/weekly-nutrition-review
 - D6: Usable day = has food (`calories > 0`) AND `logged_complete IS DISTINCT FROM false` AND `goal_calories IS NOT NULL`. The report states "N of 7 days logged, M marked complete".
 - D7: Thursday check-in: new `REPORT_MODE=checkin`, Thursday 06:00 America/Los_Angeles, covers Mon–Wed of the current week. Posts to the Health Intelligence DB ONLY when not on track. Content is computed numbers, no Claude call: Mon–Wed average deficit × 3 vs pace 2,475 (= round(5775 × 3/7)), shortfall, and the average daily deficit needed Thu–Sun to still reach 5,775.
 - D8: If Mon–Wed has zero usable days, the check-in posts a nudge page: "No food logged since Monday — the week can't be judged yet."
+- D9 (auto, T1): spec test (d2) fixture arithmetic is wrong (3×1500 + 4×300 over 7 days = 814.3, not 842.9, below 825) -> spec writer fixes the fixture in a new T1-spec commit; the implementation (avg ≥ 825) stays as D2/A2 say [source: Default policy, wrong spec test, unambiguous arithmetic error]
 ## Assumptions
 - A1: Loss rate lives in env `WEEKLY_LOSS_TARGET_KG` (default 0.75), not a DB column, so no migration and no protected path. Kcal per kg = 7700 constant.
 - A2: Weekly math: day_deficit = maintenance − calories (positive = deficit). avg = Σ day_deficit / n_usable; projected_week_total = avg × 7; on_track = avg ≥ 825; status = `deficit` if avg > 0, `surplus` if avg ≤ 0, `no_data` if n_usable = 0; projected_kg_per_week = round(avg × 7 / 7700, 2).
@@ -37,7 +38,7 @@ Branch: orch/weekly-nutrition-review
 - Numbers shown to the user are integers for kcal, one decimal for kg, two decimals for kg/week.
 - Report needs-decision only for: user-visible behavior not covered above, data loss, security, cost, or a spec test that looks wrong.
 ## Tasks
-### T1: Pure weekly nutrition + weight math module [model: sonnet] [risk: normal] [status: todo] [deps: none]
+### T1: Pure weekly nutrition + weight math module [model: sonnet] [risk: normal] [status: done] [deps: none]
 **Outcome**: `notion-reporter/src/utils/nutritionWeek.mjs` exports pure functions implementing D1–D3, D6–D8 and A2–A5, and `cd notion-reporter && npm test` runs their unit tests green.
 **Files**: `notion-reporter/src/utils/nutritionWeek.mjs` (new; copy the row-shape handling at `notion-reporter/src/utils/buildWeeklyContext.mjs:34-45`), `notion-reporter/package.json` (add `"test"` script copied from `health-mcp/package.json:9`), `notion-reporter/test/unit/nutritionWeek.test.mjs` (new)
 **Non-goals**: no DB, Notion or Anthropic calls; no edits to buildWeeklyContext/analyzeHealth/index.
@@ -45,8 +46,10 @@ Branch: orch/weekly-nutrition-review
 **Done-when**: `cd notion-reporter && npm test`
 **Decision rule**: If a formula edge case is not covered by A2–A5, pick the reading that never reports a deficit larger than the logged data supports, and record it in Notes.
 **Notes**:
+Spec (d2) fixture arithmetic was wrong; spec writer fixed it (D9). Edge-case rounding choices are recorded in nutritionWeek.mjs.
+Metrics: attempts=2 fix=0 review=none blocked=none
 
-### T2: DB inputs for the weekly review + LA ride day in EXPORT_SQL [model: sonnet] [risk: normal] [status: todo] [deps: T1]
+### T2: DB inputs for the weekly review + LA ride day in EXPORT_SQL [model: sonnet] [risk: normal] [status: doing] [deps: T1]
 **Outcome**: `db.mjs` exports `getNutritionWeekInputs(startDay, endDay)` returning nutrition rows, weigh-ins (trailing 28 days before endDay through endDay) and the current `nutrition_goals` row, and `EXPORT_SQL` buckets workouts by LA date; integration tests pass against the 5433 test cluster.
 **Files**: `notion-reporter/src/utils/db.mjs` (copy query style at `notion-reporter/src/utils/db.mjs:249-265`; fix `:79`, `:97-98`, `:139`), `notion-reporter/package.json` (add `"test:integration"` copied from `health-mcp/package.json:10`), `notion-reporter/test/integration/nutrition_week_inputs.int.test.mjs` (new; harness pattern at `health-mcp/test/integration/ride_day.int.test.mjs:1-40`)
 **Non-goals**: no edits under `health-mcp/` or `health_data_hub/`; no schema changes; no change to EXPORT_SQL columns or row shape.
