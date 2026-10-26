@@ -193,7 +193,7 @@ export function buildPageProperties(context, analysis, mode) {
   const { powerZone, dpsPageId, workoutPageIds } = notionRefs;
 
   const title = mode === 'weekly'
-    ? formatWeeklyTitle(date, powerZone?.name)
+    ? formatWeeklyTitle(context.weekEnd ?? date, powerZone?.name)
     : formatDailyTitle(date);
 
   const props = {
