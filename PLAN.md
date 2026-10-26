@@ -60,7 +60,7 @@ Metrics: attempts=2 fix=0 review=none blocked=none
 getNutritionWeekInputs picks the nutrition_goals row with latest effective_from <= endDay (goals null if none); weigh-in window is endDay-28..endDay inclusive.
 Metrics: attempts=1 fix=0 review=none blocked=none
 
-### T3: Rewrite the weekly report's nutrition and weight inputs and prompt [model: sonnet] [risk: normal] [status: doing] [deps: T1, T2]
+### T3: Rewrite the weekly report's nutrition and weight inputs and prompt [model: sonnet] [risk: normal] [status: done] [deps: T1, T2]
 **Outcome**: `REPORT_MODE=weekly` reviews the prior Mon–Sun (LA) with a `NUTRITION_WEEK` block (D2, D3, D6, A2, A4) and a `WEIGHT_TREND` block (A3), and WEEKLY_SYSTEM_PROMPT's Nutrition and Weight sections use them, with the hardcoded TDEE gone.
 **Files**: `notion-reporter/src/utils/buildWeeklyContext.mjs` (delete `TDEE_BASELINE` and `computeDeficitAdherence`; call T1/T2), `notion-reporter/src/anthropic/analyzeHealth.mjs` (WEEKLY_SYSTEM_PROMPT at `:126-185`, `buildWeeklyUserMessage` at `:225`; export both), `notion-reporter/index.mjs` (dry-run weekly printer at `:194-199`), `notion-reporter/src/notion/postReport.mjs` (weekly raw-prompt summary at `:141`), `notion-reporter/test/unit/weekly_prompt.test.mjs` (new)
 **Non-goals**: no changes to the daily path, the commented DAILY prompt, `buildDailyContext.mjs`, or the Recovery/fatigue prompt text beyond replacing the goal wording; no Claude model change.
@@ -68,8 +68,11 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 **Done-when**: `cd notion-reporter && npm test`
 **Decision rule**: Keep existing section headings so `postReport.mjs` `extractKeyInsight`/`extractAnomalies` keep working; if a heading must change, update the extractor in the same task and log it.
 **Notes**:
+Calibrated runs also carry goal_model_avg_deficit; prompt defers to target_daily/target_total. Headings unchanged.
+Lesson: When a plan Decision says "also report X for comparison", check that the context object actually carries X, not just the primary figure | applies: prompt/context-builder tasks
+Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T4: Thursday check-in mode [model: sonnet] [risk: normal] [status: todo] [deps: T3]
+### T4: Thursday check-in mode [model: sonnet] [risk: normal] [status: doing] [deps: T3]
 **Outcome**: `REPORT_MODE=checkin` computes Mon–Wed (LA) via T1/T2 and posts a numbers-only `Check-in` page to the Health Intelligence DB only when off track or when nothing was logged (D7, D8, A5, A6); on track it logs `[checkin] on track` and posts nothing.
 **Files**: `notion-reporter/src/utils/buildCheckin.mjs` (new: `runCheckin({today, fetchInputs, post})` with injected I/O, `buildCheckinMarkdown(result)`), `notion-reporter/index.mjs` (mode switch at `:110`; header SCHEDULING/MODES docs: Monday 06:00 weekly, Thursday 06:00 checkin, America/Los_Angeles), `notion-reporter/package.json` (`"checkin"` script copied from `"weekly"`), `notion-reporter/src/notion/postReport.mjs` (checkin title/properties; Report Type `Check-in`; no relations), `notion-reporter/test/unit/checkin.test.mjs` (new)
 **Non-goals**: no Anthropic call in checkin mode; no change to weekly or daily output.
