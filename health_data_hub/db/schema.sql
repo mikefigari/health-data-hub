@@ -663,10 +663,10 @@ WITH meals AS (
     GROUP BY day
 ),
 rides AS (
-    SELECT start_time::date AS day, sum(kj) AS kj
+    SELECT (start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date AS day, sum(kj) AS kj
       FROM public.workout_summary
      WHERE sport_type = 'Ride' AND device_watts AND kj > 0
-     GROUP BY start_time::date
+     GROUP BY (start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date
 )
 SELECT
     fl.day,
@@ -703,7 +703,7 @@ FROM public.nutrition_daily_legacy l
 WHERE NOT EXISTS (SELECT 1 FROM public.food_log f
                    WHERE f.day = l.day AND f.deleted_at IS NULL);
 
--- nutrition_writer: day status upserts, goal and view reads. No legacy access.
+-- nutrition_writer: day status upserts, goal and view reads. It reads legacy rows through the view's owner rights.
 GRANT SELECT, INSERT, UPDATE ON public.nutrition_day_status TO nutrition_writer;
 GRANT SELECT ON public.nutrition_goals TO nutrition_writer;
 GRANT SELECT ON public.nutrition_daily TO nutrition_writer;

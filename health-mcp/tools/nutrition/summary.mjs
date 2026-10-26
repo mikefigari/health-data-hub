@@ -33,11 +33,11 @@ const GOAL_SQL = `
   SELECT target_weight_kg, cycling_kj_factor, base_calories, protein_g FROM nutrition_goals
    WHERE effective_from <= $1::date ORDER BY effective_from DESC LIMIT 1`;
 
-// D5: powered Rides only; the ride day is start_time::date.
+// D5: powered Rides only; the ride day is the LA date of the UTC start_time (D8).
 const CYCLING_SQL = `
   SELECT round($2::numeric * coalesce(sum(kj), 0))::int AS kcal
     FROM workout_summary
-   WHERE sport_type = 'Ride' AND device_watts AND kj > 0 AND start_time::date = $1::date`;
+   WHERE sport_type = 'Ride' AND device_watts AND kj > 0 AND (start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date = $1::date`;
 
 const WEIGHT_SQL = `SELECT day::text AS day, weight_kg FROM body_weight_daily ORDER BY day DESC LIMIT 1`;
 
