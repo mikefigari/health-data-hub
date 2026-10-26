@@ -69,7 +69,7 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 **Decision rule**: Keep existing section headings so `postReport.mjs` `extractKeyInsight`/`extractAnomalies` keep working; if a heading must change, update the extractor in the same task and log it.
 **Notes**:
 Calibrated runs also carry goal_model_avg_deficit; prompt defers to target_daily/target_total. Headings unchanged.
-Lesson: When a plan Decision says "also report X for comparison", check that the context object actually carries X, not just the primary figure | applies: prompt/context-builder tasks
+Lesson (logged): When a plan Decision says "also report X for comparison", check that the context object actually carries X, not just the primary figure | applies: prompt/context-builder tasks
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T4: Thursday check-in mode [model: sonnet] [risk: normal] [status: done] [deps: T3]
@@ -81,7 +81,7 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 **Decision rule**: If postReport's property builder isn't exported, export it rather than duplicating it.
 **Notes**:
 Check-in always uses goal_calories maintenance (Mon–Wed food only), never the D3 scale calibration; may disagree with Monday's report once calibration activates (planner to decide).
-Lesson: When a plan Decision defines a model shared by several modes (e.g. maintenance calibration), every mode's spec must either apply it or say why it doesn't | applies: planner and spec-writer for multi-mode features
+Lesson (logged): When a plan Decision defines a model shared by several modes (e.g. maintenance calibration), every mode's spec must either apply it or say why it doesn't | applies: planner and spec-writer for multi-mode features
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T5: CI job for the reporter + post-merge runbook [model: haiku] [risk: high] [status: done] [deps: T4]
@@ -93,6 +93,6 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 **Decision rule**: The runbook's crontab lines are `0 6 * * 1` (weekly) and `0 6 * * 4` (checkin) with `CRON_TZ=America/Los_Angeles`, and say to remove the old Sunday `0 20 * * 0` weekly line.
 **Notes**:
 Runbook step 3 is a daily-path dry run only (no weekly dry mode exists); check-in run warns it posts live. CRON_TZ is ignored by vixie cron, so the runbook adds a timedatectl check.
-Lesson: A runbook "check" step must not have side effects in production, and must match what the mode actually does in the code | applies: runbooks and smoke-test steps
-Lesson: Cron instructions should be checked against the target OS's cron (CRON_TZ is cronie-only) and remove old lines by job, not by exact schedule | applies: Pi/cron runbooks
+Lesson (logged): A runbook "check" step must not have side effects in production, and must match what the mode actually does in the code | applies: runbooks and smoke-test steps
+Lesson (logged): Cron instructions should be checked against the target OS's cron (CRON_TZ is cronie-only) and remove old lines by job, not by exact schedule | applies: Pi/cron runbooks
 Metrics: attempts=2 fix=1 review=FIX blocked=none
