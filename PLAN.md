@@ -231,7 +231,7 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 **Notes**: Files were at apple_health/, etl/load/ and repo root; git mv'd to archive/. Follow-up for planner: docs/health_auto_export_setup.md:14,76,185 and TECHNICAL_ANALYSIS.md:42 still mention the 22:00 nutrition_poller job.
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T11: Nutrition quality checks follow food_log [model: haiku] [risk: normal] [status: todo] [deps: none]
+### T11: Nutrition quality checks follow food_log [model: haiku] [risk: normal] [status: done] [deps: none]
 **Outcome**: `_nutrition_checks()` replaces the `nutrition_daily` freshness check (180 min) with `FreshnessCheck("food_log", "created_at", max_age_minutes=1440, severity="warn")` and adds `ValueRangeCheck("food_log_daily", "calories", 0, 8000)`. The `nutrition_daily` NullCheck and RowCountCheck stay.
 **Files**: `health_data_hub/quality/checks_health.py` (edit at :124), `tests/test_nutrition_checks.py` (new; copy the pattern in `tests/test_body_freshness.py`)
 **Non-goals**: No change to `checks.py` or other check groups.
@@ -242,7 +242,8 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 - (d) A FakeConn returning a `created_at` 25 h old makes the freshness check fail.
 **Done-when**: `venv/Scripts/python -m pytest -q tests/test_nutrition_checks.py && venv/Scripts/python -m pytest -q`
 **Decision rule**: Keep check names in the existing `freshness_<table>` form.
-**Notes**:
+**Notes**: food_log freshness (1440, warn) and food_log_daily calories range added; nutrition_daily calories range/NullCheck kept; RowCountCheck lives in _cross_source_checks.
+Metrics: attempts=1 fix=0 review=none blocked=none
 
 ### T12: Consent text, README, user guide and deploy runbook [model: sonnet] [risk: high] [status: hold] [deps: T9, T10]
 **Outcome**:
