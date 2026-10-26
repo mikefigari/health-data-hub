@@ -17,8 +17,8 @@ Ordering constraints:
 - Migration 02 must be applied on the Pi before the new code is deployed:
   `run_all.py` calls `init_db`, and `schema.sql` fails on a database without 02.
 
-These two pull in opposite directions, so stop `health-data-hub` first (step 2),
-migrate (step 3), then deploy the code and start it again (step 6). The old
+These two pull in opposite directions, so stop `health-data-hub` and pull the code (step 2),
+migrate (step 3), then restart both services (step 6). The old
 poller never runs against the migrated database.
 
 ## 1. Backup
@@ -35,7 +35,12 @@ Do not continue until the off-Pi copy exists.
 
 ```bash
 sudo systemctl stop health-data-hub
+git pull
 ```
+
+The pull puts the migration files (and the new code) on the host. `health-data-hub`
+is stopped, so the old poller cannot run. `health-mcp` keeps running its
+already-loaded old code until it is restarted in step 6.
 
 ## 3. Apply migrations 00 to 02
 
@@ -72,8 +77,9 @@ Optional: `WRITE_RATE_LIMIT_PER_HOUR` (default 120).
 
 ## 6. Deploy the code and restart
 
+The code was pulled in step 2.
+
 ```bash
-git pull
 cd health-mcp && npm ci
 sudo systemctl restart health-mcp
 sudo systemctl restart health-data-hub
@@ -113,7 +119,13 @@ From claude.ai mobile, and from Claude Code using the static key:
 2. **Bad writes:** `food_log_audit` holds every earlier version. Restore a row with
    `UPDATE food_log ... FROM food_log_audit` as `postgres`, or use
    `delete_log_entry` with `restore=true` for soft deletes.
-3. **Bad server release:** `git checkout <previous tag>`, `npm ci`, restart.
+3. **Bad server release (health-mcp only):** check out the previous tag for
+   `health-mcp/` only (`git checkout <previous tag> -- health-mcp`), then `npm ci`
+   and restart `health-mcp`. Do not check out an older tag across the whole repo
+   while migration 02 is applied: it brings back the `nutrition_poller` in
+   `health-data-hub`, which would then write to the `nutrition_daily` view. If
+   `health-data-hub` is also being rolled back, run the 02 down script first
+   (ladder item 4).
 4. **Bad view:** run `2026-11_02_nutrition_daily_view.down.sql`.
    `nutrition_daily` is a table again with all original rows, and `food_log` is
    untouched. Readers then miss new days until the fix lands.
