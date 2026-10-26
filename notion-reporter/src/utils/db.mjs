@@ -76,7 +76,7 @@ hr_agg AS (
 ),
 workouts AS (
     SELECT
-        DATE(start_time) AS day,
+        (start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date AS day,
         json_agg(json_build_object(
             'workout_id',       workout_id,
             'title',            title,
@@ -94,8 +94,8 @@ workouts AS (
             'elevation_m',      total_elevation_gain
         ) ORDER BY start_time) AS workouts
     FROM workout_summary
-    WHERE DATE(start_time) BETWEEN $1 AND $2
-    GROUP BY DATE(start_time)
+    WHERE (start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date BETWEEN $1 AND $2
+    GROUP BY (start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date
 ),
 phys AS (
     SELECT day, overall_state, energy_level, body_signals, notes AS subjective_notes, entry_confidence
@@ -136,7 +136,7 @@ daily_tss_lookback AS (
         $2::date,
         interval '1 day'
     ) AS gs(day)
-    LEFT JOIN workout_summary ws ON DATE(ws.start_time) = gs.day
+    LEFT JOIN workout_summary ws ON (ws.start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date = gs.day
     GROUP BY gs.day
 ),
 ema_calc AS (
@@ -240,6 +240,36 @@ LEFT JOIN pmc         pm ON pm.day      = d.day
 LEFT JOIN planned     pl ON pl.day      = d.day
 ORDER BY d.day DESC;
 `;
+
+/**
+ * Inputs for the weekly nutrition review: nutrition_daily rows for
+ * startDay..endDay, weigh-ins for the trailing 28 days through endDay, and the
+ * current nutrition_goals row. Days are 'YYYY-MM-DD' (LA dates).
+ */
+export async function getNutritionWeekInputs(startDay, endDay) {
+  const nutrition = await queryRows(
+    `SELECT day::text AS day, calories, goal_calories, logged_complete
+     FROM nutrition_daily
+     WHERE day BETWEEN $1::date AND $2::date
+     ORDER BY day ASC`,
+    [startDay, endDay],
+  );
+  const weighIns = await queryRows(
+    `SELECT day::text AS day, weight_kg
+     FROM body_weight_daily
+     WHERE day BETWEEN ($1::date - 28) AND $1::date
+     ORDER BY day ASC`,
+    [endDay],
+  );
+  const goalRows = await queryRows(
+    `SELECT * FROM nutrition_goals
+     WHERE effective_from <= $1::date
+     ORDER BY effective_from DESC
+     LIMIT 1`,
+    [endDay],
+  );
+  return { nutrition, weighIns, goals: goalRows[0] ?? null };
+}
 
 /**
  * Return the most recently recorded body weight: the latest day in
