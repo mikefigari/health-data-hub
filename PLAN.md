@@ -49,7 +49,7 @@ Branch: orch/weekly-nutrition-review
 Spec (d2) fixture arithmetic was wrong; spec writer fixed it (D9). Edge-case rounding choices are recorded in nutritionWeek.mjs.
 Metrics: attempts=2 fix=0 review=none blocked=none
 
-### T2: DB inputs for the weekly review + LA ride day in EXPORT_SQL [model: sonnet] [risk: normal] [status: doing] [deps: T1]
+### T2: DB inputs for the weekly review + LA ride day in EXPORT_SQL [model: sonnet] [risk: normal] [status: done] [deps: T1]
 **Outcome**: `db.mjs` exports `getNutritionWeekInputs(startDay, endDay)` returning nutrition rows, weigh-ins (trailing 28 days before endDay through endDay) and the current `nutrition_goals` row, and `EXPORT_SQL` buckets workouts by LA date; integration tests pass against the 5433 test cluster.
 **Files**: `notion-reporter/src/utils/db.mjs` (copy query style at `notion-reporter/src/utils/db.mjs:249-265`; fix `:79`, `:97-98`, `:139`), `notion-reporter/package.json` (add `"test:integration"` copied from `health-mcp/package.json:10`), `notion-reporter/test/integration/nutrition_week_inputs.int.test.mjs` (new; harness pattern at `health-mcp/test/integration/ride_day.int.test.mjs:1-40`)
 **Non-goals**: no edits under `health-mcp/` or `health_data_hub/`; no schema changes; no change to EXPORT_SQL columns or row shape.
@@ -57,8 +57,10 @@ Metrics: attempts=2 fix=0 review=none blocked=none
 **Done-when**: `cd notion-reporter && npm test && npm run test:integration`
 **Decision rule**: If fixture insertion needs columns the harness doesn't document, read `health_data_hub/db/schema.sql` and insert as the test superuser; never alter roles (LESSONS: role guards are cluster-wide).
 **Notes**:
+getNutritionWeekInputs picks the nutrition_goals row with latest effective_from <= endDay (goals null if none); weigh-in window is endDay-28..endDay inclusive.
+Metrics: attempts=1 fix=0 review=none blocked=none
 
-### T3: Rewrite the weekly report's nutrition and weight inputs and prompt [model: sonnet] [risk: normal] [status: todo] [deps: T1, T2]
+### T3: Rewrite the weekly report's nutrition and weight inputs and prompt [model: sonnet] [risk: normal] [status: doing] [deps: T1, T2]
 **Outcome**: `REPORT_MODE=weekly` reviews the prior Mon–Sun (LA) with a `NUTRITION_WEEK` block (D2, D3, D6, A2, A4) and a `WEIGHT_TREND` block (A3), and WEEKLY_SYSTEM_PROMPT's Nutrition and Weight sections use them, with the hardcoded TDEE gone.
 **Files**: `notion-reporter/src/utils/buildWeeklyContext.mjs` (delete `TDEE_BASELINE` and `computeDeficitAdherence`; call T1/T2), `notion-reporter/src/anthropic/analyzeHealth.mjs` (WEEKLY_SYSTEM_PROMPT at `:126-185`, `buildWeeklyUserMessage` at `:225`; export both), `notion-reporter/index.mjs` (dry-run weekly printer at `:194-199`), `notion-reporter/src/notion/postReport.mjs` (weekly raw-prompt summary at `:141`), `notion-reporter/test/unit/weekly_prompt.test.mjs` (new)
 **Non-goals**: no changes to the daily path, the commented DAILY prompt, `buildDailyContext.mjs`, or the Recovery/fatigue prompt text beyond replacing the goal wording; no Claude model change.
