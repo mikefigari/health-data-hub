@@ -246,7 +246,7 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 **Notes**: food_log freshness (1440, warn) and food_log_daily calories range added; nutrition_daily calories range/NullCheck kept; RowCountCheck lives in _cross_source_checks.
 Metrics: attempts=1 fix=0 review=none blocked=none
 
-### T14: Ride day uses the LA date of the UTC start time [model: sonnet] [risk: high] [status: todo] [deps: T9]
+### T14: Ride day uses the LA date of the UTC start time [model: sonnet] [risk: high] [status: done] [deps: T9]
 **Outcome**: Every ride-day expression (the `rides` CTE SELECT and GROUP BY in migration 02, the matching view body in `schema.sql`, and `CYCLING_SQL` in `summary.mjs` with its comment) uses `(start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date` per D8.
 **Files**: `health_data_hub/db/migrations/2026-11_02_nutrition_daily_view.sql` (unreleased, edit in place), `health_data_hub/db/schema.sql`, `health-mcp/tools/nutrition/summary.mjs` (:36-40), `health-mcp/test/integration/ride_day.int.test.mjs` (new)
 **Non-goals**: No change to `export_daily_json.py` or `analysis_daily_rollup_10d`. No change to column names or types. The only wording change in the migration besides the CTE is the comment on `nutrition_writer` legacy access: it should say the writer can read legacy rows through the view's owner rights.
@@ -258,7 +258,9 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 - (e) T2's catalog parity holds after `freshInstall()` and `upgradeInstall()`.
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: Migration 02 is unreleased (nothing applied outside test clusters), so edit it in place and keep `schema.sql` identical in end state.
-**Notes**:
+**Notes**: Ride-day expression switched to LA date of UTC start in migration 02, schema.sql and CYCLING_SQL. Gate needs TEST_DATABASE_URL exported in the Stop hook env (worker report blocked on that, gate passes with it).
+Lesson: notion-reporter/src/utils/db.mjs:79 and power_zone_graph.py:478 still group rides by UTC day (out of scope; planner to consider D8 follow-up).
+Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T12: Consent text, README, user guide and deploy runbook [model: sonnet] [risk: high] [status: hold] [deps: T9, T10]
 **Outcome**:
