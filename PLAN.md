@@ -288,7 +288,7 @@ The runbook orders the live steps so that the nutrition poller is retired (T10 c
 Lesson: A runbook step that runs repo files (migrations, scripts) has to come after the step that puts those files on the host | applies: deploy runbooks and live-step docs
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T13: Promote the never-raise job lesson to a test [model: haiku] [risk: normal] [status: doing] [deps: T10]
+### T13: Promote the never-raise job lesson to a test [model: haiku] [risk: normal] [status: done] [deps: T10]
 **Outcome**: A pytest test fails if any `run_*` job wrapper in `scheduler_all.py` lacks an `except Exception` handler. The lesson line ("catch-all `except Exception`", count 2) is deleted from LESSONS.md.
 **Files**: `tests/test_scheduler_wrappers.py` (new; parse `scheduler_all.py` with `ast`, no import), `LESSONS.md` (delete that one line)
 **Non-goals**: No changes to pollers or `scheduler_all.py`.
@@ -297,4 +297,5 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 - (b) The test fails on an in-memory source string whose `run_x` catches only `ValueError` (checked with a helper that takes source text).
 **Done-when**: `venv/Scripts/python -m pytest -q tests/test_scheduler_wrappers.py && ! grep -q 'catch-all .except Exception' LESSONS.md && venv/Scripts/python -m pytest -q`
 **Decision rule**: If LESSONS.md in the base has no such line (A5 not met), still add the test and note that the line was absent.
-**Notes**:
+**Notes**: Spec writer wrote the full test file (5 tests, all passing on current scheduler_all.py); worker deleted the LESSONS.md line.
+Metrics: attempts=1 fix=0 review=none blocked=none
