@@ -221,14 +221,15 @@ Lesson: Do every input check that needs no database before guard.check (it consu
 Lesson: Day-summary or goal tools must cover days with no logged rows by working out goals from the goals table | applies: get_day_summary, readers of the nutrition_daily view
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T10: Retire the Apple Health nutrition poller [model: sonnet] [risk: normal] [status: todo] [deps: none]
+### T10: Retire the Apple Health nutrition poller [model: sonnet] [risk: normal] [status: done] [deps: none]
 **Outcome**: `scheduler_all.py` no longer imports or schedules the nutrition poller. `nutrition_poller.py`, `insert_nutrition_daily.py` and `lock_nutrition.py` live under `archive/` with an ARCHIVED.md entry dated 2026-10-25 citing D1.
 **Files**: `scheduler_all.py` (remove the lines at :45, :100–106 and the `add_job` block at :160–167, and update the docstring job list), `archive/ARCHIVED.md` (copy the entry format at :41), `archive/nutrition_poller.py` (git mv), `archive/insert_nutrition_daily.py` (git mv), `archive/lock_nutrition.py` (git mv)
 **Non-goals**: No change to `nutrition_reader.py`, the Worker, or other jobs.
 **Acceptance tests**: none: removal and moves. Done-when proves the import is gone, the module compiles and the suite passes.
 **Done-when**: `venv/Scripts/python -m py_compile scheduler_all.py && ! grep -rq --include='*.py' 'nutrition_poller\|insert_nutrition_daily' scheduler_all.py health_data_hub && test -f archive/lock_nutrition.py && test ! -f lock_nutrition.py && venv/Scripts/python -m pytest -q`
 **Decision rule**: If any non-archived module still imports a moved file, report needs-decision rather than moving more files.
-**Notes**:
+**Notes**: Files were at apple_health/, etl/load/ and repo root; git mv'd to archive/. Follow-up for planner: docs/health_auto_export_setup.md:14,76,185 and TECHNICAL_ANALYSIS.md:42 still mention the 22:00 nutrition_poller job.
+Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T11: Nutrition quality checks follow food_log [model: haiku] [risk: normal] [status: todo] [deps: none]
 **Outcome**: `_nutrition_checks()` replaces the `nutrition_daily` freshness check (180 min) with `FreshnessCheck("food_log", "created_at", max_age_minutes=1440, severity="warn")` and adds `ValueRangeCheck("food_log_daily", "calories", 0, 8000)`. The `nutrition_daily` NullCheck and RowCountCheck stay.
