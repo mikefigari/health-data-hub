@@ -17,11 +17,12 @@ Branch: orch/nutrition-logging
 - D5 (Q5, revised 2026-10-25): The goal is a 100 kg body-weight target. Oura plays no part in calories; the only calories burned that count are from cycling with tracked watts and kJ -> `nutrition_goals(effective_from date PK, target_weight_kg numeric(5,1), base_calories int, cycling_kj_factor numeric(3,2) DEFAULT 1.00, protein_g numeric(6,1), notes text, created_at)`. For a day d: `cycling_kcal = round(cycling_kj_factor * coalesce(sum(workout_summary.kj), 0))` over rows with `sport_type = 'Ride' AND device_watts AND kj > 0 AND start_time::date = d`, and `goal_calories = base_calories + cycling_kcal`. `goal_protein_g = protein_g`. `goal_carbs_g` and `goal_fat_g` are NULL. Seed row: `('2026-10-25', 100.0, 2620, 1.00, 180)`. `get_day_summary` also returns `cycling_kcal`, the latest `body_weight_daily.weight_kg`, its day, and `kg_to_target`.
 - D6 (Q14): Run through the kit pipeline. The build-plan §4.3 `exercise_adjust`/`base_calories` goal design is replaced by D5.
 - D7 (auto, T8): T2 harness (c)/(e) and T4 (j) specs assume `nutrition_daily` stays a base table; may they be re-specced? -> Yes: D2 (approved) makes `nutrition_daily` a VIEW, so those assertions contradict it. Re-spec them minimally (relkind `v` allowed, INSERT via the view fails with any error, run 02's down before 01's down); a newer `T8-spec:` commit becomes their baseline per spec-integrity.sh [source: D2, spec-integrity.sh re-spec rule]
+- D8 (user, 2026-10-25): A ride's day is the LA date of its UTC start time, `(start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date`, because `workout_summary.start_time` is a naive UTC timestamp (`insert_workout.py:30`). Supersedes A3b. On prod, 34 of 191 powered rides in the last 365 days were on the wrong day with `start_time::date`.
 ## Assumptions
 - A1: Unanswered build-plan questions take the doc's recommendations. Meals are `breakfast|lunch|dinner|snack` (Q6). The `eaten_at` backfill window is 60 days (Q12). Days are always in America/Los_Angeles (Q13, per your brief).
 - A2: The 13 all-NULL `apple_health` legacy rows are kept (Q11). Deleting data was not approved, and they read the same as today.
 - A3: D5 numbers: base 2620 kcal is the earlier estimate you accepted; cycling factor 1.00 (1 kJ of work ≈ 1 kcal burned at ~24% efficiency); protein 180 g (1.8 g/kg of target). They live in one seed row and change with one UPDATE. EBikeRide (no power meter) and rides without kJ add nothing.
-- A3b: A ride's day is `start_time::date`, the convention at `health_data_hub/etl/export_daily_json.py:120` and in `analysis_daily_rollup_10d`.
+- A3b (superseded by D8): A ride's day is `start_time::date`, the convention at `health_data_hub/etl/export_daily_json.py:120` and in `analysis_daily_rollup_10d`.
 - A4: Integration tests use a private, throwaway Postgres 18.1 cluster (data dir `%LOCALAPPDATA%\hdh-test-pg\data`, port 5433, trust auth, localhost only, database `hdh_test`), never the Pi. `TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test`. It does not survive a reboot. Restart it with `"/c/Program Files/PostgreSQL/18/bin/pg_ctl.exe" -D "$LOCALAPPDATA/hdh-test-pg/data" -l "$LOCALAPPDATA/hdh-test-pg/server.log" -o "-p 5433 -c listen_addresses=localhost" -w start >/dev/null 2>&1 </dev/null`. Integration Done-when commands fail if it is down or the env var is unset.
 - A5: Met. PR #1 was merged (ce9940a) and this branch was rebased on it, so LESSONS.md and the kit files are in the base.
 - A6: Test fixtures are synthetic. No real health rows are committed.
@@ -245,6 +246,20 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 **Notes**: food_log freshness (1440, warn) and food_log_daily calories range added; nutrition_daily calories range/NullCheck kept; RowCountCheck lives in _cross_source_checks.
 Metrics: attempts=1 fix=0 review=none blocked=none
 
+### T14: Ride day uses the LA date of the UTC start time [model: sonnet] [risk: high] [status: todo] [deps: T9]
+**Outcome**: Every ride-day expression (the `rides` CTE SELECT and GROUP BY in migration 02, the matching view body in `schema.sql`, and `CYCLING_SQL` in `summary.mjs` with its comment) uses `(start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date` per D8.
+**Files**: `health_data_hub/db/migrations/2026-11_02_nutrition_daily_view.sql` (unreleased, edit in place), `health_data_hub/db/schema.sql`, `health-mcp/tools/nutrition/summary.mjs` (:36-40), `health-mcp/test/integration/ride_day.int.test.mjs` (new)
+**Non-goals**: No change to `export_daily_json.py` or `analysis_daily_rollup_10d`. No change to column names or types. The only wording change in the migration besides the CTE is the comment on `nutrition_writer` legacy access: it should say the writer can read legacy rows through the view's owner rights.
+**Acceptance tests**: `health-mcp/test/integration/ride_day.int.test.mjs`:
+- (a) A powered Ride (`device_watts` true, kj 500) at `2026-10-26T02:00:00` UTC counts toward `nutrition_daily.goal_calories` on 2026-10-25 (3120 with the seed row) and not on 2026-10-26 (2620).
+- (b) `get_day_summary` for 2026-10-25 returns `cycling_kcal` 500 for the same ride.
+- (c) A Ride at `2026-10-25T20:00:00` UTC (13:00 PT) still counts toward 2026-10-25.
+- (d) Existing T8 and T9 specs still pass. If one asserts the UTC-day behavior, report needs-decision and do not edit it.
+- (e) T2's catalog parity holds after `freshInstall()` and `upgradeInstall()`.
+**Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
+**Decision rule**: Migration 02 is unreleased (nothing applied outside test clusters), so edit it in place and keep `schema.sql` identical in end state.
+**Notes**:
+
 ### T12: Consent text, README, user guide and deploy runbook [model: sonnet] [risk: high] [status: hold] [deps: T9, T10]
 **Outcome**:
 - The OAuth consent page says the app "is requesting access to read your health data and log food".
@@ -266,6 +281,7 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 - (b) PKCE and redirect checks still return 400 on a missing `code_challenge`.
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && grep -q 'nutrition_writer' README.md && grep -q 'confirm' ../docs/nutrition_logging.md && grep -q 'pg_dump' ../docs/nutrition_deploy_runbook.md && grep -q 'ON_ERROR_STOP' ../docs/nutrition_deploy_runbook.md`
 **Decision rule**: The runbook states only steps derivable from this plan, the build plan and `health-mcp/README.md`. Do not invent host names or paths.
+The runbook orders the live steps so that the nutrition poller is retired (T10 code deployed) before migration 02 is applied, and migration 02 is applied on the Pi before the new code is deployed (`run_all.py` calls `init_db`, and `schema.sql` fails on a database without 02).
 **Notes**:
 
 ### T13: Promote the never-raise job lesson to a test [model: haiku] [risk: normal] [status: hold] [deps: T10]
