@@ -132,11 +132,14 @@ def _nutrition_checks():
         # No nutrition row may lack a date
         NullCheck("nutrition_daily", "day", max_null_pct=0.0),
 
-        # Nutrition poller runs once at 22:00; allow 3-hour window for late sync
+        # Food log entries should arrive at least once a day
         FreshnessCheck(
-            "nutrition_daily", "day::timestamp", max_age_minutes=180,
+            "food_log", "created_at", max_age_minutes=1440,
             severity="warn",
         ),
+
+        # Daily calorie totals from the food log: 0 means no log, 8000 is a ceiling
+        ValueRangeCheck("food_log_daily", "calories", 0, 8000),
     ]
 
 
