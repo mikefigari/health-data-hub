@@ -193,7 +193,7 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 Lesson: Before comparing a naive TIMESTAMP's ::date to a local-date column, check the writer's timezone (Strava start_date is UTC) | applies: date joins across Strava/workout_summary and LA-day tables
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T9: get_day_summary, update/delete entries, mark_day_complete [model: sonnet] [risk: high] [status: todo] [deps: T7, T8]
+### T9: get_day_summary, update/delete entries, mark_day_complete [model: sonnet] [risk: high] [status: done] [deps: T7, T8]
 **Outcome**: These tools exist:
 - `get_day_summary` (§5.7, read pool): defaults to today in LA, returns goals and remaining calories from `nutrition_daily`, plus latest weight and `kg_to_target` per D5.
 - `update_log_entry` (§5.5).
@@ -216,7 +216,10 @@ The three write tools go through the T5 write guard.
 - (j) The `delete_log_entry` description asks for confirmation before deleting more than 3 items.
 **Done-when**: `cd health-mcp && npm ci --silent && npm test && npm run test:integration`
 **Decision rule**: Patch fields not listed in build-plan §5.5 are rejected with `VALIDATION_ERROR`, not ignored.
-**Notes**:
+**Notes**: Tools: get_day_summary (read pool), update_log_entry, delete_log_entry (restore), mark_day_complete; clock injected via registerNutritionTools(..., {now}). Empty days return D5 goals from nutrition_goals. Any legacy row reports source 'legacy'. Exported 4 helpers from log-food.mjs.
+Lesson: Do every input check that needs no database before guard.check (it consumes a rate-limit token) | applies: all write tools in tools/nutrition
+Lesson: Day-summary or goal tools must cover days with no logged rows by working out goals from the goals table | applies: get_day_summary, readers of the nutrition_daily view
+Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T10: Retire the Apple Health nutrition poller [model: sonnet] [risk: normal] [status: todo] [deps: none]
 **Outcome**: `scheduler_all.py` no longer imports or schedules the nutrition poller. `nutrition_poller.py`, `insert_nutrition_daily.py` and `lock_nutrition.py` live under `archive/` with an ARCHIVED.md entry dated 2026-10-25 citing D1.
