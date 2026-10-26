@@ -162,8 +162,8 @@ function buildRawPromptSummary(context, mode) {
     lines.push(`Nutrition: ${nutr.calories ?? 'n/a'} kcal | Protein: ${nutr.protein_g ?? 'n/a'}g`);
     lines.push(`Physical state: ${today.physical_state?.overall_state ?? 'n/a'}`);
   } else {
-    const { deficitAdherenceStr, plannedNextWeek } = context;
-    lines.push(`Deficit adherence: ${deficitAdherenceStr ?? 'n/a'}`);
+    const { nutritionWeek: nw, plannedNextWeek } = context;
+    lines.push(`Week: ${context.weekStart ?? 'n/a'}..${context.weekEnd ?? 'n/a'} | Avg deficit: ${nw?.avg_deficit ?? 'n/a'} kcal (${nw?.n_usable ?? 0}/7 usable, ${nw?.maintenance_method ?? 'n/a'})`);
     lines.push(`Planned next week: ${(plannedNextWeek ?? []).length} sessions`);
   }
 

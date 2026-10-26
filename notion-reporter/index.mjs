@@ -194,7 +194,10 @@ async function importPromptBuilders() {
     buildWeeklyUserMessage: ctx => JSON.stringify({
       last14Days:       ctx.days,
       quarterSummary:   ctx.windowSummary,
-      deficitAdherence: ctx.deficitAdherenceStr,
+      weekStart:        ctx.weekStart,
+      weekEnd:          ctx.weekEnd,
+      nutritionWeek:    ctx.nutritionWeek,
+      weightTrend:      ctx.weightTrend,
       plannedNextWeek:  ctx.plannedNextWeek,
     }, null, 2),
   };

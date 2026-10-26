@@ -4,77 +4,20 @@
  * Assembles the full context object for a weekly report:
  *  - DB: last 14 days of health data + 90-day window summary
  *  - DB: next 7 days of planned workouts
- *  - Computed: deficit adherence over the last 7 days
+ *  - Computed: prior Mon-Sun (LA) nutrition week + weight trend (nutritionWeek.mjs)
  *  - Notion: PowerZone block page ID (no per-day DPS/workout IDs needed)
  */
 
 import { Client as NotionClient } from '@notionhq/client';
-import { exportDays, queryRows } from './db.mjs';
-
-const TDEE_BASELINE        = 2800;
-
-function isoToday() {
-  return new Date().toISOString().slice(0, 10);
-}
+import { exportDays, queryRows, getNutritionWeekInputs } from './db.mjs';
+import {
+  laToday, priorWeekBounds, weeklyDeficit, weightTrend, calibratedMaintenance,
+} from './nutritionWeek.mjs';
 
 function addDays(isoDate, n) {
-  const d = new Date(isoDate);
-  d.setDate(d.getDate() + n);
+  const d = new Date(isoDate + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
-}
-
-// ── Deficit adherence (mirrors weekly_plan.py) ────────────────────────────
-
-function computeDeficitAdherence(days14, today) {
-  const last7Start = addDays(today, -6);
-  const last7 = days14
-    .filter(d => d.day >= last7Start)
-    .sort((a, b) => a.day.localeCompare(b.day));
-
-  const results = last7.map(row => {
-    const nutrition = row.nutrition ?? {};
-    const workouts  = row.workouts  ?? [];
-    const calories  = nutrition.calories ?? null;
-    const dayTss    = workouts.reduce((s, w) => s + (w?.tss ?? 0), 0);
-    const dayKj     = workouts.reduce((s, w) => s + (w?.kj  ?? 0), 0);
-    const estTdee   = TDEE_BASELINE + Math.round(dayKj);
-    const deficit   = calories != null ? estTdee - calories : null;
-    const onTarget  = deficit != null && deficit >= 400 && deficit <= 800;
-
-    return { date: row.day, calories, dayTss, estTdee, actualDeficit: deficit, onTarget };
-  });
-
-  const validDeficits  = results.filter(r => r.actualDeficit != null).map(r => r.actualDeficit);
-  const daysOnTarget   = results.filter(r => r.onTarget).length;
-  const avgDeficit     = validDeficits.length
-    ? Math.round(validDeficits.reduce((a, b) => a + b, 0) / validDeficits.length)
-    : null;
-
-  const missed = results
-    .filter(r => !r.onTarget)
-    .map(r => {
-      const d = r.actualDeficit;
-      let direction;
-      if (d == null)      direction = 'no data';
-      else if (d < 0)     direction = `surplus (${Math.abs(Math.round(d))} kcal over TDEE)`;
-      else if (d < 400)   direction = 'under-deficit';
-      else                direction = 'over-deficit';
-      return { date: r.date, direction, deficit: d };
-    });
-
-  const missedStr = missed.length
-    ? missed.map(m => `${m.date} (${m.direction})`).join(', ')
-    : 'none';
-
-  return {
-    summary: {
-      days_on_target:           daysOnTarget,
-      total_days_with_data:     validDeficits.length,
-      avg_deficit:              avgDeficit,
-      missed,
-    },
-    formatted: `${daysOnTarget}/7 | avg deficit: ${avgDeficit ?? 'no data'} kcal | missed: ${missedStr}`,
-  };
 }
 
 // ── Planned workouts (next 7 days) ────────────────────────────────────────
@@ -158,40 +101,67 @@ async function fetchPowerZonePage(targetDate) {
 
 // ── Main export ───────────────────────────────────────────────────────────
 
-export async function buildWeeklyContext() {
-  const today = isoToday();
+/**
+ * Pure assembly. rows: exportDays-style rows (may span >7 days, incl. 28-day lookback).
+ * opts: { today, weighIns, goals, windowSummary, plannedNextWeek, notionRefs }
+ */
+export function buildWeeklyContextFrom(rows, opts = {}) {
+  const { today, weighIns = [], goals = null, windowSummary = null, plannedNextWeek = [], notionRefs } = opts;
+  const { start: weekStart, end: weekEnd } = priorWeekBounds(today);
+  const weekRows = (rows ?? []).filter(r => r.day >= weekStart && r.day <= weekEnd);
 
-  // Run DB fetches in parallel
-  const [
-    data14,
-    data90,
+  const cal = calibratedMaintenance(rows, weighIns, { asOf: weekEnd });
+  const calibrated = cal.method === 'scale_calibrated' && cal.maintenance_est != null;
+  const nutritionWeek = {
+    ...weeklyDeficit(weekRows, calibrated ? { maintenance: cal.maintenance_est } : {}),
+    maintenance_method: calibrated ? 'scale_calibrated' : 'goal_calories',
+  };
+  if (calibrated) nutritionWeek.maintenance_est = Math.round(cal.maintenance_est);
+
+  const targetKg = goals?.target_weight_kg != null ? Number(goals.target_weight_kg) : null;
+  const weightTrendOut = weightTrend(weighIns, { asOf: weekEnd, targetKg });
+
+  const days = (rows ?? [])
+    .filter(r => r.day >= addDays(weekEnd, -13) && r.day <= weekEnd)
+    .sort((a, b) => b.day.localeCompare(a.day));
+
+  return {
+    mode: 'weekly',
+    date: today,
+    weekStart,
+    weekEnd,
+    days,
+    windowSummary,
+    nutritionWeek,
+    weightTrend: weightTrendOut,
+    targetWeightKg: targetKg,
     plannedNextWeek,
-    powerZone,
-  ] = await Promise.all([
-    exportDays(addDays(today, -13), today),
-    exportDays(addDays(today, -89), today),
+    notionRefs: notionRefs ?? { powerZone: null, dpsPageId: null, workoutPageIds: [] },
+  };
+}
+
+export async function buildWeeklyContext() {
+  const today = laToday();
+  const { start: weekStart, end: weekEnd } = priorWeekBounds(today);
+
+  const [data28, data90, inputs, plannedNextWeek, powerZone] = await Promise.all([
+    exportDays(addDays(weekEnd, -27), weekEnd),
+    exportDays(addDays(weekEnd, -89), weekEnd),
+    getNutritionWeekInputs(weekStart, weekEnd),
     fetchPlannedNextWeek(today),
     fetchPowerZonePage(today),
   ]);
 
-  const { days: days14 }                     = data14;
-  const { windowSummary: quarterSummary }    = data90;
-
-  const { summary: adherenceSummary, formatted: deficitAdherenceStr } =
-    computeDeficitAdherence(days14, today);
-
-  return {
-    mode:                'weekly',
-    date:                today,
-    days:                days14,
-    windowSummary:       quarterSummary,
-    deficitAdherence:    adherenceSummary,
-    deficitAdherenceStr,
+  return buildWeeklyContextFrom(data28.days, {
+    today,
+    weighIns: inputs.weighIns,
+    goals: inputs.goals,
+    windowSummary: data90.windowSummary,
     plannedNextWeek,
     notionRefs: {
       powerZone,           // { id, name } | null
-      dpsPageId:    null,  // not used for weekly reports
+      dpsPageId: null,     // not used for weekly reports
       workoutPageIds: [],  // not used for weekly reports
     },
-  };
+  });
 }
