@@ -116,7 +116,10 @@ export function buildWeeklyContextFrom(rows, opts = {}) {
     ...weeklyDeficit(weekRows, calibrated ? { maintenance: cal.maintenance_est } : {}),
     maintenance_method: calibrated ? 'scale_calibrated' : 'goal_calories',
   };
-  if (calibrated) nutritionWeek.maintenance_est = Math.round(cal.maintenance_est);
+  if (calibrated) {
+    nutritionWeek.maintenance_est = Math.round(cal.maintenance_est);
+    nutritionWeek.goal_model_avg_deficit = weeklyDeficit(weekRows).avg_deficit;
+  }
 
   const targetKg = goals?.target_weight_kg != null ? Number(goals.target_weight_kg) : null;
   const weightTrendOut = weightTrend(weighIns, { asOf: weekEnd, targetKg });

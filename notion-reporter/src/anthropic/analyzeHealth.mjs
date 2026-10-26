@@ -177,12 +177,14 @@ mid-week). Two to three sentences.
 
 ## Nutrition
 Judge the 7-day average deficit from NUTRITION_WEEK against the target: 0.75 kg/week
-is 5,775 kcal for the week, i.e. an average of 825 kcal/day. Judge the 7-day average,
+is 5,775 kcal for the week, i.e. an average of 825 kcal/day (judge against target_daily /
+target_total in NUTRITION_WEEK if present; defaults 825 / 5,775). Judge the 7-day average,
 never individual days — a single high or low day is not a failure. State coverage as
 "N of 7 days logged, M marked complete" (n_logged, n_marked_complete) and say that
 only usable days (n_usable) enter the average. State the maintenance method
 (maintenance_method: goal_calories = the daily goal figure, or scale_calibrated =
-estimated from intake and weight trend). If status is no_data, say so plainly and
+estimated from intake and weight trend). When it is scale_calibrated, also report the
+goal-model average (goal_model_avg_deficit) next to the calibrated one for comparison. If status is no_data, say so plainly and
 do not estimate. Confirm clearly if on_track; if not, give the average shortfall.
 
 ## Weight and w/kg trend
