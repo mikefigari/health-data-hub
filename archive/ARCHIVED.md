@@ -42,6 +42,15 @@ from Health Auto Export, parsed the metrics payload, and upserted rows into
 which polls `GET https://health.michaelfigari.com/health/latest` instead.
 The corresponding `health-webhook.service` systemd unit was disabled at the same time.
 
+### `nutrition_poller.py`, `insert_nutrition_daily.py`, `lock_nutrition.py`
+Archived 2026-10-25 (decision D1, nutrition logging plan). The Health Auto Export
+nutrition export is turned off; nutrition is now logged through the MCP
+`food_log` tools. The 22:00 `nutrition_poller` job was removed from
+`scheduler_all.py`. The Cloudflare Worker is left as is. Originally under
+`health_data_hub/integrations/apple_health/`, `health_data_hub/etl/load/` and the
+repo root. `health_webhook_receiver.py` above imports `insert_nutrition_daily`
+and no longer runs.
+
 ## Safe to delete?
 
 Yes, once you are satisfied that `notion-reporter` meets all your needs.
