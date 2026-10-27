@@ -211,6 +211,7 @@ describe('today_rings', () => {
       calories: 900,
       goal_calories: 2200,
       protein_pct: 26.7, // 4*60/900
+      protein_g: 60,
       logged: true,
     });
   });
@@ -220,6 +221,7 @@ describe('today_rings', () => {
       calories: 0,
       goal_calories: 3000,
       protein_pct: 0,
+      protein_g: 0,
       logged: false,
     });
   });
@@ -538,10 +540,11 @@ describe('protein as % of calories (D12)', () => {
     assert.equal(r.nutrition.weeks[1].avg_protein_pct, null);
   });
 
-  test('today_rings: protein_pct (0 when not logged); no gram fields', () => {
+  test('today_rings: protein_pct and protein_g (0 when not logged)', () => {
     const r = buildDashboard(base({ nutrition: [withP(TODAY, 100, 1000)] }));
     assert.equal(r.today_rings.protein_pct, 40);
-    assert.ok(!('protein_g' in r.today_rings) && !('goal_protein_g' in r.today_rings));
+    assert.equal(r.today_rings.protein_g, 100);
+    assert.ok(!('goal_protein_g' in r.today_rings));
     assert.equal(buildDashboard(base()).today_rings.protein_pct, 0);
   });
 

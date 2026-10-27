@@ -34,7 +34,7 @@ function ring(tokens, { value, max, color, track, z }) {
   };
 }
 
-// Band target (protein share, D12): d = { value: pct, min, max }. Calorie ring: d = { value, goal }.
+// Band target (protein share, D12): d = { value: pct, grams?, min, max }. Calorie ring: d = { value, goal }.
 const isBand = (d) => isNum(d?.min) && isNum(d?.max);
 
 export function ringOption(d, tokens, opts = {}) {
@@ -58,7 +58,8 @@ export function ringOption(d, tokens, opts = {}) {
 export function ringLabel(d, { unit = 'kcal' } = {}) {
   if (isBand(d)) {
     const pct = isNum(d.value) ? Math.max(0, d.value) : 0;
-    return { big: `${Math.round(pct)}%`, small: 'of calories', caption: `Target ${d.min}–${d.max}%` };
+    const grams = isNum(d.grams) ? `${fmtInt(d.grams)} g · ` : '';
+    return { big: `${Math.round(pct)}%`, small: 'of calories', caption: `${grams}Target ${d.min}–${d.max}%` };
   }
   const value = isNum(d?.value) ? d.value : null;
   const goal = isNum(d?.goal) ? d.goal : null;

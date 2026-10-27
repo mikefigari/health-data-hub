@@ -27,7 +27,7 @@ function redactPath(url) {
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 const ECHARTS_JS = fileURLToPath(new URL('../node_modules/echarts/dist/echarts.min.js', import.meta.url));
 const SHELL = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
-const ASSET_OPTS = { maxAge: 3600 * 1000, index: false, dotfiles: 'ignore', fallthrough: true };
+const ASSET_OPTS = { maxAge: 0, index: false, dotfiles: 'ignore', fallthrough: true };
 
 export function createApp({ config, pool, now = () => new Date(), log = console.log }) {
   const app = express();
@@ -73,7 +73,7 @@ export function createApp({ config, pool, now = () => new Date(), log = console.
 
   app.get('/healthz', (req, res) => res.status(200).type('text/plain').send('ok'));
 
-  // Static assets: 'self' only, 1 h public cache (no tokens or data in these files).
+  // Static assets: 'self' only, always revalidated via ETag so deploys show up immediately (no tokens or data in these files).
   app.get('/assets/vendor/echarts.min.js', (req, res, next) => res.sendFile(ECHARTS_JS, ASSET_OPTS, (e) => e && next()));
   app.use('/assets', express.static(PUBLIC_DIR, ASSET_OPTS));
 

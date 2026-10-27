@@ -37,7 +37,7 @@ const RINGS = [
     key: 'protein',
     title: 'Protein',
     unit: '%',
-    data: (t, g) => ({ value: t.protein_pct, min: g.protein_pct_min, max: g.protein_pct_max }),
+    data: (t, g) => ({ value: t.protein_pct, grams: t.protein_g, min: g.protein_pct_min, max: g.protein_pct_max }),
   },
 ];
 const ringData = (data, r) => r.data(data?.today_rings || {}, data?.goals || {});

@@ -220,6 +220,7 @@ export function buildDashboard(inputs) {
     calories: todayLogged ? r0(td.calories) : 0,
     goal_calories: r0(td.goalCal),
     protein_pct: todayLogged ? pctOf(td.p, td.calories) : 0,
+    protein_g: todayLogged ? r0(td.p ?? 0) : 0,
     logged: todayLogged,
   };
 
