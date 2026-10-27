@@ -25,6 +25,9 @@ const pool = config.DEMO
     });
 
 if (pool) {
+  pool.on('error', (err) => {
+    console.error(`pool error code=${err.code ?? 'none'} message=${err.message}`);
+  });
   try {
     await checkReadOnly(pool);
   } catch (err) {

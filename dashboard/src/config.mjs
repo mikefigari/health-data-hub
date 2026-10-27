@@ -14,7 +14,6 @@ export function loadConfig(env = process.env) {
     DASHBOARD_DEMO,
     FRAME_ANCESTORS = 'https://www.notion.so https://notion.so https://*.notion.site',
     PLAN_KG_PER_WEEK = '0.75',
-    QUERY_TIMEOUT_MS = '10000',
   } = env;
   const DEMO = DASHBOARD_DEMO === 'true';
 
@@ -44,6 +43,5 @@ export function loadConfig(env = process.env) {
     DEMO,
     FRAME_ANCESTORS,
     PLAN_KG_PER_WEEK: planKg,
-    QUERY_TIMEOUT_MS,
   };
 }
