@@ -56,3 +56,27 @@ def test_weekly_skips_days_without_goal():
     weeks = b.build_weekly_rows([_day(date(2026, 10, 19), 2500, 190, gcal=None, gprot=None)], TODAY)
     wk = {w["week_of"]: w for w in weeks}[date(2026, 10, 19)]
     assert (wk["protein_met"], wk["calories_met"], wk["logged"]) == (0, 0, 1)
+
+
+def test_ring_under_goal():
+    r = b.build_ring(1210, 2627, "kcal")
+    assert r["title"] == "1,210 of 2,627 kcal" and r["intro"] == "1,417 kcal left"
+    assert r["csv"] == "label,value\nEaten,1210\nLeft,1417\n"
+
+
+def test_ring_over_goal_is_full_and_says_over():
+    r = b.build_ring(3802, 2620, "kcal")
+    assert r["csv"] == "label,value\nEaten,3802\nLeft,0\n" and r["intro"] == "1,182 kcal over"
+
+
+def test_ring_nothing_eaten_yet_and_no_goal():
+    assert b.build_ring(None, 180, "g protein")["csv"] == "label,value\nEaten,0\nLeft,180\n"
+    assert b.build_ring(50, None, "g protein") is None
+
+
+def test_charts_include_rings_only_with_goals():
+    from health_data_hub.integrations.datawrapper.nutrition_charts import _charts
+    today = {"calories": 400, "protein_g": 54.9, "goal_calories": 2620, "goal_protein_g": None}
+    charts = _charts([], b.build_daily_rows([], TODAY), b.build_weekly_rows([], TODAY), today)
+    assert "ring_calories" in charts and "ring_protein" not in charts
+    assert charts["ring_calories"]["type"] == "d3-donuts"

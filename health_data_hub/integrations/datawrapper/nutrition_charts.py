@@ -1,9 +1,10 @@
 """
 Sync the body-weight and nutrition charts to Datawrapper.
 
-Four charts: weight over time (with 7-day average), daily calories vs goal,
-daily protein vs goal (both last 14 days), and weekly goal-met day counts.
-Each chart's CSV is hashed; only changed charts are re-uploaded and published.
+Six charts: weight over time (with 7-day average), today's calorie and protein
+progress rings, daily calories and protein vs goal (last 14 days), and weekly
+goal-met day counts. Each chart's data and styling are hashed; only changed
+charts are re-uploaded and published.
 Embed URL for Notion: https://datawrapper.dwcdn.net/<chart_id>/
 
 Usage:
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import logging
 import sys
 from pathlib import Path
@@ -33,7 +35,8 @@ from health_data_hub.utils.db_connect import get_connection
 
 logger = logging.getLogger(__name__)
 
-BLUE, ORANGE, GREY, GREEN = "#3B6EA8", "#E08A3C", "#9AA5B1", "#4C9A6A"
+BLUE, GREY = "#3B6EA8", "#9AA5B1"
+GREEN, BLUE_LIGHT, TRACK = "#2FCB6B", "#4DA3FF", "#E6E9EE"
 
 
 def _select(csv_text, indexes):
@@ -45,9 +48,31 @@ def _select(csv_text, indexes):
     return "\n".join(out) + "\n"
 
 
-def _charts(weight, daily, weekly):
+def _ring_chart(ring, color):
+    return dict(
+        title=ring["title"], intro=ring["intro"], type="d3-donuts", csv=ring["csv"],
+        visualize={
+            "custom-colors": {"Eaten": color, "Left": TRACK},
+            "sort-values": False,
+            "value-labels": {"show": "hover"},
+        })
+
+
+def _charts(weight, daily, weekly, today=None):
     daily_csv = b.daily_csv(daily)
+    rings = {}
+    if today:
+        for key, eaten, goal, unit, color in (
+            ("ring_calories", today["calories"], today["goal_calories"],
+             "kcal", GREEN),
+            ("ring_protein", today["protein_g"], today["goal_protein_g"],
+             "g protein", BLUE_LIGHT),
+        ):
+            ring = b.build_ring(eaten, goal, unit)
+            if ring:
+                rings[key] = _ring_chart(ring, color)
     return {
+        **rings,
         "weight": dict(
             title="Body weight", type="d3-lines", csv=b.weight_csv(weight),
             visualize={
@@ -61,7 +86,7 @@ def _charts(weight, daily, weekly):
             title="Daily calories vs goal (last 14 days)", type="column-chart",
             csv=_select(daily_csv, [0, 1, 2]),
             visualize={
-                "custom-colors": {"Calories": ORANGE, "Calorie goal": GREY},
+                "custom-colors": {"Calories": GREEN, "Calorie goal": GREY},
                 "y-grid": "on",
                 "value-labels": {"show": "hover"},
             }),
@@ -69,7 +94,7 @@ def _charts(weight, daily, weekly):
             title="Daily protein vs goal (last 14 days)", type="column-chart",
             csv=_select(daily_csv, [0, 3, 4]),
             visualize={
-                "custom-colors": {"Protein (g)": GREEN, "Protein goal (g)": GREY},
+                "custom-colors": {"Protein (g)": BLUE_LIGHT, "Protein goal (g)": GREY},
                 "y-grid": "on",
                 "value-labels": {"show": "hover"},
             }),
@@ -77,8 +102,8 @@ def _charts(weight, daily, weekly):
             title="Days goal met per week", type="column-chart",
             csv=_select(b.weekly_csv(weekly), [0, 1, 2]),
             visualize={
-                "custom-colors": {"Protein goal met": GREEN,
-                                  "Calories at or under goal": ORANGE},
+                "custom-colors": {"Protein goal met": BLUE_LIGHT,
+                                  "Calories at or under goal": GREEN},
                 "custom-range-y": ["0", "7"],
                 "y-grid": "on",
                 "value-labels": {"show": "always"},
@@ -91,8 +116,16 @@ def _metadata(c):
         "title": c["title"],
         # a chart opened in the editor can get an external-data URL that blanks it
         "externalData": None,
-        "metadata": {"visualize": c["visualize"], "publish": {"autoDarkMode": True}},
+        "metadata": {"visualize": c["visualize"], "publish": {"autoDarkMode": True},
+                     "describe": {"intro": c.get("intro", "")}},
     }
+
+
+def _digest(c):
+    """Hash data and presentation, so a restyle or a new title also re-publishes."""
+    payload = json.dumps([c["csv"], c["title"], c.get("intro", ""), c["visualize"]],
+                         sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def sync_once(dry_run: bool = False, today=None) -> int:
@@ -107,11 +140,13 @@ def sync_once(dry_run: bool = False, today=None) -> int:
             today = today or b.fetch_today(conn)
             weight_rows = b.fetch_weight(conn)
             nutrition = b.fetch_nutrition(conn, today)
+            progress = b.fetch_today_progress(conn, today)
         finally:
             conn.close()
         charts = _charts(b.build_weight_rows(weight_rows),
                          b.build_daily_rows(nutrition, today),
-                         b.build_weekly_rows(nutrition, today))
+                         b.build_weekly_rows(nutrition, today),
+                         progress)
     except Exception as e:  # never raise (poll_once convention)
         logger.error("Failed to build nutrition chart data: %s", e)
         return 1
@@ -129,7 +164,7 @@ def sync_once(dry_run: bool = False, today=None) -> int:
     hashes = state.get("nutrition_sha256") or {}
     try:
         for key, c in charts.items():
-            digest = hashlib.sha256(c["csv"].encode("utf-8")).hexdigest()
+            digest = _digest(c)
             if ids.get(key) and hashes.get(key) == digest:
                 continue
             if not ids.get(key):
