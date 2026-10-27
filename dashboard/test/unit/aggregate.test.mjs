@@ -198,7 +198,7 @@ describe('goal fallback (LESSONS: days with no logged rows)', () => {
     assert.equal(get('2026-10-20').goal_protein_g, 175);
   });
   test('no effective goals row leaves goal null', () => {
-    const r2 = buildDashboard(base({ rangeDays: 30, goals }));
+    const r2 = buildDashboard(base({ rangeDays: 90, goals }));
     const d = r2.nutrition.days.find((x) => x.day === '2026-09-20');
     assert.equal(d.goal_calories, null);
     assert.equal(d.goal_protein_g, null);
