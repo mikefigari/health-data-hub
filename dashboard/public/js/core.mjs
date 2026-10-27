@@ -211,12 +211,25 @@ export function kpis(data) {
     {
       key: 'protein',
       accent: 'protein',
-      label: 'Protein goal',
-      value: isNum(s.days_logged) ? `${s.protein_days_met ?? 0}/${s.days_logged}` : DASH,
-      unit: 'days',
-      caption: `Met in ${rangeLong(range)}`,
+      label: 'Protein share',
+      value: fmtPct(s.avg_protein_pct),
+      unit: 'of calories',
+      caption: proteinBand(data)
+        ? `In ${proteinBand(data)} on ${s.protein_days_in_range ?? 0} of ${s.days_logged ?? 0} days`
+        : `Last ${rangeLong(range)}`,
     },
   ];
+}
+
+// Whole-percent label ("37%"), or an em dash when there is no value.
+export function fmtPct(v) {
+  return isNum(v) ? `${Math.round(v)}%` : DASH;
+}
+
+// The protein target band as text ("35–40%"), or null when the goals carry no band (D12).
+export function proteinBand(data) {
+  const g = data?.goals || {};
+  return isNum(g.protein_pct_min) && isNum(g.protein_pct_max) ? `${g.protein_pct_min}–${g.protein_pct_max}%` : null;
 }
 
 const hasNutrition = (data) => (data?.nutrition?.days || []).some((d) => d.status !== 'missing');
@@ -232,7 +245,7 @@ export function cardStat(view, data) {
       return {
         value: fmtInt(t.calories),
         unit: isNum(t.goal_calories) ? `/ ${fmtInt(t.goal_calories)} kcal` : 'kcal',
-        caption: `${fmtInt(t.protein_g)} g protein${isNum(t.goal_protein_g) ? ` of ${fmtInt(t.goal_protein_g)} g` : ''}`,
+        caption: isNum(t.protein_pct) ? `Protein ${fmtPct(t.protein_pct)} of calories` : 'No protein logged yet',
       };
     }
     case 'weight':
@@ -251,9 +264,9 @@ export function cardStat(view, data) {
       };
     case 'protein':
       return {
-        value: isNum(s.days_logged) ? `${s.protein_days_met ?? 0}/${s.days_logged}` : DASH,
-        unit: 'days met',
-        caption: isNum(data?.goals?.protein_g) ? `Goal ${fmtInt(data.goals.protein_g)} g a day` : `Last ${rangeLong(range)}`,
+        value: fmtPct(s.avg_protein_pct),
+        unit: 'of calories avg',
+        caption: proteinBand(data) ? `Target ${proteinBand(data)}` : `Last ${rangeLong(range)}`,
       };
     case 'calendar': {
       const days = data?.calendar?.days || [];

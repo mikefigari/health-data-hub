@@ -1,6 +1,6 @@
 // Calories by macro (Cronometer style): rounded stacked kcal bars against a dashed goal
-// step line, and protein bars against the protein goal. Pure builders.
-import { fmtDay, fmtInt } from '../core.mjs';
+// step line, and protein share-of-calories bars against the target band. Pure builders.
+import { fmtDay, fmtInt, fmtPct, proteinBand } from '../core.mjs';
 import { axisTooltip, frame, grid, isNum, tipRow, valueAxis, withAlpha } from './common.mjs';
 
 export const EMPTY_NUTRITION = 'No food logged in this range';
@@ -12,7 +12,8 @@ const KCAL_PER_G = { protein: 4, carbs: 4, fat: 9 };
 const TOP_RADIUS = [6, 6, 0, 0];
 const BAR_MAX = 28;
 const PARTIAL_OPACITY = 0.6;
-const UNMET_ALPHA = 0.45;
+const OUT_ALPHA = 0.45; // protein bars outside the target band
+const BAND_ALPHA = 0.14; // protein target band fill
 const PLACEHOLDER_ALPHA = 0.14;
 const STACK = 'kcal';
 
@@ -127,7 +128,6 @@ export function caloriesOption(data, tokens, opts = {}) {
     const kcal = weekly ? row.avg_calories : row.calories;
     const grams = (m) => {
       if (!weekly) return row[`${m}_g`];
-      if (m === 'protein' && isNum(row.avg_protein_g)) return row.avg_protein_g;
       return isNum(row[WEEK_KEY[m]]) ? row[WEEK_KEY[m]] / KCAL_PER_G[m] : null;
     };
     const suffix = !weekly && row.status === 'partial' ? ' so far' : '';
@@ -163,40 +163,46 @@ export function caloriesOption(data, tokens, opts = {}) {
   };
 }
 
-// Header caption for the protein card: "Goal met N of M days".
+// Protein is a share of calories against a target band (D12): no gram goal, no "goal met".
+const bandOf = (data) => {
+  const g = data?.goals || {};
+  return isNum(g.protein_pct_min) && isNum(g.protein_pct_max) ? { min: g.protein_pct_min, max: g.protein_pct_max } : null;
+};
+// One decimal, dropped when whole: 36 -> "36", 40.4 -> "40.4" (so 40.4 never reads as an in-range "40").
+const fmtPct1 = (v) => String(Math.round(v * 10) / 10);
+
+// Header caption for the protein card: "In range N of M days".
 export function proteinCaption(data) {
   const s = data?.nutrition?.summary || {};
-  return `Goal met ${s.protein_days_met ?? 0} of ${s.days_logged ?? 0} days`;
+  return `In range ${s.protein_days_in_range ?? 0} of ${s.days_logged ?? 0} days`;
 }
 
-// Card header hero for protein: average grams over complete logged days in the range.
+// Card header hero for protein: the range's average share of calories from protein.
 export function proteinHero(data) {
-  const days = (data?.nutrition?.days || []).filter((d) => d.status === 'logged' && isNum(d.protein_g));
-  const avg = days.length ? days.reduce((a, d) => a + d.protein_g, 0) / days.length : null;
-  return { value: fmtInt(avg), unit: 'g avg', caption: proteinCaption(data) };
+  return { value: fmtPct(data?.nutrition?.summary?.avg_protein_pct), unit: 'of calories avg', caption: proteinCaption(data) };
 }
-
-// 1, 2, 2.5 or 5 times a power of ten, at least `raw`.
-function niceStep(raw) {
-  const p = 10 ** Math.floor(Math.log10(raw));
-  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw);
-}
-
-const fmtG = (g) => (Number.isInteger(g) ? String(g) : g.toFixed(1));
 
 export function proteinOption(data, tokens, opts = {}) {
   const { weekly, rows } = rowsOf(data, opts);
   if (!rows.some((r) => hasFood(r, weekly))) return { empty: EMPTY_NUTRITION };
   const accent = tokens.protein;
-  const goalOf = (row) => (weekly ? row.avg_goal_protein_g : row.goal_protein_g) ?? data?.goals?.protein_g ?? null;
-  const target = data?.goals?.protein_g ?? rows.map(goalOf).find(isNum) ?? null;
+  const band = bandOf(data);
   // Marked-incomplete days draw no bar (as in the calories chart); the tooltip says why.
   const valueOf = (row) => {
     if (!hasFood(row, weekly) || (!weekly && row.status === 'incomplete')) return null;
-    const v = weekly ? row.avg_protein_g : row.protein_g;
+    const v = weekly ? row.avg_protein_pct : row.protein_pct;
     return isNum(v) ? v : null;
   };
   const vals = rows.map(valueOf);
+  // Daily rows carry the API's protein_in_range; weekly averages are compared to the band here.
+  const placeOf = (row, v) => {
+    const inRange = !weekly && typeof row.protein_in_range === 'boolean'
+      ? row.protein_in_range
+      : band && v >= band.min && v <= band.max;
+    if (inRange) return 'in';
+    if (!band) return null;
+    return v < band.min ? 'below' : 'above';
+  };
 
   const bars = {
     name: 'protein',
@@ -209,56 +215,54 @@ export function proteinOption(data, tokens, opts = {}) {
     data: rows.map((row, i) => {
       const v = vals[i];
       if (v == null) return null;
-      const g = goalOf(row);
-      const met = isNum(g) && v >= g;
-      const style = { color: met ? accent : withAlpha(accent, UNMET_ALPHA) };
+      const style = { color: placeOf(row, v) === 'in' ? accent : withAlpha(accent, OUT_ALPHA) };
       if (!weekly && row.status === 'partial') style.opacity = PARTIAL_OPACITY;
       return { value: v, itemStyle: style };
     }),
   };
-  if (isNum(target)) {
-    bars.markLine = {
+  if (band) {
+    // Target band behind the bars, labelled in the right margin so bars never cover the text.
+    bars.markArea = {
       silent: true,
-      symbol: 'none',
       animation: false,
-      lineStyle: { type: 'dashed', color: tokens.ink2, width: 1.5 },
-      label: { formatter: `${fmtG(target)} g`, position: 'insideEndTop', color: tokens.ink2, fontSize: 11 },
-      data: [{ yAxis: target }],
+      itemStyle: { color: withAlpha(accent, BAND_ALPHA) },
+      label: { show: true, position: 'right', distance: 6, formatter: proteinBand(data), color: tokens.ink2, fontSize: 11 },
+      data: [[{ yAxis: band.min }, { yAxis: band.max }]],
     };
   }
 
-  // markLine is not part of the auto y-range: keep the goal inside the axis explicitly.
-  // The max is a whole number of ticks, so no stray top label crowds the last tick (220 over 200).
-  const top = Math.max(...vals.filter(isNum), isNum(target) ? target : 0) || 100; // never [0, 0]
-  const interval = niceStep((top * 1.08) / 5);
-  const max = Math.ceil((top * 1.08) / interval) * interval;
+  // Fixed 10% ticks; the top always clears the band and the tallest bar by a tick.
+  const top = Math.max(0, ...vals.filter(isNum));
+  const max = Math.max(50, Math.ceil(top / 10) * 10 + 10);
 
+  const PLACE_LABEL = { in: 'In range', below: 'Below range', above: 'Above range' };
   const tooltip = axisTooltip(tokens, (params) => {
     const ps = Array.isArray(params) ? params : [params];
     const i = ps[0]?.dataIndex;
     const row = rows[i];
     if (!row) return '';
-    const g = goalOf(row);
-    const goalRow = isNum(g) ? tipRow(dot(tokens.ink2), weekly ? 'Avg goal' : 'Goal', `${fmtG(g)} g`) : '';
     const v = vals[i];
     if (v == null) {
       const why = !weekly && row.status === 'incomplete' ? NOTE.incomplete : NOTE.missing;
-      return head(tokens, headText(row, weekly)) + goalRow + note(tokens, why);
+      return head(tokens, headText(row, weekly)) + note(tokens, why);
     }
+    const grams = weekly ? (isNum(row.avg_kcal_protein) ? row.avg_kcal_protein / KCAL_PER_G.protein : null) : row.protein_g;
+    const kcal = weekly ? row.avg_calories : row.calories;
     const suffix = !weekly && row.status === 'partial' ? ' so far' : '';
-    const label = weekly ? 'Avg protein' : 'Protein';
-    let foot = '';
-    if (weekly) foot = note(tokens, `${row.days_logged} ${row.days_logged === 1 ? 'day' : 'days'} logged`);
-    else if (row.status === 'incomplete') foot = note(tokens, NOTE.incomplete);
-    return head(tokens, headText(row, weekly)) + tipRow(dot(accent), label, `${fmtInt(v)} g${suffix}`) + goalRow + foot;
+    const pctLine = `<div>${dot(accent)}<b>${fmtPct1(v)}%</b> ${weekly ? 'avg protein' : 'protein'}</div>`;
+    const amounts = `<div style="color:${tokens.ink2}">${fmtInt(grams)} g · ${fmtInt(kcal)} kcal${suffix}</div>`;
+    const place = PLACE_LABEL[placeOf(row, v)];
+    const status = place && band ? `<div style="margin-top:4px"><b>${place}</b> <span style="color:${tokens.ink2}">(${proteinBand(data)})</span></div>` : '';
+    const foot = weekly ? note(tokens, `${row.days_logged} ${row.days_logged === 1 ? 'day' : 'days'} logged`) : '';
+    return head(tokens, headText(row, weekly)) + pctLine + amounts + status + foot;
   });
 
   return {
     ...frame(tokens, opts),
-    grid: grid({ top: 16 }),
+    grid: grid({ top: 16, right: band ? 52 : 8 }),
     tooltip,
     xAxis: categoryAxis(tokens, rows.map((r) => catOf(r, weekly))),
-    yAxis: valueAxis(tokens, { min: 0, max, interval, axisLabel: { formatter: (v) => fmtInt(v) } }),
+    yAxis: valueAxis(tokens, { min: 0, max, interval: 10, axisLabel: { formatter: (v) => `${v}%` } }),
     series: [bars],
   };
 }

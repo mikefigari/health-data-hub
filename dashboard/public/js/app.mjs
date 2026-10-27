@@ -25,11 +25,22 @@ import { calendarOption, calendarHeight, calendarLegend } from './charts/calenda
 // Chart option builders, keyed by a chart node's data-chart attribute:
 // (data, ctx) => ECharts option, or { empty: message } when there is nothing to draw.
 // ctx = { tokens, reducedMotion, theme, range, view, width }.
+// Calorie ring fills toward a goal; the protein ring fills toward the top of its % band (D12).
 const RINGS = [
-  { key: 'calories', title: 'Calories', unit: 'kcal', value: 'calories', goal: 'goal_calories' },
-  { key: 'protein', title: 'Protein', unit: 'g', value: 'protein_g', goal: 'goal_protein_g' },
+  {
+    key: 'calories',
+    title: 'Calories',
+    unit: 'kcal',
+    data: (t) => ({ value: t.calories, goal: t.goal_calories }),
+  },
+  {
+    key: 'protein',
+    title: 'Protein',
+    unit: '%',
+    data: (t, g) => ({ value: t.protein_pct, min: g.protein_pct_min, max: g.protein_pct_max }),
+  },
 ];
-const ringData = (data, r) => ({ value: data?.today_rings?.[r.value], goal: data?.today_rings?.[r.goal] });
+const ringData = (data, r) => r.data(data?.today_rings || {}, data?.goals || {});
 const BUILDERS = {
   'today:calories': (data, ctx) => ringOption(ringData(data, RINGS[0]), ctx.tokens, { ...ctx, accent: 'calories' }),
   'today:protein': (data, ctx) => ringOption(ringData(data, RINGS[1]), ctx.tokens, { ...ctx, accent: 'protein' }),

@@ -1,6 +1,6 @@
 // Logging calendar (GitHub / Oura style): 26 weeks of rounded day cells colored by whether
 // the day came in at or under the calorie goal. Pure builder.
-import { fmtDay } from '../core.mjs';
+import { fmtDay, proteinBand } from '../core.mjs';
 import { frame } from './common.mjs';
 
 // A 182-day range needs at most 27 week columns (26 full weeks + a partial lead week).
@@ -73,6 +73,8 @@ export function calendarOption(data, tokens, opts = {}) {
     }),
   };
 
+  const proteinByDay = new Map(days.map((d) => [d.day, d.protein_in_range]));
+  const band = proteinBand(data);
   const tooltip = {
     trigger: 'item',
     triggerOn: 'mousemove|click',
@@ -86,7 +88,12 @@ export function calendarOption(data, tokens, opts = {}) {
     formatter: (p) => {
       const [day, status] = Array.isArray(p?.value) ? p.value : [];
       if (!day) return '';
-      return `<div style="color:${tokens.ink2};margin-bottom:2px">${fmtDay(day)}</div><b>${STATUS_LABEL[status] || STATUS_LABEL.none}</b>`;
+      const inRange = proteinByDay.get(day);
+      // Complete days also say whether protein landed in its % band (D12); today is still in progress.
+      const protein = band && (status === 'under' || status === 'over') && typeof inRange === 'boolean'
+        ? `<div style="color:${tokens.ink2};margin-top:2px">Protein ${inRange ? 'in' : 'outside'} ${band}</div>`
+        : '';
+      return `<div style="color:${tokens.ink2};margin-bottom:2px">${fmtDay(day)}</div><b>${STATUS_LABEL[status] || STATUS_LABEL.none}</b>${protein}`;
     },
   };
 

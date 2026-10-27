@@ -34,9 +34,18 @@ function ring(tokens, { value, max, color, track, z }) {
   };
 }
 
+// Band target (protein share, D12): d = { value: pct, min, max }. Calorie ring: d = { value, goal }.
+const isBand = (d) => isNum(d?.min) && isNum(d?.max);
+
 export function ringOption(d, tokens, opts = {}) {
   const color = tokens[opts.accent] || tokens.calories;
   const value = isNum(d?.value) ? Math.max(0, d.value) : 0;
+  if (isBand(d)) {
+    // The ring closes at the top of the band and stays full above it: no "over" lap.
+    const max = d.max > 0 ? d.max : Math.max(value, 1);
+    const track = withAlpha(color, TRACK_ALPHA);
+    return { ...frame(tokens, opts), series: [ring(tokens, { value: Math.min(value, max), max, color, track, z: 2 })] };
+  }
   const goal = isNum(d?.goal) && d.goal > 0 ? d.goal : Math.max(value, 1);
   const series = [ring(tokens, { value: Math.min(value, goal), max: goal, color, track: withAlpha(color, TRACK_ALPHA), z: 2 })];
   if (value > goal) {
@@ -47,6 +56,10 @@ export function ringOption(d, tokens, opts = {}) {
 }
 
 export function ringLabel(d, { unit = 'kcal' } = {}) {
+  if (isBand(d)) {
+    const pct = isNum(d.value) ? Math.max(0, d.value) : 0;
+    return { big: `${Math.round(pct)}%`, small: 'of calories', caption: `Target ${d.min}–${d.max}%` };
+  }
   const value = isNum(d?.value) ? d.value : null;
   const goal = isNum(d?.goal) ? d.goal : null;
   if (goal === null) return { big: fmtInt(value), small: unit, caption: 'No goal set' };
