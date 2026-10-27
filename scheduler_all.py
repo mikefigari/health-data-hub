@@ -43,8 +43,6 @@ from health_data_hub.integrations.oura.poll_oura import poll_oura
 from health_data_hub.integrations.notion.poll_notion_daily_state import poll_notion_daily_state
 from health_data_hub.integrations.apple_health.body_poller import poll_once as poll_body
 from health_data_hub.integrations.notion.notion_strava_sync import sync_weekly_zone_summary
-from health_data_hub.integrations.datawrapper.ftp_wkg_charts import sync_once as sync_ftp_wkg_charts
-from health_data_hub.integrations.datawrapper.nutrition_charts import sync_once as sync_nutrition_charts
 
 # -------------------------------------------------------------------
 # Configuration
@@ -106,22 +104,10 @@ def run_body_poller():
         logger.error("Body measurements poll cycle failed", exc_info=True)
 
 
-def run_ftp_wkg_charts():
-    try:
-        exit_code = sync_ftp_wkg_charts()
-        if exit_code != 0:
-            logger.warning("FTP/W-kg chart sync completed with errors (exit_code=%d)", exit_code)
-    except Exception:
-        logger.error("FTP/W-kg chart sync failed", exc_info=True)
 
 
-def run_nutrition_charts():
-    try:
-        exit_code = sync_nutrition_charts()
-        if exit_code != 0:
-            logger.warning("Nutrition chart sync completed with errors (exit_code=%d)", exit_code)
-    except Exception:
-        logger.error("Nutrition chart sync failed", exc_info=True)
+
+
 
 
 def run_weekly_powerzone_summary():
@@ -173,26 +159,6 @@ scheduler.add_job(
     minute=20,
     id="body_poller",
     name="Body measurements poller",
-    max_instances=1,
-)
-
-scheduler.add_job(
-    run_ftp_wkg_charts,
-    trigger="cron",
-    hour="6-23",
-    minute=40,
-    id="ftp_wkg_charts",
-    name="FTP / W-kg Datawrapper charts",
-    max_instances=1,
-)
-
-scheduler.add_job(
-    run_nutrition_charts,
-    trigger="cron",
-    hour="6-23",
-    minute=50,
-    id="nutrition_charts",
-    name="Weight / nutrition Datawrapper charts",
     max_instances=1,
 )
 
