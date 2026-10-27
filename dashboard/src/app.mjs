@@ -1,4 +1,7 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { buildDashboard } from './aggregate.mjs';
 import { demoInputs } from './demo.mjs';
@@ -21,12 +24,10 @@ function redactPath(url) {
   return path.replace(/^\/d\/[^/]*/i, '/d/[redacted]');
 }
 
-const SHELL = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Health Dashboard</title></head>
-<body><main id="app">Dashboard loading</main></body></html>
-`;
+const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
+const ECHARTS_JS = fileURLToPath(new URL('../node_modules/echarts/dist/echarts.min.js', import.meta.url));
+const SHELL = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+const ASSET_OPTS = { maxAge: 3600 * 1000, index: false, dotfiles: 'ignore', fallthrough: true };
 
 export function createApp({ config, pool, now = () => new Date(), log = console.log }) {
   const app = express();
@@ -72,6 +73,10 @@ export function createApp({ config, pool, now = () => new Date(), log = console.
 
   app.get('/healthz', (req, res) => res.status(200).type('text/plain').send('ok'));
 
+  // Static assets: 'self' only, 1 h public cache (no tokens or data in these files).
+  app.get('/assets/vendor/echarts.min.js', (req, res, next) => res.sendFile(ECHARTS_JS, ASSET_OPTS, (e) => e && next()));
+  app.use('/assets', express.static(PUBLIC_DIR, ASSET_OPTS));
+
   app.get(['/d/:token', '/d/:token/'], (req, res) => {
     if (!tokenMatches(req.params.token, config.TOKENS)) {
       return res.status(404).type('text/plain').send('Not found');
@@ -106,6 +111,7 @@ export function createApp({ config, pool, now = () => new Date(), log = console.
     }
     const rangeDays = Number(rawRange);
     const demo = config.DEMO || req.query.demo === '1';
+    if (demo) res.set('X-Dashboard-Demo', '1'); // lets the page show the "Demo data" pill in env demo mode
     const key = `${rangeDays}|${demo}`;
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < CACHE_MS) return res.status(200).json(hit.body);
