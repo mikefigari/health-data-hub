@@ -146,16 +146,17 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 Lesson: Prove a placeholder secret fails the real validator (run it or add a test); don't rely on a report saying so | count: 1 | applies: env examples, config templates
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T11: CI runs dashboard unit + integration tests [model: sonnet] [risk: high] [status: doing] [deps: T4]
+### T11: CI runs dashboard unit + integration tests [model: sonnet] [risk: high] [status: done] [deps: T4]
 **Outcome**: The existing `node` job in `kit-ci.yml` also installs and tests `dashboard/`, reusing its Postgres 18 service.
 **Files**: `.github/workflows/kit-ci.yml`
 **Non-goals**: no visual test in CI; no change to the python job.
 **Acceptance tests**: none: CI config. LESSONS: every tool a workflow runs must be installed by what it installs, so add `dashboard/package-lock.json` to `cache-dependency-path` and run `npm ci` in `dashboard` before `npm test` and `npm run test:integration`. The integration step runs after health-mcp's `npm ci`, because the harness imports `pg` from `health-mcp/node_modules`.
 **Done-when**: `grep -q "working-directory: dashboard" .github/workflows/kit-ci.yml && grep -q "dashboard/package-lock.json" .github/workflows/kit-ci.yml && a=$(grep -n "working-directory: health-mcp" .github/workflows/kit-ci.yml | head -1 | cut -d: -f1) && b=$(grep -n "working-directory: dashboard" .github/workflows/kit-ci.yml | head -1 | cut -d: -f1) && [ "$a" -lt "$b" ] && cd dashboard && npm test`
 **Decision rule**: Keep the existing steps byte-identical; only append.
-**Notes**:
+**Notes**: Appended three named dashboard steps (install, unit, integration) after health-mcp's npm ci; the only edit to an existing line is the added cache-dependency-path entry (needed by the lesson). Integration run locally against :5433, 7 pass.
+Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T12: README: setup, tokens, tunnel, Notion embed, privacy, Pi deploy runbook [model: sonnet] [risk: normal] [status: todo] [deps: T8, T10]
+### T12: README: setup, tokens, tunnel, Notion embed, privacy, Pi deploy runbook [model: sonnet] [risk: normal] [status: doing] [deps: T8, T10]
 **Outcome**: `dashboard/README.md` lets the agent (or user) deploy to the Pi and embed in Notion end to end, with self-checks and rollback.
 **Files**: `dashboard/README.md` (new)
 **Non-goals**: no edits to other READMEs.
