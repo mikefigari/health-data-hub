@@ -51,9 +51,9 @@ const RANGE_LONG = Object.freeze({ 7: '7 days', 30: '30 days', 90: '90 days', 36
 
 // Card registry, in "all" view order. `ranged` cards show the range toggle when embedded alone.
 export const CARDS = Object.freeze([
-  { view: 'weight', title: 'Weight', accent: 'weight', ranged: true },
   { view: 'today', title: 'Today', accent: 'calories', ranged: false },
   { view: 'calories', title: 'Calories', accent: 'calories', ranged: true },
+  { view: 'weight', title: 'Weight', accent: 'weight', ranged: true },
   { view: 'protein', title: 'Protein', accent: 'protein', ranged: true },
   { view: 'calendar', title: 'Logging', accent: 'calories', ranged: false },
   { view: 'ftp', title: 'FTP', accent: 'ftp', ranged: false },
@@ -209,14 +209,12 @@ export function kpis(data) {
           : 'No complete days logged',
     },
     {
-      key: 'protein',
-      accent: 'protein',
-      label: 'Protein share',
-      value: fmtPct(s.avg_protein_pct),
-      unit: 'of calories',
-      caption: proteinBand(data)
-        ? `In ${proteinBand(data)} on ${s.protein_days_in_range ?? 0} of ${s.days_logged ?? 0} days`
-        : `Last ${rangeLong(range)}`,
+      key: 'cycling',
+      accent: 'ftp',
+      label: 'Cycling',
+      value: fmtInt(data?.cycling?.week_kj),
+      unit: 'kJ',
+      caption: isNum(data?.cycling?.today_kj) ? `Last 7 days · ${fmtInt(data.cycling.today_kj)} kJ today` : 'Last 7 days',
     },
   ];
 }
@@ -272,7 +270,7 @@ export function cardStat(view, data) {
       const days = data?.calendar?.days || [];
       const under = days.filter((d) => d.status === 'under').length;
       const over = days.filter((d) => d.status === 'over').length;
-      return { value: fmtInt(under + over), unit: 'days logged', caption: `${fmtInt(under)} at or under goal · last 26 weeks` };
+      return { value: fmtInt(under + over), unit: 'days logged', caption: `${fmtInt(under)} at or under goal · since ${fmtDay(data?.calendar?.start)}` };
     }
     case 'ftp': {
       const c = data?.ftp?.current;

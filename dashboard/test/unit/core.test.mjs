@@ -109,21 +109,19 @@ describe('protein share (T16)', () => {
   const s = data.nutrition.summary;
   const BAD = /\sg$|goal met|Goal \d+ g|of \d+ g/i;
 
-  test('kpis: fourth tile is the Protein share', () => {
+  test('kpis: fourth tile is cycling kJ', () => {
     const tiles = kpis(data);
     assert.equal(tiles.length, 4);
     const t = tiles[3];
-    assert.equal(t.key, 'protein');
-    assert.equal(t.accent, 'protein');
-    assert.equal(t.label, 'Protein share');
-    assert.equal(t.value, `${Math.round(s.avg_protein_pct)}%`);
-    assert.equal(t.unit, 'of calories');
-    assert.equal(t.caption, `In 35\u201340% on ${s.protein_days_in_range} of ${s.days_logged} days`);
+    assert.equal(t.key, 'cycling');
+    assert.equal(t.label, 'Cycling');
+    assert.equal(t.unit, 'kJ');
+    assert.equal(t.value, fmtInt(data.cycling.week_kj));
+    assert.equal(t.caption, `Last 7 days · ${fmtInt(data.cycling.today_kj)} kJ today`);
   });
 
-  test('kpis: value is an em dash when there is no average', () => {
-    const empty = { ...data, nutrition: { ...data.nutrition, summary: { ...s, avg_protein_pct: null } } };
-    assert.equal(kpis(empty)[3].value, '\u2014');
+  test('kpis: cycling value is an em dash when there is no cycling data', () => {
+    assert.equal(kpis({ ...data, cycling: undefined })[3].value, '—');
   });
 
   test('cardStat protein: average %, "of calories avg", target band', () => {
