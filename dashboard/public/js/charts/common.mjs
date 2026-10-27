@@ -62,6 +62,39 @@ export function grid(extra = {}) {
   return { left: 4, right: 8, top: 16, bottom: 4, containLabel: true, ...extra };
 }
 
+// At most MAX_TIME_LABELS evenly spaced x labels (local-midnight timestamps). ECharts' own
+// time ticks add month-start labels off the rhythm ("Sep 29 Oct 1") and pack 4-day labels
+// edge to edge on phones ("Oct 13Oct 17"), so the label positions are chosen here.
+const MAX_TIME_LABELS = 6;
+const DAY_STEPS = [1, 2, 3, 7, 14, 28];
+export function timeLabelValues(min, max, monthOnly = false) {
+  if (!isNum(min) || !isNum(max) || max <= min) return undefined;
+  // A label centered on the right edge is clipped ("Oct 3"), so keep labels off the last 4%.
+  const keep = (v) => max - v >= (max - min) * 0.04;
+  return timeLabelCandidates(min, max, monthOnly).filter(keep);
+}
+
+function timeLabelCandidates(min, max, monthOnly) {
+  const out = [];
+  const d = new Date(min);
+  d.setHours(0, 0, 0, 0);
+  const spanDays = (max - min) / 86400000;
+  if (monthOnly || spanDays / DAY_STEPS.at(-1) > MAX_TIME_LABELS) {
+    d.setDate(1);
+    if (d.getTime() < min) d.setMonth(d.getMonth() + 1);
+    const months = [];
+    for (; d.getTime() <= max; d.setMonth(d.getMonth() + 1)) months.push(d.getTime());
+    const k = Math.ceil(months.length / MAX_TIME_LABELS);
+    return months.filter((_, i) => i % k === 0);
+  }
+  const step = DAY_STEPS.find((s) => spanDays / s < MAX_TIME_LABELS);
+  if (d.getTime() < min) d.setDate(d.getDate() + 1);
+  // Weekly steps land on Mondays, matching the Monday-start weeks elsewhere.
+  if (step >= 7) while (d.getDay() !== 1) d.setDate(d.getDate() + 1);
+  for (; d.getTime() <= max; d.setDate(d.getDate() + step)) out.push(d.getTime());
+  return out;
+}
+
 // Recessive axes: no axis line or ticks, labels in ink2, split lines in the grid token.
 export function timeAxis(tokens, { min, max, monthOnly = false } = {}) {
   return {
@@ -75,6 +108,7 @@ export function timeAxis(tokens, { min, max, monthOnly = false } = {}) {
       color: tokens.ink2,
       fontSize: 11,
       hideOverlap: true,
+      customValues: timeLabelValues(min, max, monthOnly),
       formatter: (v) => fmtTsDay(v, monthOnly),
     },
     axisPointer: { label: { show: false } },

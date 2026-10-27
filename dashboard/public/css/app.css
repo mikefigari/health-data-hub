@@ -306,6 +306,12 @@ html.single .card--today .chart--ring { flex: none; height: 168px; min-height: 0
 
 @media (min-width: 1024px) {
   .card--weight { grid-column: span 2; }
+  /* Last card alone on its row: span the full row instead of leaving two empty columns. */
+  .card--ftp { grid-column: 1 / -1; }
+  /* Cards stretched to their row's height: center the short plots in the spare space. */
+  html:not(.single) .card--today .rings { flex: 1; align-content: center; }
+  html:not(.single) .card--calendar .chart { margin-top: auto; }
+  html:not(.single) .card--calendar .chart + .caption { margin-bottom: auto; }
 }
 
 @media (max-width: 719.98px) {
@@ -469,6 +475,11 @@ html.single .grid {
 html.single .card--weight { grid-column: auto; }
 html.single .card { min-height: 100%; }
 html.single .chart { flex: 1; min-height: 220px; height: auto; }
+/* The calendar's height follows its cell size: keep it, and center it with its legend. */
+html.single .card--calendar .chart { flex: none; min-height: 0; margin-top: auto; }
+html.single .card--calendar .chart + .caption { margin-bottom: auto; }
+/* Wide single Today embed: keep the two rings together instead of at the far edges. */
+html.single .rings { width: 100%; max-width: 640px; margin-left: auto; margin-right: auto; }
 html.single .footer { margin: 0; padding: 8px 16px 10px; }
 
 @media (prefers-reduced-motion: reduce) {

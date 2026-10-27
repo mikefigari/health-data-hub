@@ -176,6 +176,12 @@ export function proteinHero(data) {
   return { value: fmtInt(avg), unit: 'g avg', caption: proteinCaption(data) };
 }
 
+// 1, 2, 2.5 or 5 times a power of ten, at least `raw`.
+function niceStep(raw) {
+  const p = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw);
+}
+
 const fmtG = (g) => (Number.isInteger(g) ? String(g) : g.toFixed(1));
 
 export function proteinOption(data, tokens, opts = {}) {
@@ -184,8 +190,9 @@ export function proteinOption(data, tokens, opts = {}) {
   const accent = tokens.protein;
   const goalOf = (row) => (weekly ? row.avg_goal_protein_g : row.goal_protein_g) ?? data?.goals?.protein_g ?? null;
   const target = data?.goals?.protein_g ?? rows.map(goalOf).find(isNum) ?? null;
+  // Marked-incomplete days draw no bar (as in the calories chart); the tooltip says why.
   const valueOf = (row) => {
-    if (!hasFood(row, weekly)) return null;
+    if (!hasFood(row, weekly) || (!weekly && row.status === 'incomplete')) return null;
     const v = weekly ? row.avg_protein_g : row.protein_g;
     return isNum(v) ? v : null;
   };
@@ -221,8 +228,10 @@ export function proteinOption(data, tokens, opts = {}) {
   }
 
   // markLine is not part of the auto y-range: keep the goal inside the axis explicitly.
-  const top = Math.max(...vals.filter(isNum), isNum(target) ? target : 0);
-  const max = Math.ceil((top * 1.08) / 20) * 20;
+  // The max is a whole number of ticks, so no stray top label crowds the last tick (220 over 200).
+  const top = Math.max(...vals.filter(isNum), isNum(target) ? target : 0) || 100; // never [0, 0]
+  const interval = niceStep((top * 1.08) / 5);
+  const max = Math.ceil((top * 1.08) / interval) * interval;
 
   const tooltip = axisTooltip(tokens, (params) => {
     const ps = Array.isArray(params) ? params : [params];
@@ -249,7 +258,7 @@ export function proteinOption(data, tokens, opts = {}) {
     grid: grid({ top: 16 }),
     tooltip,
     xAxis: categoryAxis(tokens, rows.map((r) => catOf(r, weekly))),
-    yAxis: valueAxis(tokens, { min: 0, max, splitNumber: 4, axisLabel: { formatter: (v) => fmtInt(v) } }),
+    yAxis: valueAxis(tokens, { min: 0, max, interval, axisLabel: { formatter: (v) => fmtInt(v) } }),
     series: [bars],
   };
 }
