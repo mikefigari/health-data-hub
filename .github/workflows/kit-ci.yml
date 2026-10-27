@@ -42,6 +42,7 @@ jobs:
           cache-dependency-path: |
             health-mcp/package-lock.json
             notion-reporter/package-lock.json
+            dashboard/package-lock.json
       - run: npm ci
       - run: npm test
       - run: npm run test:integration
@@ -53,4 +54,13 @@ jobs:
         run: npm test
       - name: notion-reporter integration tests
         working-directory: notion-reporter
+        run: npm run test:integration
+      - name: dashboard install
+        working-directory: dashboard
+        run: npm ci
+      - name: dashboard unit tests
+        working-directory: dashboard
+        run: npm test
+      - name: dashboard integration tests
+        working-directory: dashboard
         run: npm run test:integration

@@ -14,6 +14,7 @@ const MIGRATIONS_DIR = path.join(DB_DIR, 'migrations');
 
 export const READONLY_TEST_PASSWORD = 'claude_readonly_test_pw';
 export const WRITER_TEST_PASSWORD = 'nutrition_writer_test_pw';
+export const DASHBOARD_TEST_PASSWORD = 'dashboard_ro_test_pw';
 
 const pools = new Set();
 
@@ -39,8 +40,8 @@ function testUrl() {
   return u;
 }
 
-function makePool(u) {
-  const pool = new pg.Pool({ connectionString: u.toString(), max: 4 });
+function makePool(u, max = 4) {
+  const pool = new pg.Pool({ connectionString: u.toString(), max });
   pools.add(pool);
   return pool;
 }
@@ -132,6 +133,16 @@ export async function readonlyPool() {
   u.username = 'claude_readonly';
   u.password = READONLY_TEST_PASSWORD;
   return makePool(u);
+}
+
+// dashboard_ro is created by schema.sql / migration 03 without a password. The
+// test password is set only after testUrl() validation, via the guarded admin pool.
+export async function dashboardPool() {
+  const u = testUrl();
+  await adminPool().query(`ALTER ROLE dashboard_ro WITH PASSWORD '${DASHBOARD_TEST_PASSWORD}'`);
+  u.username = 'dashboard_ro';
+  u.password = DASHBOARD_TEST_PASSWORD;
+  return makePool(u, 3);
 }
 
 export async function writerPool() {
