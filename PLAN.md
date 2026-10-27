@@ -18,6 +18,7 @@ Branch: orch/nutrition-dashboard
 - D6: Stack (from the user's brief) -> Node backend with a dedicated read-only Postgres role and pre-aggregated JSON only; static single-page HTML/JS with Apache ECharts and no build step; Docker + docker-compose; token in the URL (`/d/<token>`) validated server-side, rotatable via env; frame-ancestors limited to Notion; light/dark via prefers-color-scheme plus `?theme=light|dark`; `?demo=1` / env demo mode with fake data; README; screenshots at desktop and 390 px with visual fixes before done.
 - D7: Day-counting rule -> a nutrition day counts when `calories > 0` and `logged_complete IS DISTINCT FROM false`. This is the rule already used by the weekly review (`notion-reporter/src/utils/nutritionWeek.mjs:47`). The Datawrapper builder's stricter `logged_complete = true` rule is dropped.
 - D8: Colors -> calories green, protein blue. This keeps PR #6's choice; the other categories get their own accents (see T5).
+- D9 (auto, T3): aggregate.test.mjs "no effective goals row leaves goal null" looks up 2026-09-20 with rangeDays 30, outside the range 2026-09-27..2026-10-26 -> spec writer fixes the test (use rangeDays 90 or a day inside the range before the earliest goals row); the implementation is unchanged [source: Default policy, spec test that looks wrong; no user-visible behavior, data, security or cost impact]
 ## Assumptions
 - A1: Node over Python, because `health-mcp` and `notion-reporter` already establish Node 22 + `pg` + `node --test` on the Pi, so there is one runtime and one test harness.
 - A2: The plan pace is 0.75 kg/week, the user's chosen rate (`notion-reporter/src/anthropic/analyzeHealth.mjs:127`). The server reads it from env `PLAN_KG_PER_WEEK`, default `0.75`.
@@ -60,7 +61,7 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 Lesson: Redact secrets and apply path-based headers with case-insensitive matching (Express 4 routes are case-insensitive by default) | count: 1 | applies: any Express path-token redaction or path-prefix middleware
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T3: Pure aggregation + deterministic demo data [model: sonnet] [risk: normal] [status: todo] [deps: T2]
+### T3: Pure aggregation + deterministic demo data [model: sonnet] [risk: normal] [status: doing] [deps: T2]
 **Outcome**: `buildDashboard(inputs)` turns raw daily inputs into the exact JSON contract below, and `demoInputs(today)` produces seeded fake inputs that exercise every state.
 **Files**: `dashboard/src/aggregate.mjs` (new), `dashboard/src/demo.mjs` (new), `dashboard/test/unit/aggregate.test.mjs` (new), `dashboard/test/unit/demo.test.mjs` (new)
 **Non-goals**: no SQL, no HTTP.
