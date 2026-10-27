@@ -8,6 +8,7 @@
     "start": "node server.mjs",
     "test": "node --test \"test/unit/**/*.test.mjs\"",
     "test:integration": "node --test --test-concurrency=1 \"test/integration/**/*.int.test.mjs\"",
+    "check:compose": "node scripts/check-compose.mjs",
     "test:visual": "node test/visual/shoot.mjs"
   },
   "dependencies": {

@@ -1,0 +1,19 @@
+name: health-dashboard
+
+services:
+  health-dashboard:
+    build: .
+    network_mode: host
+    env_file: ${DASHBOARD_ENV_FILE:-/home/mike/.config/health-dashboard/dashboard.env}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
