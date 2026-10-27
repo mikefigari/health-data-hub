@@ -57,9 +57,18 @@ export function createApp({ config, pool, now = () => new Date(), log = console.
       'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff',
       'X-Robots-Tag': 'noindex, nofollow',
-      'Cross-Origin-Resource-Policy': 'same-origin',
+      // Notion's mobile embed may run the page in an opaque-origin sandbox, where
+      // same-origin loads count as cross-origin. Everything is behind the path
+      // token / bearer token, so open CORS adds no exposure.
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Authorization',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     });
+    if (req.method === 'OPTIONS') {
+      return res.status(204).set('Access-Control-Max-Age', '600').end();
+    }
     const lower = req.path.toLowerCase();
     if (lower.startsWith('/d/') || lower.startsWith('/api/')) {
       res.set('Cache-Control', 'no-store');
@@ -72,6 +81,9 @@ export function createApp({ config, pool, now = () => new Date(), log = console.
   });
 
   app.get('/healthz', (req, res) => res.status(200).type('text/plain').send('ok'));
+
+  // Client error beacon (assets/js/beacon.js): the access log line carries the query, so just ack.
+  app.get('/_b', (req, res) => res.status(204).end());
 
   // Static assets: 'self' only, always revalidated via ETag so deploys show up immediately (no tokens or data in these files).
   app.get('/assets/vendor/echarts.min.js', (req, res, next) => res.sendFile(ECHARTS_JS, ASSET_OPTS, (e) => e && next()));
