@@ -52,7 +52,10 @@ export function weightOption(data, tokens, opts = {}) {
     : null;
 
   const firstDay = [scale[0].day, trend[0]?.day].filter(Boolean).sort()[0];
-  const xMax = dayTs(addDays(last.day, plan ? futureDays(range) : 0));
+  const shownFuture = plan ? futureDays(range) : 0;
+  const xMax = dayTs(addDays(last.day, shownFuture));
+  // Keep the visible end of the plan-pace projection inside the y-range.
+  if (plan) min = Math.min(min, Math.floor(last.kg - (shownFuture * rate) / 7));
 
   const trendSeries = {
     name: 'trend',

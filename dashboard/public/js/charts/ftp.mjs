@@ -97,7 +97,7 @@ export function ftpOption(data, tokens, opts = {}) {
   const yAxis = [
     valueAxis(tokens, { ...ftpB, position: 'left', axisLabel: { formatter: (v) => `${v}` } }),
     valueAxis(tokens, {
-      ...(wkgB || {}),
+      ...(wkgB || { show: false }),
       position: 'right',
       splitLine: { show: false },
       axisLabel: { formatter: (v) => v.toFixed(2) },
