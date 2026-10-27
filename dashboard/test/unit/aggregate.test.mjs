@@ -370,6 +370,7 @@ describe('weeks', () => {
 
 describe('calendar', () => {
   const r = buildDashboard(base({
+    loggingStart: null,
     nutrition: [
       nut('2026-10-25', { calories: 2300, protein_g: 230 }), // over, 40.0 % protein
       nut('2026-10-24', { calories: 2000, protein_g: 100 }), // under, 20.0 % protein
@@ -396,6 +397,22 @@ describe('calendar', () => {
     assert.equal(c['2026-10-22'].status, 'none');
     assert.equal(c['2026-08-27'].status, 'under');
     assert.equal(typeof c['2026-10-22'].protein_in_range, 'boolean');
+  });
+});
+
+describe('calendar logging start', () => {
+  test('starts at the logging start date instead of 182 days back', () => {
+    const r = buildDashboard(base({}));
+    assert.equal(r.calendar.start, '2026-10-25');
+    assert.equal(r.calendar.end, TODAY);
+    assert.deepEqual(r.calendar.days.map((d) => d.day), ['2026-10-25', '2026-10-26']);
+  });
+});
+
+describe('cycling kJ', () => {
+  test('today, last 7 days and range totals', () => {
+    const r = buildDashboard(base({ rangeDays: 30, rideKj: [{ day: TODAY, kj: 500 }, { day: '2026-10-22', kj: 700.4 }, { day: '2026-10-10', kj: 900 }] }));
+    assert.deepEqual(r.cycling, { today_kj: 500, week_kj: 1200, range_kj: 2100 });
   });
 });
 
