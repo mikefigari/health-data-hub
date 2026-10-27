@@ -125,16 +125,17 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 **Notes**: Fixes: x-labels capped at 6; protein y-axis nice step, never [0,0], incomplete days drawn empty; FTP card full width at 1024+; Today rings and calendar centered; FTP '265 W' label moved below the step (position bottom, distance 38). Calendar canvas check relaxed to >100 px wide and >=80 px tall (cell formula caps ~89 px at 390); single views shot in a 460 px frame with opposite system theme.
 Metrics: attempts=2 fix=0 review=PASS blocked=none
 
-### T9: Dockerfile (ARM-ready, non-root) [model: sonnet] [risk: high] [status: todo] [deps: T4]
+### T9: Dockerfile (ARM-ready, non-root) [model: sonnet] [risk: high] [status: done] [deps: T4]
 **Outcome**: `dashboard/Dockerfile` builds a multi-arch Node 22 image that runs as `node`, contains no secrets, and health-checks `/healthz`.
 **Files**: `dashboard/Dockerfile` (new), `dashboard/.dockerignore` (new), `dashboard/test/unit/docker.test.mjs` (new)
 **Non-goals**: no compose (T10); no image push.
 **Acceptance tests**: `dashboard/test/unit/docker.test.mjs` (parses the text): (a) `FROM node:22-bookworm-slim` (multi-arch incl. arm64), with the tag pinned; (b) `npm ci --omit=dev` and copy of `package-lock.json` before the source, for layer caching; (c) `USER node` before `CMD`; (d) `HEALTHCHECK` uses `node -e` + `fetch('http://127.0.0.1:'+(process.env.PORT||8878)+'/healthz')` (no curl in slim); (e) no `ENV`/`ARG` containing `PASSWORD`, `TOKEN` or `SECRET`; (f) `.dockerignore` lists `node_modules`, `*.env`, `test`, `.git`.
 **Done-when**: `cd dashboard && npm test`
 **Decision rule**: Prefer the smallest change that satisfies the tests; log the choice.
-**Notes**:
+**Notes**: node:22-bookworm-slim, NODE_ENV=production, EXPOSE 8878, JSON-form HEALTHCHECK with --timeout=5s. Image not built here (docker build not allowlisted); first build happens on the Pi.
+Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T10: docker-compose + env example + compose check [model: sonnet] [risk: high] [status: todo] [deps: T9]
+### T10: docker-compose + env example + compose check [model: sonnet] [risk: high] [status: doing] [deps: T9]
 **Outcome**: `dashboard/docker-compose.yml` runs the service locked down on host networking with env from a file outside git, and `npm run check:compose` validates it.
 **Files**: `dashboard/docker-compose.yml` (new), `dashboard/dashboard.env.example` (new), `dashboard/scripts/check-compose.mjs` (new; spawns `docker compose -f docker-compose.yml config -q` with `DASHBOARD_ENV_FILE=./dashboard.env.example`), `dashboard/.gitignore` (new: `dashboard.env`, `node_modules/`), `dashboard/package.json` (script `check:compose`)
 **Non-goals**: do not touch any other compose file or the Pi.
