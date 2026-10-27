@@ -12,7 +12,6 @@ import {
   kpis,
   cardStat,
   emptyMessage,
-  baseOption,
   fmtDay,
   fmtLongDay,
   fmtTime,
@@ -20,11 +19,12 @@ import {
 import { ringOption, ringLabel } from './charts/rings.mjs';
 import { weightOption, weightHero } from './charts/weight.mjs';
 import { ftpOption, ftpHero } from './charts/ftp.mjs';
+import { caloriesOption, caloriesSubtitle, proteinOption, proteinHero } from './charts/nutrition.mjs';
+import { calendarOption, calendarHeight, calendarLegend } from './charts/calendar.mjs';
 
 // Chart option builders, keyed by a chart node's data-chart attribute:
 // (data, ctx) => ECharts option, or { empty: message } when there is nothing to draw.
-// ctx = { tokens, reducedMotion, theme, range, view }. Nutrition placeholders until T7.
-const placeholder = (data, ctx) => baseOption(ctx);
+// ctx = { tokens, reducedMotion, theme, range, view, width }.
 const RINGS = [
   { key: 'calories', title: 'Calories', unit: 'kcal', value: 'calories', goal: 'goal_calories' },
   { key: 'protein', title: 'Protein', unit: 'g', value: 'protein_g', goal: 'goal_protein_g' },
@@ -34,13 +34,19 @@ const BUILDERS = {
   'today:calories': (data, ctx) => ringOption(ringData(data, RINGS[0]), ctx.tokens, { ...ctx, accent: 'calories' }),
   'today:protein': (data, ctx) => ringOption(ringData(data, RINGS[1]), ctx.tokens, { ...ctx, accent: 'protein' }),
   weight: (data, ctx) => weightOption(data, ctx.tokens, ctx),
-  calories: placeholder,
-  protein: placeholder,
-  calendar: placeholder,
+  calories: (data, ctx) => caloriesOption(data, ctx.tokens, ctx),
+  protein: (data, ctx) => proteinOption(data, ctx.tokens, ctx),
+  calendar: (data, ctx) => calendarOption(data, ctx.tokens, ctx),
   ftp: (data, ctx) => ftpOption(data, ctx.tokens, ctx),
 };
 // Card header hero numbers; other cards use core cardStat().
-const HEROES = { weight: weightHero, ftp: ftpHero };
+const HEROES = { weight: weightHero, ftp: ftpHero, protein: proteinHero };
+// Optional second caption line under a card's hero.
+const SUBTITLES = { calories: (data) => caloriesSubtitle(data, { range: state.range }) };
+// Calendar legend swatches use CSS custom properties so they follow the theme without a re-render.
+const LEGEND_VAR = { under: '--calories', over: '--over', none: '--track' };
+// Charts whose layout depends on their pixel width (rebuilt on resize).
+const WIDTH_AWARE = new Set(['calendar']);
 
 const root = document.documentElement;
 const app = document.getElementById('app');
@@ -65,12 +71,13 @@ if (params.theme) root.dataset.theme = params.theme;
 root.classList.toggle('single', single);
 
 const theme = () => params.theme || (darkMq.matches ? 'dark' : 'light');
-const ctxFor = (view) => ({
+const ctxFor = (view, node) => ({
   tokens: TOKENS[theme()],
   reducedMotion: motionMq.matches,
   theme: theme(),
   range: state.range,
   view,
+  width: node?.clientWidth || undefined,
 });
 
 function el(tag, attrs = {}, ...children) {
@@ -217,8 +224,24 @@ function ringsBody(data) {
   );
 }
 
+function calendarLegendEl() {
+  return el(
+    'div',
+    { class: 'caption', style: 'display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:10px' },
+    calendarLegend(TOKENS[theme()]).map((l) =>
+      el(
+        'span',
+        { style: 'display:inline-flex;align-items:center;gap:6px' },
+        el('span', { class: 'dot', 'aria-hidden': 'true', style: `background:var(${LEGEND_VAR[l.key]})` }),
+        l.label
+      )
+    )
+  );
+}
+
 function card(c, data) {
   const stat = (HEROES[c.view] || ((d) => cardStat(c.view, d)))(data);
+  const subtitle = SUBTITLES[c.view]?.(data);
   const empty = emptyMessage(c.view, data);
   const head = el(
     'div',
@@ -231,13 +254,16 @@ function card(c, data) {
     : c.view === 'today'
       ? ringsBody(data)
       : el('div', { class: 'chart', 'data-chart': c.view, role: 'img', 'aria-label': `${c.title} chart` });
+  const legend = !empty && c.view === 'calendar' ? calendarLegendEl() : null;
   return el(
     'section',
     { class: `card card--${c.view}`, 'aria-label': c.title },
     head,
     el('div', { class: 'stat' }, el('span', { class: 'value num', text: stat.value }), stat.unit ? el('span', { class: 'unit', text: stat.unit }) : null),
     stat.caption ? el('div', { class: 'caption', text: stat.caption }) : null,
-    body
+    subtitle ? el('div', { class: 'caption', text: subtitle }) : null,
+    body,
+    legend
   );
 }
 
@@ -287,14 +313,21 @@ function mountCharts() {
   const echarts = window.echarts;
   if (echarts && !resizeObserver && 'ResizeObserver' in window) {
     resizeObserver = new ResizeObserver((entries) => {
-      for (const e of entries) state.charts.get(e.target.dataset.chart)?.chart.resize();
+      for (const e of entries) {
+        const key = e.target.dataset.chart;
+        const entry = state.charts.get(key);
+        if (!entry) continue;
+        if (WIDTH_AWARE.has(key)) rebuildChart(key, entry);
+        entry.chart.resize();
+      }
     });
   }
   for (const node of app.querySelectorAll('.chart[data-chart]')) {
     const key = node.dataset.chart;
     const build = BUILDERS[key];
     if (!build) continue;
-    const option = build(state.data, ctxFor(key.split(':')[0]));
+    sizeNode(key, node);
+    const option = build(state.data, ctxFor(key.split(':')[0], node));
     if (option?.empty) {
       node.replaceWith(el('div', { class: 'empty', text: option.empty }));
       continue;
@@ -302,16 +335,33 @@ function mountCharts() {
     if (!echarts) continue;
     const chart = echarts.init(node, null, { renderer: 'canvas' });
     chart.setOption(option, true);
+    if (WIDTH_AWARE.has(key)) node.dataset.width = String(node.clientWidth);
     state.charts.set(key, { chart, node });
     resizeObserver?.observe(node);
   }
 }
 
+// The calendar's height follows its cell size, which follows its width.
+function sizeNode(key, node) {
+  if (key === 'calendar' && node.clientWidth) node.style.height = `${calendarHeight(node.clientWidth)}px`;
+}
+
+function rebuildChart(key, { chart, node }) {
+  const width = node.clientWidth;
+  if (WIDTH_AWARE.has(key)) {
+    if (node.dataset.width === String(width)) return;
+    node.dataset.width = String(width);
+    sizeNode(key, node);
+  }
+  const option = BUILDERS[key](state.data, ctxFor(key.split(':')[0], node));
+  if (!option?.empty) chart.setOption(option, true);
+}
+
 function restyleCharts() {
   if (!state.data) return;
-  for (const [key, { chart }] of state.charts) {
-    const option = BUILDERS[key](state.data, ctxFor(key.split(':')[0]));
-    if (!option?.empty) chart.setOption(option, true);
+  for (const [key, entry] of state.charts) {
+    delete entry.node.dataset.width;
+    rebuildChart(key, entry);
   }
 }
 
@@ -373,7 +423,14 @@ document.addEventListener('visibilitychange', () => {
 
 darkMq.addEventListener?.('change', restyleCharts);
 motionMq.addEventListener?.('change', restyleCharts);
-if (!('ResizeObserver' in window)) window.addEventListener('resize', () => state.charts.forEach(({ chart }) => chart.resize()));
+if (!('ResizeObserver' in window)) {
+  window.addEventListener('resize', () =>
+    state.charts.forEach((entry, key) => {
+      if (WIDTH_AWARE.has(key)) rebuildChart(key, entry);
+      entry.chart.resize();
+    })
+  );
+}
 
 startRefresh();
 load();
