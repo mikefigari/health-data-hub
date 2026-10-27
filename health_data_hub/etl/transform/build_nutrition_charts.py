@@ -36,6 +36,23 @@ def fetch_today(conn):
         return cur.fetchone()[0]
 
 
+_TODAY_SQL = (
+    "SELECT n.calories, n.protein_g, "
+    "COALESCE(n.goal_calories, g.base_calories), COALESCE(n.goal_protein_g, g.protein_g) "
+    "FROM (SELECT 1) x LEFT JOIN nutrition_daily n ON n.day = %s "
+    "LEFT JOIN LATERAL (SELECT base_calories, protein_g FROM nutrition_goals "
+    "WHERE effective_from <= %s ORDER BY effective_from DESC LIMIT 1) g ON true"
+)
+
+
+def fetch_today_progress(conn, today):
+    """Today's eaten totals and goals; goals fall back to nutrition_goals."""
+    with conn.cursor() as cur:
+        cur.execute(_TODAY_SQL, (today, today))
+        c, p, gc, gp = cur.fetchone()
+    return {"calories": c, "protein_g": p, "goal_calories": gc, "goal_protein_g": gp}
+
+
 def fetch_weight(conn):
     with conn.cursor() as cur:
         cur.execute(_WEIGHT_SQL)
@@ -123,6 +140,17 @@ def build_weekly_rows(nutrition, today):
     return [{"week_of": w, "protein_met": stats[w]["protein"],
              "calories_met": stats[w]["calories"], "logged": stats[w]["logged"]}
             for w in weeks]
+
+
+def build_ring(eaten, goal, unit):
+    """Donut data for one nutrient today, or None when there is no goal to fill toward."""
+    if goal is None or float(goal) <= 0:
+        return None
+    e, g = _num(eaten or 0), _num(goal)
+    left = max(g - e, 0)
+    title = f"{e:,} of {g:,} {unit}"
+    sub = f"{left:,} {unit} left" if e <= g else f"{_num(e - g):,} {unit} over"
+    return {"title": title, "intro": sub, "csv": f"label,value\nEaten,{e}\nLeft,{left}\n"}
 
 
 def _csv(header, rows):
