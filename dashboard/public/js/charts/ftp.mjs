@@ -70,7 +70,7 @@ export function ftpOption(data, tokens, opts = {}) {
     type: 'scatter',
     data: tests.map((t, i) =>
       i === tests.length - 1
-        ? { value: [t.day, t.ftp_w], label: { show: true, position: 'top', distance: 8, formatter: `${fmtInt(t.ftp_w)} W`, color: tokens.ink2, fontSize: 11, fontWeight: 600 } }
+        ? { value: [t.day, t.ftp_w], label: { show: true, position: 'bottom', distance: 38, formatter: `${fmtInt(t.ftp_w)} W`, color: tokens.ink2, fontSize: 11, fontWeight: 600 } }
         : [t.day, t.ftp_w]
     ),
     symbol: 'circle',
