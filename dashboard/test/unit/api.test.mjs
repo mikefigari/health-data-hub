@@ -199,8 +199,45 @@ describe('/api/dashboard: demo mode (b)', () => {
         today: LA_TODAY,
         rangeDays: 90,
         planKgPerWeek: srv.config.PLAN_KG_PER_WEEK,
+        proteinPctMin: srv.config.PROTEIN_PCT_MIN,
+        proteinPctMax: srv.config.PROTEIN_PCT_MAX,
       });
       assert.deepEqual(r.json, JSON.parse(JSON.stringify(expected)));
+    } finally {
+      await srv.close();
+    }
+  });
+
+  test('?demo=1 JSON carries protein % fields and none of the removed gram/goal-met fields (D12)', async () => {
+    const pool = makeFakePool();
+    const srv = await serve({ pool, now });
+    try {
+      const r = await get(srv.base, '/api/dashboard?demo=1&range=30');
+      assert.equal(r.status, 200, r.text);
+      const j = r.json;
+      assert.equal(j.goals.protein_pct_min, 35);
+      assert.equal(j.goals.protein_pct_max, 40);
+      assert.ok(!('protein_g' in j.goals));
+      assert.equal(typeof j.today_rings.protein_pct, 'number');
+      assert.ok(typeof j.nutrition.summary.avg_protein_pct === 'number');
+      assert.equal(typeof j.nutrition.summary.protein_days_in_range, 'number');
+      assert.ok(j.nutrition.days.some((d) => typeof d.protein_pct === 'number' && typeof d.protein_in_range === 'boolean'));
+      assert.ok(j.nutrition.weeks.every((w) => 'avg_protein_pct' in w));
+      assert.ok(j.calendar.days.every((d) => typeof d.protein_in_range === 'boolean'));
+      assert.ok(!/goal_protein_g|protein_days_met|protein_met|avg_protein_g/.test(r.text), 'removed field present');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  test('PROTEIN_PCT_MIN/MAX env reach the API goals echo', async () => {
+    const pool = makeFakePool();
+    const srv = await serve({ pool, now, envOverrides: { PROTEIN_PCT_MIN: '30', PROTEIN_PCT_MAX: '45' } });
+    try {
+      const r = await get(srv.base, '/api/dashboard?demo=1&range=7');
+      assert.equal(r.status, 200, r.text);
+      assert.equal(r.json.goals.protein_pct_min, 30);
+      assert.equal(r.json.goals.protein_pct_max, 45);
     } finally {
       await srv.close();
     }
@@ -221,6 +258,8 @@ describe('/api/dashboard: demo mode (b)', () => {
         today: LA_TODAY,
         rangeDays: 7,
         planKgPerWeek: srv.config.PLAN_KG_PER_WEEK,
+        proteinPctMin: srv.config.PROTEIN_PCT_MIN,
+        proteinPctMax: srv.config.PROTEIN_PCT_MAX,
       });
       assert.deepEqual(r.json, JSON.parse(JSON.stringify(expected)));
       assert.equal(r2.json.range_days, 30);

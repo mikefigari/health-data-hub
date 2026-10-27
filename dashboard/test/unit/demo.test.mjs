@@ -44,6 +44,20 @@ describe('demoInputs', () => {
     assert.equal(days.at(-1).status, 'partial');
   });
 
+  test('protein share (D12): 26-44 %, >=3 days in 35-40 and >=3 outside in the last 30 days', () => {
+    const band = { proteinPctMin: 35, proteinPctMax: 40 };
+    const r = buildDashboard({ ...demoInputs(TODAY), ...band, rangeDays: 30 });
+    const logged = r.nutrition.days.filter((d) => d.status === 'logged');
+    assert.ok(logged.length >= 15, `logged ${logged.length}`);
+    for (const d of logged) {
+      assert.ok(d.protein_pct >= 25.5 && d.protein_pct <= 44.5, `${d.day} ${d.protein_pct}`);
+    }
+    assert.ok(logged.filter((d) => d.protein_pct >= 35 && d.protein_pct <= 40).length >= 3, 'inside');
+    assert.ok(logged.filter((d) => d.protein_pct < 35 || d.protein_pct > 40).length >= 3, 'outside');
+    const r2 = buildDashboard({ ...demoInputs(TODAY), ...band, rangeDays: 30 });
+    assert.deepEqual(r2, r);
+  });
+
   test('5 FTP tests rising 230 -> 265 W', () => {
     const t = year.ftp.tests;
     assert.equal(t.length, 5);

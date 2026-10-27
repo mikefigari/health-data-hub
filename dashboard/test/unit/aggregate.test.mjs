@@ -23,6 +23,8 @@ function base(over = {}) {
     today: TODAY,
     rangeDays: 7,
     planKgPerWeek: 0.75,
+    proteinPctMin: 35,
+    proteinPctMax: 40,
     weights: [],
     nutrition: [],
     goals: [],
@@ -68,7 +70,8 @@ describe('structure and range', () => {
     assert.deepEqual(r.goals, {
       target_weight_kg: 100,
       base_calories: 2600,
-      protein_g: 170,
+      protein_pct_min: 35,
+      protein_pct_max: 40,
       plan_kg_per_week: 0.75,
     });
   });
@@ -117,7 +120,7 @@ describe('status and summary (D7)', () => {
     assert.equal(s.avg_calories, 2050);
     assert.equal(s.avg_goal_calories, 2100);
     assert.equal(s.avg_balance_kcal, -50); // ((2000-2200)+(2100-2000))/2
-    assert.equal(s.protein_days_met, 1); // 150<180 no, 190>=180 yes
+    assert.ok(!('protein_days_met' in s), 'protein_days_met removed (D12)');
     assert.equal(s.calorie_days_met, 1); // 2000<=2200 yes, 2100<=2000 no
   });
 
@@ -126,7 +129,7 @@ describe('status and summary (D7)', () => {
     assert.equal(d.calories, 2100);
     assert.equal(d.protein_g, 190);
     assert.equal(d.goal_calories, 2000);
-    assert.equal(d.goal_protein_g, 180);
+    assert.ok(!('goal_protein_g' in d), 'goal_protein_g removed (D12)');
   });
 });
 
@@ -185,23 +188,19 @@ describe('goal fallback (LESSONS: days with no logged rows)', () => {
 
   test('missing day uses goals row effective that day plus ride kJ', () => {
     assert.equal(get('2026-10-22').goal_calories, 3100); // 2600 + round(1.0*500.4)
-    assert.equal(get('2026-10-22').goal_protein_g, 170);
     assert.equal(get('2026-10-21').goal_calories, 2600);
   });
   test('logged row with null goal falls back, newer goals row applies', () => {
     assert.equal(get('2026-10-25').goal_calories, 3021); // 2620 + round(0.5*801.4)
-    assert.equal(get('2026-10-25').goal_protein_g, 180);
     assert.equal(get('2026-10-26').goal_calories, 2620);
   });
   test('explicit goal on the row is kept', () => {
     assert.equal(get('2026-10-20').goal_calories, 2222);
-    assert.equal(get('2026-10-20').goal_protein_g, 175);
   });
   test('no effective goals row leaves goal null', () => {
     const r2 = buildDashboard(base({ rangeDays: 90, goals }));
     const d = r2.nutrition.days.find((x) => x.day === '2026-09-20');
     assert.equal(d.goal_calories, null);
-    assert.equal(d.goal_protein_g, null);
   });
 });
 
@@ -211,8 +210,7 @@ describe('today_rings', () => {
     assert.deepEqual(r.today_rings, {
       calories: 900,
       goal_calories: 2200,
-      protein_g: 60,
-      goal_protein_g: 180,
+      protein_pct: 26.7, // 4*60/900
       logged: true,
     });
   });
@@ -221,8 +219,7 @@ describe('today_rings', () => {
     assert.deepEqual(r.today_rings, {
       calories: 0,
       goal_calories: 3000,
-      protein_g: 0,
-      goal_protein_g: 170,
+      protein_pct: 0,
       logged: false,
     });
   });
@@ -360,13 +357,13 @@ describe('weeks', () => {
     const w = r.nutrition.weeks[0];
     assert.equal(w.days_logged, 2);
     assert.equal(w.avg_calories, 2050);
-    assert.equal(w.avg_protein_g, 170);
+    near(w.avg_protein_pct, 33.2, 0.051); // (600+760)/(2000+2100)
     assert.equal(w.avg_goal_calories, 2100);
-    assert.equal(w.avg_goal_protein_g, 180);
+    assert.ok(!('avg_goal_protein_g' in w) && !('avg_protein_g' in w), 'gram fields removed (D12)');
     const cur = r.nutrition.weeks[1]; // only partial today
     assert.equal(cur.days_logged, 0);
     assert.equal(cur.avg_calories, null);
-    assert.equal(cur.avg_protein_g, null);
+    assert.equal(cur.avg_protein_pct, null);
     assert.equal(cur.avg_kcal_protein, null);
   });
 });
@@ -374,8 +371,8 @@ describe('weeks', () => {
 describe('calendar', () => {
   const r = buildDashboard(base({
     nutrition: [
-      nut('2026-10-25', { calories: 2300, protein_g: 200 }), // over, protein met
-      nut('2026-10-24', { calories: 2000, protein_g: 100 }), // under, protein not met
+      nut('2026-10-25', { calories: 2300, protein_g: 200 }), // over, 40.0 % protein
+      nut('2026-10-24', { calories: 2000, protein_g: 100 }), // under, 20.0 % protein
       nut('2026-10-23', { calories: 1500, logged_complete: false }), // none
       nut('2026-10-26', { calories: 500 }), // today
       nut('2026-08-27', { calories: 2000 }), // outside range, inside 182 days
@@ -388,16 +385,17 @@ describe('calendar', () => {
     assert.equal(r.calendar.days.length, 182);
     assert.equal(r.calendar.days[0].day, r.calendar.start);
   });
-  test('statuses and protein_met', () => {
+  test('statuses and protein_in_range', () => {
     assert.equal(c['2026-10-25'].status, 'over');
-    assert.equal(c['2026-10-25'].protein_met, true);
+    assert.equal(c['2026-10-25'].protein_in_range, true);
+    assert.ok(!('protein_met' in c['2026-10-25']), 'protein_met removed (D12)');
     assert.equal(c['2026-10-24'].status, 'under');
-    assert.equal(c['2026-10-24'].protein_met, false);
+    assert.equal(c['2026-10-24'].protein_in_range, false);
     assert.equal(c['2026-10-23'].status, 'none');
     assert.equal(c['2026-10-26'].status, 'today');
     assert.equal(c['2026-10-22'].status, 'none');
     assert.equal(c['2026-08-27'].status, 'under');
-    assert.equal(typeof c['2026-10-22'].protein_met, 'boolean');
+    assert.equal(typeof c['2026-10-22'].protein_in_range, 'boolean');
   });
 });
 
@@ -433,5 +431,127 @@ describe('ftp', () => {
     assert.deepEqual(r.ftp.tests, []);
     assert.deepEqual(r.ftp.series, []);
     assert.equal(r.ftp.current, null);
+  });
+});
+
+describe('protein as % of calories (D12)', () => {
+  const dayOf = (r, day) => r.nutrition.days.find((x) => x.day === day);
+  const withP = (day, protein_g, calories = 2000, o = {}) => nut(day, { calories, protein_g, ...o });
+
+  test('protein_pct = round(4*protein_g/calories*100, 1) for logged and partial; null for missing/incomplete', () => {
+    const r = buildDashboard(base({
+      nutrition: [
+        withP('2026-10-20', 140), // 28.0
+        withP('2026-10-21', 200), // 40.0
+        withP('2026-10-22', 150.44, 2500), // 24.07 -> 24.1
+        withP('2026-10-23', 150, 1800, { logged_complete: false }),
+        withP('2026-10-26', 60, 900), // partial 26.7
+      ],
+    }));
+    assert.equal(dayOf(r, '2026-10-20').protein_pct, 28.0);
+    assert.equal(dayOf(r, '2026-10-21').protein_pct, 40.0);
+    assert.equal(dayOf(r, '2026-10-22').protein_pct, 24.1);
+    assert.equal(dayOf(r, '2026-10-23').status, 'incomplete');
+    assert.equal(dayOf(r, '2026-10-23').protein_pct, null);
+    assert.equal(dayOf(r, '2026-10-24').status, 'missing');
+    assert.equal(dayOf(r, '2026-10-24').protein_pct, null);
+    assert.equal(dayOf(r, '2026-10-26').status, 'partial');
+    assert.equal(dayOf(r, '2026-10-26').protein_pct, 26.7);
+  });
+
+  test('protein_in_range is inclusive of 35.0 and 40.0; false at 34.9, 40.1 and null', () => {
+    const r = buildDashboard(base({
+      rangeDays: 10,
+      nutrition: [
+        withP('2026-10-19', 175), // 35.0
+        withP('2026-10-20', 200), // 40.0
+        withP('2026-10-21', 174.5), // 34.9
+        withP('2026-10-22', 200.5), // 40.1
+        withP('2026-10-23', 187.5), // 37.5
+        withP('2026-10-24', 150, 1800, { logged_complete: false }), // null
+      ],
+    }));
+    const inr = (d) => dayOf(r, d).protein_in_range;
+    assert.equal(dayOf(r, '2026-10-19').protein_pct, 35.0);
+    assert.equal(inr('2026-10-19'), true);
+    assert.equal(inr('2026-10-20'), true);
+    assert.equal(dayOf(r, '2026-10-21').protein_pct, 34.9);
+    assert.equal(inr('2026-10-21'), false);
+    assert.equal(dayOf(r, '2026-10-22').protein_pct, 40.1);
+    assert.equal(inr('2026-10-22'), false);
+    assert.equal(inr('2026-10-23'), true);
+    assert.equal(inr('2026-10-24'), false);
+    assert.equal(inr('2026-10-25'), false); // missing
+  });
+
+  test('the band comes from the inputs, not a constant', () => {
+    const r = buildDashboard(base({
+      proteinPctMin: 25,
+      proteinPctMax: 30,
+      nutrition: [withP('2026-10-20', 140), withP('2026-10-21', 200)], // 28.0, 40.0
+    }));
+    assert.equal(dayOf(r, '2026-10-20').protein_in_range, true);
+    assert.equal(dayOf(r, '2026-10-21').protein_in_range, false);
+    assert.equal(r.goals.protein_pct_min, 25);
+    assert.equal(r.goals.protein_pct_max, 30);
+  });
+
+  test('summary: weighted avg_protein_pct and protein_days_in_range (logged days only)', () => {
+    const r = buildDashboard(base({
+      nutrition: [
+        withP('2026-10-24', 140, 2000), // 28 %
+        withP('2026-10-25', 300, 3000), // 40 %
+        withP(TODAY, 400, 1000), // partial today: excluded
+      ],
+    }));
+    const s = r.nutrition.summary;
+    near(s.avg_protein_pct, 35.2, 0.051); // (560+1200)/(2000+3000)
+    assert.equal(s.protein_days_in_range, 1);
+    assert.ok(!('protein_days_met' in s));
+  });
+
+  test('weeks: weighted avg_protein_pct, null with 0 logged days; gram averages removed', () => {
+    const r = buildDashboard(base({
+      nutrition: [withP('2026-10-24', 140, 2000), withP('2026-10-25', 300, 3000)],
+    }));
+    const w = r.nutrition.weeks[0];
+    near(w.avg_protein_pct, 35.2, 0.051);
+    assert.ok(!('avg_protein_g' in w));
+    assert.ok(!('avg_goal_protein_g' in w));
+    assert.equal(r.nutrition.weeks[1].avg_protein_pct, null);
+  });
+
+  test('today_rings: protein_pct (0 when not logged); no gram fields', () => {
+    const r = buildDashboard(base({ nutrition: [withP(TODAY, 100, 1000)] }));
+    assert.equal(r.today_rings.protein_pct, 40);
+    assert.ok(!('protein_g' in r.today_rings) && !('goal_protein_g' in r.today_rings));
+    assert.equal(buildDashboard(base()).today_rings.protein_pct, 0);
+  });
+
+  test('goals echo has the band and no protein_g', () => {
+    const r = buildDashboard(base({ goals: [GOAL] }));
+    assert.equal(r.goals.protein_pct_min, 35);
+    assert.equal(r.goals.protein_pct_max, 40);
+    assert.ok(!('protein_g' in r.goals));
+  });
+
+  test('no protein-gram goal or "goal met" key anywhere in the output', () => {
+    const r = buildDashboard(base({
+      goals: [GOAL],
+      rangeDays: 30,
+      nutrition: [withP('2026-10-20', 140), withP('2026-10-25', 200), withP(TODAY, 60, 900)],
+    }));
+    const bad = [];
+    const walk = (v, path) => {
+      if (Array.isArray(v)) return v.forEach((x, i) => walk(x, `${path}[${i}]`));
+      if (v && typeof v === 'object') {
+        for (const [k, x] of Object.entries(v)) {
+          if (/goal_protein_g|protein_days_met|protein_met/.test(k)) bad.push(`${path}.${k}`);
+          walk(x, `${path}.${k}`);
+        }
+      }
+    };
+    walk(JSON.parse(JSON.stringify(r)), '$');
+    assert.deepEqual(bad.slice(0, 5), []);
   });
 });
