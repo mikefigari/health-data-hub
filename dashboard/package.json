@@ -1,0 +1,20 @@
+{
+  "name": "health-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test \"test/unit/**/*.test.mjs\"",
+    "test:integration": "node --test --test-concurrency=1 \"test/integration/**/*.int.test.mjs\""
+  },
+  "dependencies": {
+    "echarts": "5.6.0",
+    "express": "4.21.2",
+    "pg": "8.13.1"
+  },
+  "devDependencies": {
+    "playwright-core": "1.49.1"
+  }
+}
