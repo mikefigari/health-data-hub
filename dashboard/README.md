@@ -134,8 +134,12 @@ Run on the Pi as `mike`, in order. Steps that run repo files come after the
    curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $T" 'http://127.0.0.1:8878/api/dashboard?range=7'
    ```
 
-   Expect `ok` and `200`. A `401` means the token is wrong; a `500` usually
-   means the password or `pg_hba` line (check `docker compose logs`).
+   Expect `ok` and `200`. If `/healthz` fails or the connection is
+   refused, the container exited on the startup read-only/DB check: run
+   `docker compose logs` and look for `Read-only check failed` (wrong
+   `DB_PASSWORD`, missing `pg_hba` line, or migration not applied). A `503` from
+   `/api/dashboard` means the database became unreachable or a query failed
+   while the server was running. A `401` means the token is wrong.
 
 8. Stop the Datawrapper jobs: restart the scheduler so it loads the code without them.
 
