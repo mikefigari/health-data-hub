@@ -103,7 +103,7 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 **Done-when**: `cd dashboard && npm test`
 **Decision rule**: When a visual choice is not specified, follow the dataviz skill if loaded, otherwise MacroFactor's weight-trend look, and log it.
 **Notes**: Shared helpers in charts/common.mjs (frame/grid/timeAxis/valueAxis/axisTooltip) for T7; state.charts Map key to {chart,node}; weight x-axis shows ceil(range/4) future days (4-30) and y-range stretches to include goal and plan-line end; FTP right axis hidden when no W/kg points. Spec's right-axis W/kg follows spec despite dataviz no-dual-axis rule.
-Lesson: When a chart has a projection or reference line, extend the y-range to cover its visible end too, not just the data | count: 1 | applies: chart option builders with plan, forecast or goal lines
+Lesson (logged): When a chart has a projection or reference line, extend the y-range to cover its visible end too, not just the data | count: 1 | applies: chart option builders with plan, forecast or goal lines
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T7: Charts: calories by macro, protein vs goal, logging calendar [model: opus] [risk: normal] [status: done] [deps: T6]
@@ -144,7 +144,7 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 **Done-when**: `cd dashboard && npm test && npm run check:compose && grep -q "network_mode: host" docker-compose.yml && grep -q "read_only: true" docker-compose.yml && ! grep -q "ports:" docker-compose.yml && grep -q "^dashboard.env$" .gitignore`
 **Decision rule**: If `docker compose config` rejects a key, use the closest compose-spec equivalent and log it.
 **Notes**: Added tmpfs /tmp for the read-only root. Env example token is `<run: openssl rand -hex 24>` (rejected by TOKEN_RE, proven by env-example.test.mjs); FRAME_ANCESTORS unquoted (compose parses it correctly).
-Lesson: Prove a placeholder secret fails the real validator (run it or add a test); don't rely on a report saying so | count: 1 | applies: env examples, config templates
+Lesson (logged): Prove a placeholder secret fails the real validator (run it or add a test); don't rely on a report saying so | count: 1 | applies: env examples, config templates
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T11: CI runs dashboard unit + integration tests [model: sonnet] [risk: high] [status: done] [deps: T4]
