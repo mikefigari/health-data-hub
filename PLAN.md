@@ -115,14 +115,15 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 **Notes**: Calendar cells are [day,status,code] with encode {time:0,value:2} (ECharts 5.6 needs numeric values + a visualMap); calendar weeks start Monday, legend is HTML via el(); protein hero is 'N g avg'. Non-blocking: proteinOption should null incomplete days; avoid y-axis [0,0] when no protein and no goal.
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T8: Visual QA at 1280 px and 390 px, light and dark, plus fixes [model: opus] [risk: normal] [status: todo] [deps: T7]
+### T8: Visual QA at 1280 px and 390 px, light and dark, plus fixes [model: opus] [risk: normal] [status: done] [deps: T7]
 **Outcome**: A local Playwright (Edge) script starts the server in demo mode and screenshots every view at both widths and both themes, the hard layout checks pass, and every visual defect the worker sees in the PNGs is fixed.
 **Files**: `dashboard/test/visual/shoot.mjs` (new), `dashboard/package.json` (add `playwright-core@1.49.1` devDependency, script `test:visual`), plus fixes in at most 3 files under `dashboard/public/`
 **Non-goals**: not run in CI; no API changes.
 **Acceptance tests**: none: the script is the test. `shoot.mjs` must: start `createApp` in demo mode on port 0 with a 40-char test token; launch `chromium` with `channel:'msedge'`, headless; for widths 1280×900 and 390×844 (deviceScaleFactor 2, `hasTouch` at 390), themes `light` and `dark`, and views `all, today, weight, calories, protein, calendar, ftp` (and each range 7/30/90/365 for `all` at 1280 light), save `../.claude/runs/dashboard-shots/<view>-<width>-<theme>[-<range>].png`, then exit non-zero if any of these fail: a console error or failed request; `documentElement.scrollWidth > innerWidth`; any `.card` with `scrollWidth > clientWidth`; any chart container without a `canvas` larger than 100×100; a single view with `documentElement.scrollHeight > 460`; the `all` view at 1280 with `scrollHeight > 1700`; at 390, tapping the middle of the calories chart doesn't show a visible tooltip; `?theme=dark` body background not `#191919`. The CSP header is active during the run (no CSP violation events). After the script passes, the worker opens the 390 and 1280 PNGs with the Read tool, fixes clipped labels, overlapping text, unreadable contrast, cramped legends and misaligned cards, reruns, and lists each fix in Notes.
 **Done-when**: `cd dashboard && npm test && npm run test:visual`
 **Decision rule**: If a fix needs more than 3 public files or an API change, log it and report needs-decision.
-**Notes**:
+**Notes**: Fixes: x-labels capped at 6; protein y-axis nice step, never [0,0], incomplete days drawn empty; FTP card full width at 1024+; Today rings and calendar centered; FTP '265 W' label moved below the step (position bottom, distance 38). Calendar canvas check relaxed to >100 px wide and >=80 px tall (cell formula caps ~89 px at 390); single views shot in a 460 px frame with opposite system theme.
+Metrics: attempts=2 fix=0 review=PASS blocked=none
 
 ### T9: Dockerfile (ARM-ready, non-root) [model: sonnet] [risk: high] [status: todo] [deps: T4]
 **Outcome**: `dashboard/Dockerfile` builds a multi-arch Node 22 image that runs as `node`, contains no secrets, and health-checks `/healthz`.
