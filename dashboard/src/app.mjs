@@ -15,7 +15,7 @@ export function tokenMatches(candidate, tokens) {
 
 function redactPath(url) {
   const path = String(url).split('?')[0];
-  return path.replace(/^\/d\/[^/]*/, '/d/[redacted]');
+  return path.replace(/^\/d\/[^/]*/i, '/d/[redacted]');
 }
 
 const SHELL = `<!doctype html>
@@ -28,6 +28,7 @@ const SHELL = `<!doctype html>
 export function createApp({ config, pool, now = () => new Date(), log = console.log }) {
   const app = express();
   app.disable('x-powered-by');
+  app.set('case sensitive routing', true);
   app.locals.pool = pool;
   app.locals.now = now;
 
@@ -55,7 +56,8 @@ export function createApp({ config, pool, now = () => new Date(), log = console.
       'Cross-Origin-Resource-Policy': 'same-origin',
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     });
-    if (req.path.startsWith('/d/') || req.path.startsWith('/api/')) {
+    const lower = req.path.toLowerCase();
+    if (lower.startsWith('/d/') || lower.startsWith('/api/')) {
       res.set('Cache-Control', 'no-store');
     }
     res.on('finish', () => {
@@ -85,5 +87,15 @@ export function createApp({ config, pool, now = () => new Date(), log = console.
   app.get('/api/dashboard', (req, res) => res.status(501).json({ error: 'not implemented' }));
 
   app.use((req, res) => res.status(404).type('text/plain').send('Not found'));
+  // Final error handler: never leak stacks or raw params (they can hold a token).
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, next) => {
+    const status = err && (err.status || err.statusCode);
+    const client = status >= 400 && status < 500;
+    log(`error code=${err?.code ?? 'none'} message=${client ? 'client error' : String(err?.message ?? '')}`);
+    if (res.headersSent) return res.end();
+    if (client) return res.status(status === 400 ? 400 : 404).type('text/plain').send('Not found');
+    res.status(500).type('text/plain').send('Internal error');
+  });
   return app;
 }

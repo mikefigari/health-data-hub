@@ -228,6 +228,7 @@ notion-reporter/node_modules/
 
 # health-mcp
 health-mcp/node_modules/
+dashboard/node_modules/
 health-mcp/.env
 
 # Project-specific ignores
