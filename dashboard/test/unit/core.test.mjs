@@ -98,3 +98,55 @@ describe('TOKENS', () => {
     }
   });
 });
+
+// T16 spec (D12): protein is a share of calories against the 35-40 band; no gram goal, no "goal met".
+import { kpis, cardStat } from '../../public/js/core.mjs';
+import { buildDashboard } from '../../src/aggregate.mjs';
+import { demoInputs } from '../../src/demo.mjs';
+
+describe('protein share (T16)', () => {
+  const data = buildDashboard({ ...demoInputs('2026-10-26'), rangeDays: 30 });
+  const s = data.nutrition.summary;
+  const BAD = /\sg$|goal met|Goal \d+ g|of \d+ g/i;
+
+  test('kpis: fourth tile is the Protein share', () => {
+    const tiles = kpis(data);
+    assert.equal(tiles.length, 4);
+    const t = tiles[3];
+    assert.equal(t.key, 'protein');
+    assert.equal(t.accent, 'protein');
+    assert.equal(t.label, 'Protein share');
+    assert.equal(t.value, `${Math.round(s.avg_protein_pct)}%`);
+    assert.equal(t.unit, 'of calories');
+    assert.equal(t.caption, `In 35\u201340% on ${s.protein_days_in_range} of ${s.days_logged} days`);
+  });
+
+  test('kpis: value is an em dash when there is no average', () => {
+    const empty = { ...data, nutrition: { ...data.nutrition, summary: { ...s, avg_protein_pct: null } } };
+    assert.equal(kpis(empty)[3].value, '\u2014');
+  });
+
+  test('cardStat protein: average %, "of calories avg", target band', () => {
+    assert.deepEqual(cardStat('protein', data), {
+      value: `${Math.round(s.avg_protein_pct)}%`,
+      unit: 'of calories avg',
+      caption: 'Target 35\u201340%',
+    });
+  });
+
+  test('cardStat today: caption shows protein % of calories, no grams', () => {
+    const c = cardStat('today', data);
+    assert.equal(c.caption, `Protein ${Math.round(data.today_rings.protein_pct)}% of calories`);
+    assert.equal(c.value, '900');
+  });
+
+  test('no gram goal or "goal met" text in any KPI or card stat', () => {
+    const texts = [];
+    for (const k of kpis(data)) texts.push(k.label, k.value, k.unit, k.caption);
+    for (const v of ['today', 'weight', 'calories', 'protein', 'calendar', 'ftp']) {
+      const c = cardStat(v, data);
+      texts.push(c.value, c.unit, c.caption);
+    }
+    for (const t of texts) assert.ok(!BAD.test(String(t ?? '').trim()), `gram/goal-met text: ${t}`);
+  });
+});

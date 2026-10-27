@@ -3,7 +3,7 @@
 //
 // Exports pinned:
 //   charts/nutrition.mjs: caloriesOption, proteinOption, caloriesSubtitle(data, {range}) -> string,
-//                         proteinCaption(data) -> 'Goal met N of M days' (from nutrition.summary)
+//                         proteinCaption(data) -> 'In range N of M days' (T16, D12), proteinHero(data) -> {value:'37%', unit, caption}
 //   charts/calendar.mjs:  calendarOption(data, tokens, {width=358, reducedMotion}),
 //                         calendarCellSize(widthPx) -> number (cell pitch in px),
 //                         calendarLegend(tokens) -> [{label, color}, ...]
@@ -27,7 +27,7 @@ import assert from 'node:assert/strict';
 import { TOKENS, fmtInt } from '../../public/js/core.mjs';
 import { buildDashboard } from '../../src/aggregate.mjs';
 import { demoInputs } from '../../src/demo.mjs';
-import { caloriesOption, proteinOption, caloriesSubtitle, proteinCaption } from '../../public/js/charts/nutrition.mjs';
+import { caloriesOption, proteinOption, caloriesSubtitle, proteinCaption, proteinHero } from '../../public/js/charts/nutrition.mjs';
 import { calendarOption, calendarCellSize, calendarLegend } from '../../public/js/charts/calendar.mjs';
 
 const TODAY = '2026-10-26';
@@ -264,61 +264,151 @@ test('caloriesOption: tooltip shows kcal, P/C/F grams and goal', () => {
   assert.ok(tipText(wopt, wi).includes(fmtInt(D[90].nutrition.weeks[wi].avg_calories)));
 });
 
-// ---------- (e) protein ----------
-test('proteinOption: bars meeting goal are full accent, others accent at 0.45', { todo: 'T16 re-spec (D12)' }, () => {
+// ---------- (e) protein (D12: percent of calories vs the 35-40 band, T16) ----------
+const BAND = [data.goals.protein_pct_min, data.goals.protein_pct_max];
+const rowsFor = (d, weekly) => (weekly ? d.nutrition.weeks : d.nutrition.days);
+const pctOfRow = (r, weekly) => (weekly ? r.avg_protein_pct : r.protein_pct);
+const markAreaOf = (opt) => arr(opt.series).find((s) => s.markArea)?.markArea;
+const noBar = (p) => val(p) == null || num(p) === 0;
+
+test('proteinOption: bars are percent; in-band bars full accent, others accent at 0.45', () => {
   const opt = proteinOption(data, tk, { range: 30 });
   const bars = series(opt, 'protein');
   assert.ok(bars, 'series named protein');
   assert.equal(bars.type, 'bar');
   assert.ok(bars.barMaxWidth <= 28);
   assert.equal(bars.data.length, data.nutrition.days.length);
-  let met = 0;
-  let notMet = 0;
+  const firstBar = data.nutrition.days.findIndex((d) => d.status === 'logged');
+  assert.ok(!isZeroRadius(radiusOf(bars, firstBar)), 'rounded bars');
+  let inBand = 0;
+  let outBand = 0;
   data.nutrition.days.forEach((d, i) => {
-    if (d.status !== 'logged') return;
-    const c = colorOf(bars, i);
-    assert.equal(rgbHex(c), tk.protein.toLowerCase(), `accent hue ${d.day}`);
-    if (d.protein_g >= d.goal_protein_g) {
-      met++;
-      assert.ok(opacityOf(bars, i) > 0.98, `met full ${d.day}`);
-    } else {
-      notMet++;
-      assert.ok(Math.abs(opacityOf(bars, i) - 0.45) < 0.02, `not met 0.45 ${d.day}: ${opacityOf(bars, i)}`);
+    if (d.status === 'missing' || d.status === 'incomplete') {
+      assert.ok(noBar(bars.data[i]), `no bar ${d.day}`);
+      return;
     }
-    assert.equal(num(bars.data[i]), d.protein_g);
+    assert.ok(Math.abs(num(bars.data[i]) - d.protein_pct) < 0.06, `bar is protein_pct ${d.day}: ${num(bars.data[i])} vs ${d.protein_pct}`);
+    assert.equal(rgbHex(colorOf(bars, i)), tk.protein.toLowerCase(), `accent hue ${d.day}`);
+    const expected = (d.protein_in_range ? 1 : 0.45) * (d.status === 'partial' ? 0.6 : 1);
+    if (d.protein_in_range) inBand++;
+    else outBand++;
+    assert.ok(Math.abs(opacityOf(bars, i) - expected) < 0.02, `opacity ${d.day} (${d.status}, in range ${d.protein_in_range}): ${opacityOf(bars, i)} vs ${expected}`);
   });
-  assert.ok(met > 0 && notMet > 0, 'demo has both met and unmet days');
+  assert.ok(inBand > 0 && outBand > 0, 'demo has in-band and out-of-band days');
+  assert.ok(data.nutrition.days.some((d) => d.status === 'partial'), 'demo has a partial day');
 });
 
-test('proteinOption: markLine at the goal labelled "180 g"; weekly ranges use weeks', { todo: 'T16 re-spec (D12)' }, () => {
+test('proteinOption: weekly ranges (90, 365) plot avg_protein_pct per week', () => {
+  for (const r of [90, 365]) {
+    const opt = proteinOption(D[r], tk, { range: r });
+    const weeks = D[r].nutrition.weeks;
+    assert.equal(arr(opt.xAxis)[0].data.length, weeks.length);
+    const bars = series(opt, 'protein');
+    weeks.forEach((w, i) => {
+      if (w.days_logged > 0 && w.avg_protein_pct != null) {
+        assert.ok(Math.abs(num(bars.data[i]) - w.avg_protein_pct) < 0.06, `week ${w.week_start}`);
+      } else {
+        assert.ok(noBar(bars.data[i]), `no bar week ${w.week_start}`);
+      }
+    });
+  }
+});
+
+test('proteinOption: markArea band min..max in a 12-18% accent, labelled "35–40%", no gram line', () => {
+  for (const r of [30, 90]) {
+    const opt = proteinOption(D[r], tk, { range: r });
+    const ma = markAreaOf(opt);
+    assert.ok(ma, `markArea present at ${r}`);
+    const [a, b] = arr(ma.data)[0];
+    assert.deepEqual([a.yAxis, b.yAxis].sort((x, y) => x - y), BAND);
+    const fill = ma.itemStyle?.color ?? a.itemStyle?.color;
+    assert.equal(rgbHex(fill), tk.protein.toLowerCase(), 'band uses the protein accent');
+    const al = alphaOf(fill);
+    assert.ok(al >= 0.115 && al <= 0.185, `band alpha ${al}`);
+    assert.ok(JSON.stringify(ma).includes('35–40%'), 'label 35–40%');
+    assert.ok(!arr(opt.series).some((s) => s.markLine), 'no goal markLine');
+    assert.ok(!/\d g\b/.test(JSON.stringify(ma)), 'no gram label');
+  }
+});
+
+test('proteinOption: y-axis 0..max(50, ceil(dataMax/10)*10+10), 10% ticks, % labels', () => {
+  for (const r of [7, 30, 90, 365]) {
+    const opt = proteinOption(D[r], tk, { range: r });
+    const weekly = r > 30;
+    const vals = rowsFor(D[r], weekly)
+      .filter((x) => (weekly ? x.days_logged > 0 : x.status !== 'missing' && x.status !== 'incomplete'))
+      .map((x) => pctOfRow(x, weekly))
+      .filter((v) => v != null);
+    const top = Math.max(...vals);
+    const y = arr(opt.yAxis)[0];
+    assert.equal(y.min, 0);
+    assert.equal(y.max, Math.max(50, Math.ceil(top / 10) * 10 + 10), `max at range ${r} (data max ${top})`);
+    assert.equal(y.interval, 10);
+    assert.equal(y.axisLabel.formatter(30), '30%');
+  }
+});
+
+test('proteinOption: tooltip shows pct, grams and kcal, and the band status', () => {
   const opt = proteinOption(data, tk, { range: 30 });
-  const s = arr(opt.series).find((x) => x.markLine);
-  assert.ok(s, 'a series carries the markLine');
-  const ml = s.markLine;
-  assert.ok(JSON.stringify(ml.data).includes('180'), 'at y = 180');
-  assert.equal(arr(ml.data)[0].yAxis ?? arr(ml.data)[0].value, 180);
-  assert.ok(JSON.stringify(ml).includes('180 g'), 'label 180 g');
-  const w = proteinOption(D[90], tk, { range: 90 });
-  assert.equal(arr(w.xAxis)[0].data.length, D[90].nutrition.weeks.length);
   assertTooltip(opt.tooltip, 'axis', 'protein');
   assertFrame(opt, 'protein');
   assert.equal(proteinOption(data, tk, { range: 30, reducedMotion: true }).animation, false);
+  const seen = new Set();
+  data.nutrition.days.forEach((d, i) => {
+    if (d.status !== 'logged') return;
+    const text = tipText(opt, i);
+    const pctOk = text.includes(`${Math.round(d.protein_pct)}%`) || text.includes(`${d.protein_pct.toFixed(1)}%`);
+    assert.ok(pctOk, `pct in tooltip ${d.day}: ${text}`);
+    assert.match(text, /protein/i);
+    assert.ok(text.includes(`${fmtInt(d.calories)} kcal`), `kcal in tooltip: ${text}`);
+    assert.ok(text.includes(`${Math.round(d.protein_g)} g`) || text.includes(`${d.protein_g.toFixed(1)} g`), `grams in tooltip: ${text}`);
+    let status = 'Above range';
+    if (d.protein_in_range) status = 'In range';
+    else if (d.protein_pct < BAND[0]) status = 'Below range';
+    assert.ok(text.includes(status), `${status} for ${d.day} (${d.protein_pct}): ${text}`);
+    seen.add(status);
+  });
+  assert.ok(seen.has('In range') && seen.has('Below range'), `demo covers in/below: ${[...seen]}`);
+  const wopt = proteinOption(D[90], tk, { range: 90 });
+  assertTooltip(wopt.tooltip, 'axis', 'protein weekly');
+  const wi = D[90].nutrition.weeks.findIndex((x) => x.days_logged > 0 && x.avg_protein_pct != null);
+  const wp = D[90].nutrition.weeks[wi].avg_protein_pct;
+  const wt = tipText(wopt, wi);
+  assert.ok(wt.includes(`${Math.round(wp)}%`) || wt.includes(`${wp.toFixed(1)}%`), wt);
 });
 
-test('proteinOption: tooltip shows grams and goal', { todo: 'T16 re-spec (D12)' }, () => {
-  const opt = proteinOption(data, tk, { range: 30 });
-  const i = data.nutrition.days.findIndex((d) => d.status === 'logged');
-  const d = data.nutrition.days[i];
-  const text = tipText(opt, i);
-  assert.ok(text.includes(String(Math.round(d.protein_g))) || text.includes(d.protein_g.toFixed(1)), text);
-  assert.ok(text.includes('180'), 'goal in tooltip');
+test('proteinCaption / proteinHero: average % and "In range N of M days"', () => {
+  for (const d of [data, D[7], D[90]]) {
+    const s = d.nutrition.summary;
+    const caption = `In range ${s.protein_days_in_range} of ${s.days_logged} days`;
+    assert.equal(proteinCaption(d), caption);
+    const h = proteinHero(d);
+    assert.equal(h.value, `${Math.round(s.avg_protein_pct)}%`);
+    assert.equal(h.caption, caption);
+    assert.ok(!/ g\b/.test(`${h.value} ${h.unit}`), 'no grams in hero');
+  }
 });
 
-test('proteinCaption: "Goal met N of M days" from the summary', { todo: 'T16 re-spec (D12)' }, () => {
-  const s = data.nutrition.summary;
-  assert.equal(proteinCaption(data), `Goal met ${s.protein_days_met} of ${s.days_logged} days`);
-  const s7 = D[7].nutrition.summary;
-  assert.equal(proteinCaption(D[7]), `Goal met ${s7.protein_days_met} of ${s7.days_logged} days`);
+test('no gram goal / "goal met" text in any protein option or caption for demo data', () => {
+  const BAD = /\sg$|goal met|Goal \d+ g|of \d+ g/i;
+  const strings = [];
+  const walk = (v) => {
+    if (typeof v === 'string') strings.push(v);
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (isObj(v)) Object.values(v).forEach(walk);
+  };
+  for (const r of [7, 30, 90, 365]) {
+    const opt = proteinOption(D[r], tk, { range: r });
+    walk(JSON.parse(JSON.stringify(opt)));
+    const y = arr(opt.yAxis)[0];
+    for (const v of [0, 10, 20, 30, 40, 50]) strings.push(String(y.axisLabel.formatter(v)));
+    const n = D[r].nutrition[r > 30 ? 'weeks' : 'days'].length;
+    for (let i = 0; i < n; i++) {
+      strings.push(String(opt.tooltip.formatter(axisParams(opt, i))).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' '));
+    }
+    strings.push(proteinCaption(D[r]), proteinHero(D[r]).caption);
+  }
+  for (const s of strings) assert.ok(!BAD.test(s.trim()), `gram/goal-met text: ${s}`);
 });
 
 // ---------- (f) calendar ----------
@@ -410,4 +500,48 @@ test('calendarCellSize: the ~26-week calendar fits 358 px (and other widths) wit
     assert.ok(cols * (s + gap) <= w, `fits at ${w}: ${cols} * (${s}+${gap})`);
     assert.ok(calendarCellSize(w + 40) >= s, 'monotonic');
   }
+});
+
+// ---------- (g) today protein ring: band target (T16) ----------
+// Band mode API pinned here: ringOption/ringLabel take d = { value: pct, min, max } (percent of calories).
+// Band mode is active when d.min and d.max are numbers; the calorie ring keeps { value, goal }.
+import { ringOption, ringLabel } from '../../public/js/charts/rings.mjs';
+
+const ringGauges = (opt) => arr(opt.series).filter((s) => s.type === 'gauge');
+
+test('protein ring: max = band max, fills to min(pct, max), never draws the over lap', () => {
+  const [lo, hi] = BAND;
+  const logged = { value: data.today_rings.protein_pct, min: lo, max: hi };
+  const g = ringGauges(ringOption(logged, tk, { accent: 'protein' }));
+  assert.equal(g.length, 1);
+  assert.equal(g[0].max, hi);
+  assert.ok(Math.abs(g[0].data[0].value - Math.min(logged.value, hi)) < 1e-9);
+  assert.equal(rgbHex(g[0].progress.itemStyle.color), tk.protein.toLowerCase());
+
+  const above = ringGauges(ringOption({ value: 52, min: lo, max: hi }, tk, { accent: 'protein' }));
+  assert.equal(above.length, 1, 'no second lap above the band');
+  assert.equal(above[0].data[0].value, hi);
+  assert.ok(!JSON.stringify(above).toLowerCase().includes(tk.over.toLowerCase()), 'over color unused');
+
+  const zero = ringGauges(ringOption({ value: 0, min: lo, max: hi }, tk, { accent: 'protein' }));
+  assert.equal(zero.length, 1);
+  assert.equal(zero[0].data[0].value, 0);
+});
+
+test('protein ring: centre label is pct, "of calories", "Target 35\u201340%"', () => {
+  const [lo, hi] = BAND;
+  const p = data.today_rings.protein_pct;
+  assert.deepEqual(ringLabel({ value: p, min: lo, max: hi }, { unit: '%' }), {
+    big: `${Math.round(p)}%`,
+    small: 'of calories',
+    caption: 'Target 35\u201340%',
+  });
+  assert.equal(ringLabel({ value: 37.2, min: lo, max: hi }).big, '37%');
+  assert.equal(ringLabel({ value: 0, min: lo, max: hi }).big, '0%');
+  assert.equal(ringLabel({ value: 0, min: lo, max: hi }).caption, 'Target 35\u201340%');
+});
+
+test('calorie ring is unchanged: goal-based label and over lap', () => {
+  assert.deepEqual(ringLabel({ value: 900, goal: 2620 }, { unit: 'kcal' }), { big: '900', small: 'of 2,620 kcal', caption: '1,720 left' });
+  assert.equal(ringGauges(ringOption({ value: 3000, goal: 2620 }, tk, { accent: 'calories' })).length, 2);
 });
