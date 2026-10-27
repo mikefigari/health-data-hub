@@ -17,18 +17,30 @@ import {
   fmtLongDay,
   fmtTime,
 } from './core.mjs';
+import { ringOption, ringLabel } from './charts/rings.mjs';
+import { weightOption, weightHero } from './charts/weight.mjs';
+import { ftpOption, ftpHero } from './charts/ftp.mjs';
 
-// Chart option builders per card. Placeholders until T6/T7 supply real ones:
-// (data, ctx) => ECharts option, where ctx = { tokens, reducedMotion, theme, range, view }.
+// Chart option builders, keyed by a chart node's data-chart attribute:
+// (data, ctx) => ECharts option, or { empty: message } when there is nothing to draw.
+// ctx = { tokens, reducedMotion, theme, range, view }. Nutrition placeholders until T7.
 const placeholder = (data, ctx) => baseOption(ctx);
+const RINGS = [
+  { key: 'calories', title: 'Calories', unit: 'kcal', value: 'calories', goal: 'goal_calories' },
+  { key: 'protein', title: 'Protein', unit: 'g', value: 'protein_g', goal: 'goal_protein_g' },
+];
+const ringData = (data, r) => ({ value: data?.today_rings?.[r.value], goal: data?.today_rings?.[r.goal] });
 const BUILDERS = {
-  today: placeholder,
-  weight: placeholder,
+  'today:calories': (data, ctx) => ringOption(ringData(data, RINGS[0]), ctx.tokens, { ...ctx, accent: 'calories' }),
+  'today:protein': (data, ctx) => ringOption(ringData(data, RINGS[1]), ctx.tokens, { ...ctx, accent: 'protein' }),
+  weight: (data, ctx) => weightOption(data, ctx.tokens, ctx),
   calories: placeholder,
   protein: placeholder,
   calendar: placeholder,
-  ftp: placeholder,
+  ftp: (data, ctx) => ftpOption(data, ctx.tokens, ctx),
 };
+// Card header hero numbers; other cards use core cardStat().
+const HEROES = { weight: weightHero, ftp: ftpHero };
 
 const root = document.documentElement;
 const app = document.getElementById('app');
@@ -104,8 +116,12 @@ function setRange(r) {
 }
 
 // ---- Full-page states ----
+// Dispose each chart and unobserve its node together, so ResizeObserver entries never leak.
 function disposeCharts() {
-  for (const c of state.charts.values()) c.dispose();
+  for (const { chart, node } of state.charts.values()) {
+    resizeObserver?.unobserve(node);
+    chart.dispose();
+  }
   state.charts.clear();
 }
 
@@ -168,8 +184,41 @@ function kpiTile(k) {
   );
 }
 
+// Today card: two rings side by side, each with an HTML center label.
+function ringsBody(data) {
+  return el(
+    'div',
+    { class: 'rings' },
+    RINGS.map((r) => {
+      const d = ringData(data, r);
+      const label = ringLabel(d, { unit: r.unit });
+      return el(
+        'figure',
+        { class: `ring ring--${r.key}` },
+        el(
+          'div',
+          { class: 'ring-plot' },
+          el('div', { class: 'chart chart--ring', 'data-chart': `today:${r.key}`, role: 'img', 'aria-label': `${r.title}: ${label.big} ${label.small}, ${label.caption}` }),
+          el(
+            'div',
+            { class: 'ring-center', 'aria-hidden': 'true' },
+            el('span', { class: 'ring-big num', text: label.big }),
+            el('span', { class: 'ring-small', text: label.small })
+          )
+        ),
+        el(
+          'figcaption',
+          { class: 'ring-caption' },
+          el('span', { class: `dot dot--${r.key}`, 'aria-hidden': 'true' }),
+          `${r.title} · ${label.caption}`
+        )
+      );
+    })
+  );
+}
+
 function card(c, data) {
-  const stat = cardStat(c.view, data);
+  const stat = (HEROES[c.view] || ((d) => cardStat(c.view, d)))(data);
   const empty = emptyMessage(c.view, data);
   const head = el(
     'div',
@@ -179,7 +228,9 @@ function card(c, data) {
   );
   const body = empty
     ? el('div', { class: 'empty', text: empty })
-    : el('div', { class: 'chart', 'data-view': c.view, role: 'img', 'aria-label': `${c.title} chart` });
+    : c.view === 'today'
+      ? ringsBody(data)
+      : el('div', { class: 'chart', 'data-chart': c.view, role: 'img', 'aria-label': `${c.title} chart` });
   return el(
     'section',
     { class: `card card--${c.view}`, 'aria-label': c.title },
@@ -234,26 +285,34 @@ let resizeObserver = null;
 
 function mountCharts() {
   const echarts = window.echarts;
-  if (!echarts) return;
-  if (!resizeObserver && 'ResizeObserver' in window) {
+  if (echarts && !resizeObserver && 'ResizeObserver' in window) {
     resizeObserver = new ResizeObserver((entries) => {
-      for (const e of entries) state.charts.get(e.target.dataset.view)?.resize();
+      for (const e of entries) state.charts.get(e.target.dataset.chart)?.chart.resize();
     });
   }
-  for (const node of app.querySelectorAll('.chart[data-view]')) {
-    const view = node.dataset.view;
-    const build = BUILDERS[view];
+  for (const node of app.querySelectorAll('.chart[data-chart]')) {
+    const key = node.dataset.chart;
+    const build = BUILDERS[key];
     if (!build) continue;
+    const option = build(state.data, ctxFor(key.split(':')[0]));
+    if (option?.empty) {
+      node.replaceWith(el('div', { class: 'empty', text: option.empty }));
+      continue;
+    }
+    if (!echarts) continue;
     const chart = echarts.init(node, null, { renderer: 'canvas' });
-    chart.setOption(build(state.data, ctxFor(view)), true);
-    state.charts.set(view, chart);
+    chart.setOption(option, true);
+    state.charts.set(key, { chart, node });
     resizeObserver?.observe(node);
   }
 }
 
 function restyleCharts() {
   if (!state.data) return;
-  for (const [view, chart] of state.charts) chart.setOption(BUILDERS[view](state.data, ctxFor(view)), true);
+  for (const [key, { chart }] of state.charts) {
+    const option = BUILDERS[key](state.data, ctxFor(key.split(':')[0]));
+    if (!option?.empty) chart.setOption(option, true);
+  }
 }
 
 // ---- Fetch ----
@@ -314,7 +373,7 @@ document.addEventListener('visibilitychange', () => {
 
 darkMq.addEventListener?.('change', restyleCharts);
 motionMq.addEventListener?.('change', restyleCharts);
-if (!('ResizeObserver' in window)) window.addEventListener('resize', () => state.charts.forEach((c) => c.resize()));
+if (!('ResizeObserver' in window)) window.addEventListener('resize', () => state.charts.forEach(({ chart }) => chart.resize()));
 
 startRefresh();
 load();
