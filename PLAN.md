@@ -207,5 +207,5 @@ Metrics: attempts=2 fix=0 review=PASS blocked=none
 **Done-when**: `cd dashboard && npm test && npm run test:visual`
 **Decision rule**: Keep the existing look (rounded bars, one accent per metric). If the band shading is hard to read in dark mode, raise its alpha and log it. Same cross-task re-spec rule as T15.
 **Notes**: Band alpha 0.14, label in right margin (grid right 52); new core exports fmtPct/proteinBand; ring API takes {value,min,max}. Calendar tooltip shows protein in/outside band.
-Lesson: When a value is compared to a band edge, show it with enough precision that the label agrees with the in-range decision | count: 1 | applies: percent and threshold labels in dashboard UIs
+Lesson (logged): When a value is compared to a band edge, show it with enough precision that the label agrees with the in-range decision | count: 1 | applies: percent and threshold labels in dashboard UIs
 Metrics: attempts=1 fix=0 review=PASS blocked=none
