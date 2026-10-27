@@ -105,14 +105,15 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 Lesson: When a chart has a projection or reference line, extend the y-range to cover its visible end too, not just the data | count: 1 | applies: chart option builders with plan, forecast or goal lines
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T7: Charts: calories by macro, protein vs goal, logging calendar [model: opus] [risk: normal] [status: todo] [deps: T6]
+### T7: Charts: calories by macro, protein vs goal, logging calendar [model: opus] [risk: normal] [status: done] [deps: T6]
 **Outcome**: The calories, protein and calendar cards render rounded stacked bars against a goal step line, protein bars against the 180 g line, and a 26-week adherence calendar heatmap.
 **Files**: `dashboard/public/js/charts/nutrition.mjs` (new; `caloriesOption`, `proteinOption`), `dashboard/public/js/charts/calendar.mjs` (new), `dashboard/public/js/app.mjs` (mount them), `dashboard/test/unit/charts-nutrition.test.mjs` (new)
 **Non-goals**: no new API fields; if one seems needed, report needs-decision.
 **Acceptance tests**: `dashboard/test/unit/charts-nutrition.test.mjs` (demo data): (a) for range 7 and 30, `caloriesOption` uses `nutrition.days` (one category per day); for 90 and 365 it uses `nutrition.weeks` and the subtitle says "weekly average"; (b) four stacked `bar` series protein/carbs/fat/other in their accents (other in `ink3`), where only the top non-zero segment of each bar gets `borderRadius [6,6,0,0]` (assert per data item), `barMaxWidth` ≤ 28; (c) goal = `line` with `step:'middle'`, dashed, `ink2`, no symbols; (d) `missing`/`incomplete` days render as a placeholder bar at goal height with `decal` or ≤ 0.15 opacity, labelled in the tooltip "Not logged" / "Marked incomplete"; the `partial` day renders at 0.6 opacity with tooltip suffix "so far"; (e) `proteinOption`: bars meeting goal use the full `protein` accent, others the accent at 0.45; `markLine` at `goal_protein_g` labelled `180 g`; header caption `Goal met N of M days`; (f) `calendarOption`: an ECharts `calendar` covering `calendar.start..end` with a `heatmap`, cell `borderRadius` ≥ 3 and gap via `borderWidth` ≥ 2 in the `card` color, categorical `visualMap` pieces `under`→calories, `over`→over, `today`→ outlined, `none`→track, and legend text "At or under goal / Over goal / Not logged"; `cellSize` is chosen by a pure `calendarCellSize(widthPx)` so 26 weeks fit 358 px (390 minus gutters) without overflow; (g) all tooltips `triggerOn` include `click` and `confine:true`; tooltip text shows kcal, P/C/F grams and goal.
 **Done-when**: `cd dashboard && npm test`
 **Decision rule**: Prefer fewer series and a quieter look when unsure; log it.
-**Notes**:
+**Notes**: Calendar cells are [day,status,code] with encode {time:0,value:2} (ECharts 5.6 needs numeric values + a visualMap); calendar weeks start Monday, legend is HTML via el(); protein hero is 'N g avg'. Non-blocking: proteinOption should null incomplete days; avoid y-axis [0,0] when no protein and no goal.
+Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T8: Visual QA at 1280 px and 390 px, light and dark, plus fixes [model: opus] [risk: normal] [status: todo] [deps: T7]
 **Outcome**: A local Playwright (Edge) script starts the server in demo mode and screenshots every view at both widths and both themes, the hard layout checks pass, and every visual defect the worker sees in the PNGs is fixed.
