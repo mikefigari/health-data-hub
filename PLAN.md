@@ -47,7 +47,7 @@ Branch: orch/nutrition-dashboard
 **Done-when**: `cd health-mcp && TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test npm run test:integration`
 **Decision rule**: If `freshInstall()` and `upgradeInstall()` end states differ because `schema.sql` lacks something the baseline has, match the migration's end state in `schema.sql` and note it. If an existing ledger/migration-list test enumerates migration files, update its expected list and note it.
 **Notes**: dashboardPool() sets the test password via the guarded admin pool and caps max at 3; workout_summary granted per column (no title); migration ledger entry added to schema.sql.
-Lesson: Test pools for a role with CONNECTION LIMIT n must set max <= n, or parallel queries fail intermittently | testdb.mjs role pools, dashboard integration tests
+Lesson (logged): Test pools for a role with CONNECTION LIMIT n must set max <= n, or parallel queries fail intermittently | testdb.mjs role pools, dashboard integration tests
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T2: Dashboard server skeleton: config, token gate, framing headers [model: sonnet] [risk: high] [status: done] [deps: none]
@@ -58,7 +58,7 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 **Done-when**: `cd dashboard && npm test`
 **Decision rule**: Anything not listed about headers follows OWASP secure-headers defaults, except that X-Frame-Options must stay absent. Log the choice.
 **Notes**: Extra headers beyond spec: img-src 'self' data:, form-action/object-src 'none', CORP same-origin, Permissions-Policy. /api/dashboard returns 501 behind the Bearer guard until T4. Case-sensitive routing on; error handler logs err.code only (message for 5xx).
-Lesson: Redact secrets and apply path-based headers with case-insensitive matching (Express 4 routes are case-insensitive by default) | count: 1 | applies: any Express path-token redaction or path-prefix middleware
+Lesson (logged): Redact secrets and apply path-based headers with case-insensitive matching (Express 4 routes are case-insensitive by default) | count: 1 | applies: any Express path-token redaction or path-prefix middleware
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T3: Pure aggregation + deterministic demo data [model: sonnet] [risk: normal] [status: done] [deps: T2]
@@ -79,7 +79,7 @@ Metrics: attempts=3 fix=0 review=none blocked=none
 **Done-when**: `cd dashboard && npm test && TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test npm run test:integration`
 **Decision rule**: If a needed column is not granted in T1, do not widen grants here. Report needs-decision.
 **Notes**: statement_timeout fixed at 5000 in server.mjs (QUERY_TIMEOUT_MS removed from config); fetchInputs pulls nutrition/rides for 400 days and all weights; /api/dashboard caches successes 60 s per range+demo; pool 'error' listener logs code+message only.
-Lesson: When a task hardcodes a value that used to come from config, remove or rewire the config key in the same task so no setting is left that does nothing | dashboard config.mjs, any env-parsing module
+Lesson (logged): When a task hardcodes a value that used to come from config, remove or rewire the config key in the same task so no setting is left that does nothing | dashboard config.mjs, any env-parsing module
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T5: Frontend shell: layout, theme tokens, range toggle, states [model: opus] [risk: normal] [status: needs-decision] [deps: T4]
