@@ -371,7 +371,7 @@ describe('weeks', () => {
 describe('calendar', () => {
   const r = buildDashboard(base({
     nutrition: [
-      nut('2026-10-25', { calories: 2300, protein_g: 200 }), // over, 40.0 % protein
+      nut('2026-10-25', { calories: 2300, protein_g: 230 }), // over, 40.0 % protein
       nut('2026-10-24', { calories: 2000, protein_g: 100 }), // under, 20.0 % protein
       nut('2026-10-23', { calories: 1500, logged_complete: false }), // none
       nut('2026-10-26', { calories: 500 }), // today

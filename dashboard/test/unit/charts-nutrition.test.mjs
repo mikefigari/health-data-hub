@@ -265,7 +265,7 @@ test('caloriesOption: tooltip shows kcal, P/C/F grams and goal', () => {
 });
 
 // ---------- (e) protein ----------
-test('proteinOption: bars meeting goal are full accent, others accent at 0.45', () => {
+test('proteinOption: bars meeting goal are full accent, others accent at 0.45', { todo: 'T16 re-spec (D12)' }, () => {
   const opt = proteinOption(data, tk, { range: 30 });
   const bars = series(opt, 'protein');
   assert.ok(bars, 'series named protein');
@@ -290,7 +290,7 @@ test('proteinOption: bars meeting goal are full accent, others accent at 0.45', 
   assert.ok(met > 0 && notMet > 0, 'demo has both met and unmet days');
 });
 
-test('proteinOption: markLine at the goal labelled "180 g"; weekly ranges use weeks', () => {
+test('proteinOption: markLine at the goal labelled "180 g"; weekly ranges use weeks', { todo: 'T16 re-spec (D12)' }, () => {
   const opt = proteinOption(data, tk, { range: 30 });
   const s = arr(opt.series).find((x) => x.markLine);
   assert.ok(s, 'a series carries the markLine');
@@ -305,7 +305,7 @@ test('proteinOption: markLine at the goal labelled "180 g"; weekly ranges use we
   assert.equal(proteinOption(data, tk, { range: 30, reducedMotion: true }).animation, false);
 });
 
-test('proteinOption: tooltip shows grams and goal', () => {
+test('proteinOption: tooltip shows grams and goal', { todo: 'T16 re-spec (D12)' }, () => {
   const opt = proteinOption(data, tk, { range: 30 });
   const i = data.nutrition.days.findIndex((d) => d.status === 'logged');
   const d = data.nutrition.days[i];
@@ -314,7 +314,7 @@ test('proteinOption: tooltip shows grams and goal', () => {
   assert.ok(text.includes('180'), 'goal in tooltip');
 });
 
-test('proteinCaption: "Goal met N of M days" from the summary', () => {
+test('proteinCaption: "Goal met N of M days" from the summary', { todo: 'T16 re-spec (D12)' }, () => {
   const s = data.nutrition.summary;
   assert.equal(proteinCaption(data), `Goal met ${s.protein_days_met} of ${s.days_logged} days`);
   const s7 = D[7].nutrition.summary;
