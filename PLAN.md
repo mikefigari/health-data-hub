@@ -82,7 +82,7 @@ Metrics: attempts=3 fix=0 review=none blocked=none
 Lesson: When a task hardcodes a value that used to come from config, remove or rewire the config key in the same task so no setting is left that does nothing | dashboard config.mjs, any env-parsing module
 Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T5: Frontend shell: layout, theme tokens, range toggle, states [model: opus] [risk: normal] [status: todo] [deps: T4]
+### T5: Frontend shell: layout, theme tokens, range toggle, states [model: opus] [risk: normal] [status: needs-decision] [deps: T4]
 **Outcome**: `/d/<token>` renders a responsive card grid with header KPI tiles, a 7D/30D/90D/1Y segmented toggle, light/dark theming, and loading/empty/error states, fed by `/api/dashboard`.
 **Files**: `dashboard/public/index.html` (new), `dashboard/public/css/app.css` (new), `dashboard/public/js/core.mjs` (new: tokens, formatters, URL params), `dashboard/public/js/app.mjs` (new: fetch, DOM, chart mounting, resize), `dashboard/test/unit/core.test.mjs` (new). Also wire static routes in `dashboard/src/app.mjs`: `/assets/*` → `public/`, `/assets/vendor/echarts.min.js` → `echarts/dist/echarts.min.js`, `Cache-Control: public, max-age=3600` (that is a 6th file; allowed because it is a 3-line route addition).
 **Non-goals**: no chart option builders beyond empty placeholders (T6/T7).
