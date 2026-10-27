@@ -5,6 +5,8 @@ const DAY_MS = 86400000;
 const TREND_ALPHA = 0.1;
 const TREND_GAP_DAYS = 30;
 const CALENDAR_DAYS = 182;
+// Food logging began here; the calendar never reaches further back.
+const LOGGING_START = '2026-10-25';
 const MAX_PROJECTION_DAYS = 1095;
 
 const ms = (d) => Date.parse(`${d}T00:00:00Z`);
@@ -186,10 +188,12 @@ export function buildDashboard(inputs) {
     });
   }
 
-  // Calendar: 182 days ending today.
-  const calStart = addDays(today, -(CALENDAR_DAYS - 1));
+  // Calendar: up to 182 days ending today, starting no earlier than LOGGING_START.
+  const calStartRaw = addDays(today, -(CALENDAR_DAYS - 1));
+  const loggingStart = inputs.loggingStart === undefined ? LOGGING_START : inputs.loggingStart; // null = no floor (demo)
+  const calStart = loggingStart && calStartRaw < loggingStart ? loggingStart : calStartRaw;
   const calDays = [];
-  for (let i = 0; i < CALENDAR_DAYS; i++) {
+  for (let i = 0; i <= diffDays(today, calStart); i++) {
     const d = evalDay(addDays(calStart, i));
     let status = 'none';
     if (d.day === today) status = 'today';
@@ -200,6 +204,14 @@ export function buildDashboard(inputs) {
       protein_in_range: Boolean(d.counted && inBand(pctOf(d.p, d.calories))),
     });
   }
+
+  // Cycling energy (kJ) from power-meter rides.
+  const kjSum = (from) => {
+    let t = 0;
+    for (let i = 0; i <= diffDays(today, from); i++) t += kjByDay.get(addDays(from, i)) || 0;
+    return r0(t);
+  };
+  const cycling = { today_kj: kjSum(today), week_kj: kjSum(addDays(today, -6)), range_kj: kjSum(rangeStart) };
 
   // Today rings.
   const td = evalDay(today);
@@ -271,6 +283,7 @@ export function buildDashboard(inputs) {
       plan_kg_per_week: planKgPerWeek,
     },
     today_rings,
+    cycling,
     weight: {
       scale: weights.filter((w) => w.day >= rangeStart).map((w) => ({ day: w.day, kg: r2(w.kg) })),
       trend: trendInRange.map((p) => ({ day: p.day, kg: r2(p.kg) })),
