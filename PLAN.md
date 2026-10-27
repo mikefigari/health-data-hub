@@ -177,11 +177,12 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 **Notes**: Per D11 also `git rm`-ed the ten T14 files (importers of the removed settings). Dropped FTP_WKG_CSV_PATH and NUTRITION_CHARTS_DIR as dead config. test_scheduler_wrappers.py needed no change.
 Metrics: attempts=3 fix=0 review=PASS blocked=none
 
-### T14: Delete Datawrapper modules, builders, tests and doc [model: haiku] [risk: normal] [status: doing] [deps: T13]
+### T14: Delete Datawrapper modules, builders, tests and doc [model: haiku] [risk: normal] [status: done] [deps: T13]
 **Outcome**: The Datawrapper integration code is gone from the repo and the Python suite passes.
 **Files**: `git rm` exactly: `health_data_hub/integrations/datawrapper/__init__.py`, `health_data_hub/integrations/datawrapper/ftp_wkg_charts.py`, `health_data_hub/integrations/datawrapper/nutrition_charts.py`, `health_data_hub/etl/transform/build_ftp_wkg.py`, `health_data_hub/etl/transform/build_nutrition_charts.py`, `tests/test_build_ftp_wkg.py`, `tests/test_build_nutrition_charts.py`, `tests/test_ftp_wkg_charts.py`, `tests/test_ftp_wkg_charts_robustness.py`, `docs/ftp_wkg_charts.md`. This is over 5 files, but it is a fixed-list mechanical deletion with no edits.
 **Non-goals**: no edits to any other file; `.claude/runs/*` stay.
 **Acceptance tests**: none: deletion.
 **Done-when**: `venv/Scripts/python -m pytest -q && [ -z "$(git ls-files health_data_hub/integrations/datawrapper health_data_hub/etl/transform/build_ftp_wkg.py health_data_hub/etl/transform/build_nutrition_charts.py docs/ftp_wkg_charts.md)" ] && ! grep -rqi --include=*.py "datawrapper" health_data_hub tests scheduler_all.py`
 **Decision rule**: If any remaining file imports a deleted module, report needs-decision rather than editing it.
-**Notes**:
+**Notes**: No worker dispatched: all ten files were already removed in T13 (D11); kit-gate T14 passes.
+Metrics: attempts=0 fix=0 review=none blocked=none
