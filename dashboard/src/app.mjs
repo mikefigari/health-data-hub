@@ -1,5 +1,8 @@
 import crypto from 'node:crypto';
 import express from 'express';
+import { buildDashboard } from './aggregate.mjs';
+import { demoInputs } from './demo.mjs';
+import { fetchInputs } from './queries.mjs';
 
 const sha256 = (s) => crypto.createHash('sha256').update(String(s), 'utf8').digest();
 
@@ -84,7 +87,45 @@ export function createApp({ config, pool, now = () => new Date(), log = console.
     next();
   };
   app.use('/api', apiGuard);
-  app.get('/api/dashboard', (req, res) => res.status(501).json({ error: 'not implemented' }));
+
+  const CACHE_MS = 60_000;
+  const RANGES = new Set(['7', '30', '90', '365']);
+  const cache = new Map();
+  const laToday = () =>
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Los_Angeles',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(now());
+
+  app.get('/api/dashboard', async (req, res) => {
+    const rawRange = req.query.range === undefined ? '30' : req.query.range;
+    if (typeof rawRange !== 'string' || !RANGES.has(rawRange)) {
+      return res.status(400).json({ error: 'bad_range' });
+    }
+    const rangeDays = Number(rawRange);
+    const demo = config.DEMO || req.query.demo === '1';
+    const key = `${rangeDays}|${demo}`;
+    const hit = cache.get(key);
+    if (hit && Date.now() - hit.at < CACHE_MS) return res.status(200).json(hit.body);
+    try {
+      let inputs;
+      if (demo) {
+        const today = laToday();
+        inputs = { ...demoInputs(today), today };
+      } else {
+        inputs = await fetchInputs(pool);
+      }
+      const body = buildDashboard({ ...inputs, rangeDays, planKgPerWeek: config.PLAN_KG_PER_WEEK });
+      cache.set(key, { at: Date.now(), body });
+      return res.status(200).json(body);
+    } catch (err) {
+      // Code and message only: never rows, params or query text.
+      log(`error code=${err?.code ?? 'none'} message=${String(err?.message ?? '')}`);
+      return res.status(503).json({ error: 'unavailable' });
+    }
+  });
 
   app.use((req, res) => res.status(404).type('text/plain').send('Not found'));
   // Final error handler: never leak stacks or raw params (they can hold a token).

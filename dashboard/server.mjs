@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { loadConfig } from './src/config.mjs';
 import { createApp } from './src/app.mjs';
+import { checkReadOnly } from './src/queries.mjs';
 
 let config;
 try {
@@ -20,8 +21,17 @@ const pool = config.DEMO
       password: config.DB_PASSWORD,
       max: 3,
       idleTimeoutMillis: 30000,
-      statement_timeout: Number(config.QUERY_TIMEOUT_MS),
+      statement_timeout: 5000,
     });
+
+if (pool) {
+  try {
+    await checkReadOnly(pool);
+  } catch (err) {
+    console.error(`Read-only check failed (${err?.code ?? 'none'}): ${err?.message}. Exiting.`);
+    process.exit(1);
+  }
+}
 
 const app = createApp({ config, pool });
 
