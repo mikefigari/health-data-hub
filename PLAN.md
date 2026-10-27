@@ -135,16 +135,18 @@ Metrics: attempts=2 fix=0 review=PASS blocked=none
 **Notes**: node:22-bookworm-slim, NODE_ENV=production, EXPOSE 8878, JSON-form HEALTHCHECK with --timeout=5s. Image not built here (docker build not allowlisted); first build happens on the Pi.
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T10: docker-compose + env example + compose check [model: sonnet] [risk: high] [status: doing] [deps: T9]
+### T10: docker-compose + env example + compose check [model: sonnet] [risk: high] [status: done] [deps: T9]
 **Outcome**: `dashboard/docker-compose.yml` runs the service locked down on host networking with env from a file outside git, and `npm run check:compose` validates it.
 **Files**: `dashboard/docker-compose.yml` (new), `dashboard/dashboard.env.example` (new), `dashboard/scripts/check-compose.mjs` (new; spawns `docker compose -f docker-compose.yml config -q` with `DASHBOARD_ENV_FILE=./dashboard.env.example`), `dashboard/.gitignore` (new: `dashboard.env`, `node_modules/`), `dashboard/package.json` (script `check:compose`)
 **Non-goals**: do not touch any other compose file or the Pi.
 **Acceptance tests**: none: config; the compose check plus these greps are the test. Compose must have: `name: health-dashboard`; service `health-dashboard` with `build: .`; `network_mode: host`; `env_file` = `${DASHBOARD_ENV_FILE:-/home/mike/.config/health-dashboard/dashboard.env}`; `restart: unless-stopped`; `read_only: true`; `cap_drop: [ALL]`; `security_opt: [no-new-privileges:true]`; `mem_limit: 256m`; json-file logging `max-size: 5m`, `max-file: 2`; no `ports:` key. The env example lists `DASHBOARD_TOKENS`, `DB_HOST=127.0.0.1`, `DB_PORT=5432`, `DB_NAME=health_pi`, `DB_USER=dashboard_ro`, `DB_PASSWORD=`, `PORT=8878`, `HOST=127.0.0.1`, `FRAME_ANCESTORS`, `PLAN_KG_PER_WEEK=0.75`, `DASHBOARD_DEMO=false`, with placeholder values only.
 **Done-when**: `cd dashboard && npm test && npm run check:compose && grep -q "network_mode: host" docker-compose.yml && grep -q "read_only: true" docker-compose.yml && ! grep -q "ports:" docker-compose.yml && grep -q "^dashboard.env$" .gitignore`
 **Decision rule**: If `docker compose config` rejects a key, use the closest compose-spec equivalent and log it.
-**Notes**:
+**Notes**: Added tmpfs /tmp for the read-only root. Env example token is `<run: openssl rand -hex 24>` (rejected by TOKEN_RE, proven by env-example.test.mjs); FRAME_ANCESTORS unquoted (compose parses it correctly).
+Lesson: Prove a placeholder secret fails the real validator (run it or add a test); don't rely on a report saying so | count: 1 | applies: env examples, config templates
+Metrics: attempts=2 fix=1 review=FIX blocked=none
 
-### T11: CI runs dashboard unit + integration tests [model: sonnet] [risk: high] [status: todo] [deps: T4]
+### T11: CI runs dashboard unit + integration tests [model: sonnet] [risk: high] [status: doing] [deps: T4]
 **Outcome**: The existing `node` job in `kit-ci.yml` also installs and tests `dashboard/`, reusing its Postgres 18 service.
 **Files**: `.github/workflows/kit-ci.yml`
 **Non-goals**: no visual test in CI; no change to the python job.
