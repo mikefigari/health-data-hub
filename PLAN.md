@@ -71,14 +71,16 @@ Metrics: attempts=2 fix=1 review=FIX blocked=none
 **Notes**: Rounding: full precision, rounded on output only; to_goal_kg = current trend minus target (positive = above goal); -0 normalised to 0. Spec assertion fixed via D9.
 Metrics: attempts=3 fix=0 review=none blocked=none
 
-### T4: SQL inputs + `/api/dashboard` endpoint + read-only startup check [model: sonnet] [risk: high] [status: todo] [deps: T1, T3]
+### T4: SQL inputs + `/api/dashboard` endpoint + read-only startup check [model: sonnet] [risk: high] [status: done] [deps: T1, T3]
 **Outcome**: `GET /api/dashboard?range=30` (Bearer token) returns `buildDashboard` output from health_pi via `dashboard_ro`, or from `demoInputs` when `?demo=1` or `DASHBOARD_DEMO=true`, and the server refuses to start if its DB session is not read-only.
 **Files**: `dashboard/src/queries.mjs` (new; `fetchInputs(pool)`), `dashboard/src/app.mjs` (route + 60 s in-memory cache keyed by range+demo), `dashboard/server.mjs` (pool per `health-mcp/db.mjs:1-18` with `max: 3`, `statement_timeout: 5000`; startup check), `dashboard/test/integration/queries.int.test.mjs` (new; imports `../../../health-mcp/test/helpers/testdb.mjs`), `dashboard/test/unit/api.test.mjs` (new)
 **Non-goals**: no new tables or views; no writes; no caching on disk.
 **Acceptance tests**: Unit `api.test.mjs` (fake pool): (a) `range` accepts `7|30|90|365`, default 30; anything else → 400 `{"error":"bad_range"}`; (b) `demo=1` and `DASHBOARD_DEMO=true` never call the pool; (c) two calls within 60 s query the pool once; (d) a pool error → 503 `{"error":"unavailable"}` and the log line holds no row values; (e) `today` comes from `SELECT (now() AT TIME ZONE 'America/Los_Angeles')::date`. Integration `queries.int.test.mjs` (freshInstall + fixture rows inserted by the admin pool, read as `dashboardPool()`): (f) a ride with `start_time` 2026-10-21 05:30 UTC (naive) adds its kJ to LA day 2026-10-20 (LESSONS: Strava start_time is UTC; copy the expression at `health_data_hub/db/migrations/2026-11_02_nutrition_daily_view.sql:74-79`); only `sport_type='Ride' AND device_watts AND kj>0` count; (g) the full JSON from `/api/dashboard` contains none of the fixture's food item name, meal JSON, ride title or `daily_physical_state.notes` strings; (h) `checkReadOnly(pool)` resolves for `dashboard_ro` and rejects for the admin role (`default_transaction_read_only` off), and `server.mjs` exits 1 on rejection.
 **Done-when**: `cd dashboard && npm test && TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test npm run test:integration`
 **Decision rule**: If a needed column is not granted in T1, do not widen grants here. Report needs-decision.
-**Notes**:
+**Notes**: statement_timeout fixed at 5000 in server.mjs (QUERY_TIMEOUT_MS removed from config); fetchInputs pulls nutrition/rides for 400 days and all weights; /api/dashboard caches successes 60 s per range+demo; pool 'error' listener logs code+message only.
+Lesson: When a task hardcodes a value that used to come from config, remove or rewire the config key in the same task so no setting is left that does nothing | dashboard config.mjs, any env-parsing module
+Metrics: attempts=2 fix=1 review=FIX blocked=none
 
 ### T5: Frontend shell: layout, theme tokens, range toggle, states [model: opus] [risk: normal] [status: todo] [deps: T4]
 **Outcome**: `/d/<token>` renders a responsive card grid with header KPI tiles, a 7D/30D/90D/1Y segmented toggle, light/dark theming, and loading/empty/error states, fed by `/api/dashboard`.
