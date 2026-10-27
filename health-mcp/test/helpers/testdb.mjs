@@ -40,8 +40,8 @@ function testUrl() {
   return u;
 }
 
-function makePool(u) {
-  const pool = new pg.Pool({ connectionString: u.toString(), max: 4 });
+function makePool(u, max = 4) {
+  const pool = new pg.Pool({ connectionString: u.toString(), max });
   pools.add(pool);
   return pool;
 }
@@ -142,7 +142,7 @@ export async function dashboardPool() {
   await adminPool().query(`ALTER ROLE dashboard_ro WITH PASSWORD '${DASHBOARD_TEST_PASSWORD}'`);
   u.username = 'dashboard_ro';
   u.password = DASHBOARD_TEST_PASSWORD;
-  return makePool(u);
+  return makePool(u, 3);
 }
 
 export async function writerPool() {
