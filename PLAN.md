@@ -167,16 +167,17 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 **Notes**: Rotate steps point to runbook step 6 (keeps the git pull < migration < docker compose up order). README TODO at dashboard/README.md:146: unit name `health-hub.service` (pi/README.md, the task) vs `health-data-hub.service` (repo unit file, health-mcp/README.md:92); confirm on the Pi.
 Metrics: attempts=1 fix=0 review=none blocked=none
 
-### T13: Unschedule the Datawrapper jobs [model: sonnet] [risk: normal] [status: doing] [deps: T8]
+### T13: Unschedule the Datawrapper jobs [model: sonnet] [risk: normal] [status: done] [deps: T8]
 **Outcome**: `scheduler_all.py` no longer imports or schedules `ftp_wkg_charts` / `nutrition_charts`, and settings no longer read `DATAWRAPPER_*`.
 **Files**: `scheduler_all.py` (remove `:46-47`, `:109-125`, and the job registrations at `:178-196`), `health_data_hub/config/settings.py` (remove `:100-103` DATAWRAPPER block), `tests/test_scheduler_wrappers.py` (drop the cases for the removed wrappers only)
 **Non-goals**: do not touch the other jobs' schedules or wrappers.
 **Acceptance tests**: none: removal; the existing scheduler wrapper tests for the remaining jobs must still pass.
 **Done-when**: `venv/Scripts/python -m pytest -q && ! grep -qi "datawrapper" scheduler_all.py health_data_hub/config/settings.py`
 **Decision rule**: If another module imports a removed setting, remove that use only if it is Datawrapper code (deleted in T14); otherwise report needs-decision.
-**Notes**:
+**Notes**: Per D11 also `git rm`-ed the ten T14 files (importers of the removed settings). Dropped FTP_WKG_CSV_PATH and NUTRITION_CHARTS_DIR as dead config. test_scheduler_wrappers.py needed no change.
+Metrics: attempts=3 fix=0 review=PASS blocked=none
 
-### T14: Delete Datawrapper modules, builders, tests and doc [model: haiku] [risk: normal] [status: todo] [deps: T13]
+### T14: Delete Datawrapper modules, builders, tests and doc [model: haiku] [risk: normal] [status: doing] [deps: T13]
 **Outcome**: The Datawrapper integration code is gone from the repo and the Python suite passes.
 **Files**: `git rm` exactly: `health_data_hub/integrations/datawrapper/__init__.py`, `health_data_hub/integrations/datawrapper/ftp_wkg_charts.py`, `health_data_hub/integrations/datawrapper/nutrition_charts.py`, `health_data_hub/etl/transform/build_ftp_wkg.py`, `health_data_hub/etl/transform/build_nutrition_charts.py`, `tests/test_build_ftp_wkg.py`, `tests/test_build_nutrition_charts.py`, `tests/test_ftp_wkg_charts.py`, `tests/test_ftp_wkg_charts_robustness.py`, `docs/ftp_wkg_charts.md`. This is over 5 files, but it is a fixed-list mechanical deletion with no edits.
 **Non-goals**: no edits to any other file; `.claude/runs/*` stay.
