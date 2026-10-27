@@ -11,3 +11,4 @@ One row per kit-run run. Written by kit-run; don't edit by hand.
 | 2026-10-26 04:37 | orch/weekly-nutrition-review | 5/5 | - | 40% | 2/1 | - | 21m | review PASS -> merge gate | https://github.com/mikefigari/health-data-hub/pull/4 |
 | 2026-10-27 02:20 | orch/nutrition-dashboard | 4/14 | - | 0% | 3/0 | - | 34m | decision | - |
 | 2026-10-27 03:30 | orch/nutrition-dashboard | 14/14 | - | 36% | 5/1 | - | 69m | review PASS -> merge gate | https://github.com/mikefigari/health-data-hub/pull/7 |
+| 2026-10-27 07:05 | orch/nutrition-dashboard | 16/16 | - | 38% | 5/1 | - | 212m | review PASS -> merge gate | https://github.com/mikefigari/health-data-hub/pull/7 |
