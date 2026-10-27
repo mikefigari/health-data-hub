@@ -14,6 +14,8 @@ export function loadConfig(env = process.env) {
     DASHBOARD_DEMO,
     FRAME_ANCESTORS = 'https://www.notion.so https://notion.so https://*.notion.site',
     PLAN_KG_PER_WEEK = '0.75',
+    PROTEIN_PCT_MIN = '35',
+    PROTEIN_PCT_MAX = '40',
   } = env;
   const DEMO = DASHBOARD_DEMO === 'true';
 
@@ -30,6 +32,14 @@ export function loadConfig(env = process.env) {
   if (!Number.isFinite(planKg) || planKg <= 0) {
     throw new Error('PLAN_KG_PER_WEEK must be a positive number.');
   }
+  const proteinMin = PROTEIN_PCT_MIN.trim() === '' ? NaN : Number(PROTEIN_PCT_MIN);
+  const proteinMax = PROTEIN_PCT_MAX.trim() === '' ? NaN : Number(PROTEIN_PCT_MAX);
+  if (!Number.isFinite(proteinMin) || !Number.isFinite(proteinMax)) {
+    throw new Error('PROTEIN_PCT_MIN and PROTEIN_PCT_MAX must be numbers.');
+  }
+  if (proteinMin < 0 || proteinMax > 100 || proteinMin >= proteinMax) {
+    throw new Error('PROTEIN_PCT_MIN and PROTEIN_PCT_MAX must satisfy 0 <= min < max <= 100.');
+  }
 
   return {
     PORT,
@@ -43,5 +53,7 @@ export function loadConfig(env = process.env) {
     DEMO,
     FRAME_ANCESTORS,
     PLAN_KG_PER_WEEK: planKg,
+    PROTEIN_PCT_MIN: proteinMin,
+    PROTEIN_PCT_MAX: proteinMax,
   };
 }

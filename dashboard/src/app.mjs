@@ -123,7 +123,12 @@ export function createApp({ config, pool, now = () => new Date(), log = console.
       } else {
         inputs = await fetchInputs(pool);
       }
-      const body = buildDashboard({ ...inputs, rangeDays, planKgPerWeek: config.PLAN_KG_PER_WEEK });
+      const body = buildDashboard({
+        ...inputs,
+        rangeDays, planKgPerWeek: config.PLAN_KG_PER_WEEK,
+        proteinPctMin: config.PROTEIN_PCT_MIN,
+        proteinPctMax: config.PROTEIN_PCT_MAX,
+      });
       cache.set(key, { at: Date.now(), body });
       return res.status(200).json(body);
     } catch (err) {

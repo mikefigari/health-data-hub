@@ -46,7 +46,7 @@ export function demoInputs(today) {
     const goal = 2620 + (kjOf.get(day) || 0);
     if (i === 3 || i === 12 || i === 40) continue; // missing days
     if (i === 0) {
-      nutrition.push({ day, calories: 900, protein_g: 70, carbs_g: 90, fat_g: 30, goal_calories: goal, goal_protein_g: 180, logged_complete: true });
+      nutrition.push({ day, calories: 900, protein_g: 70, carbs_g: 90, fat_g: 30, goal_calories: goal, logged_complete: true });
       continue;
     }
     const incomplete = i === 5 || i === 20;
@@ -55,7 +55,7 @@ export function demoInputs(today) {
     else if (i === 2) calories = goal + 250; // over
     else calories = goal + (rng() < 0.35 ? 100 + rng() * 400 : -(50 + rng() * 450));
     calories = Math.round(calories);
-    const protein = Math.round((140 + rng() * 60) * 10) / 10;
+    const protein = Math.round(((calories * (27 + rng() * 17)) / 400) * 10) / 10;
     const fat = Math.round((60 + rng() * 40) * 10) / 10;
     const carbs = Math.round(Math.max((calories * 0.9 - protein * 4 - fat * 9) / 4, 20) * 10) / 10;
     nutrition.push({
@@ -65,7 +65,6 @@ export function demoInputs(today) {
       carbs_g: carbs,
       fat_g: fat,
       goal_calories: goal,
-      goal_protein_g: 180,
       logged_complete: !incomplete,
     });
   }

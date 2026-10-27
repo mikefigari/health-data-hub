@@ -64,6 +64,10 @@ export function buildDashboard(inputs) {
   const today = inputs.today;
   const rangeDays = inputs.rangeDays;
   const planKgPerWeek = num(inputs.planKgPerWeek);
+  const pMin = num(inputs.proteinPctMin) ?? 35;
+  const pMax = num(inputs.proteinPctMax) ?? 40;
+  const pctOf = (p, cal) => (cal > 0 ? Math.round(((4 * (p ?? 0)) / cal) * 1000) / 10 : null);
+  const inBand = (pct) => pct != null && pct >= pMin && pct <= pMax;
   const rangeStart = addDays(today, -(rangeDays - 1));
 
   const goals = (inputs.goals || [])
@@ -72,7 +76,6 @@ export function buildDashboard(inputs) {
       target: num(g.target_weight_kg),
       base: num(g.base_calories),
       factor: num(g.cycling_kj_factor) ?? 0,
-      protein: num(g.protein_g),
     }))
     .sort((a, b) => (a.from < b.from ? -1 : 1));
 
@@ -86,9 +89,9 @@ export function buildDashboard(inputs) {
 
   const fallbackGoals = (day) => {
     const g = effectiveGoal(goals, day);
-    if (!g) return { cal: null, protein: null };
+    if (!g) return { cal: null };
     const cal = g.base == null ? null : g.base + Math.round(g.factor * (kjByDay.get(day) || 0));
-    return { cal, protein: g.protein };
+    return { cal };
   };
 
   // Per-day evaluation at full precision.
@@ -113,7 +116,6 @@ export function buildDashboard(inputs) {
       c: row ? num(row.carbs_g) : null,
       f: row ? num(row.fat_g) : null,
       goalCal: (row ? num(row.goal_calories) : null) ?? fb.cal,
-      goalProt: (row ? num(row.goal_protein_g) : null) ?? fb.protein,
     };
   };
 
@@ -130,6 +132,7 @@ export function buildDashboard(inputs) {
 
   const dayRows = days.map((d) => {
     const has = d.status !== 'missing';
+    const pct = d.status === 'logged' || d.status === 'partial' ? pctOf(d.p, d.calories) : null;
     const k = kcalParts(d);
     return {
       day: d.day,
@@ -143,19 +146,25 @@ export function buildDashboard(inputs) {
       kcal_fat: has ? r0(k.kf) : null,
       kcal_other: has ? r0(k.ko) : null,
       goal_calories: r0(d.goalCal),
-      goal_protein_g: r1(d.goalProt),
+      protein_pct: pct,
+      protein_in_range: inBand(pct),
     };
   });
 
+  const weightedPct = (list) => {
+    const cal = list.reduce((a, d) => a + d.calories, 0);
+    if (!list.length || cal <= 0) return null;
+    return r1((list.reduce((a, d) => a + 4 * (d.p ?? 0), 0) / cal) * 100);
+  };
   const logged = days.filter((d) => d.status === 'logged');
   const withGoalCal = logged.filter((d) => d.goalCal != null);
-  const withGoalProt = logged.filter((d) => d.goalProt != null);
   const summary = {
     days_logged: logged.length,
     avg_calories: r0(avg(logged.map((d) => d.calories))),
     avg_goal_calories: r0(avg(withGoalCal.map((d) => d.goalCal))),
     avg_balance_kcal: r0(avg(withGoalCal.map((d) => d.calories - d.goalCal))),
-    protein_days_met: withGoalProt.filter((d) => (d.p ?? 0) >= d.goalProt).length,
+    avg_protein_pct: weightedPct(logged),
+    protein_days_in_range: logged.filter((d) => inBand(pctOf(d.p, d.calories))).length,
     calorie_days_met: withGoalCal.filter((d) => d.calories <= d.goalCal).length,
   };
 
@@ -168,13 +177,12 @@ export function buildDashboard(inputs) {
       week_start: ws,
       days_logged: inWeek.length,
       avg_calories: r0(avg(inWeek.map((d) => d.calories))),
-      avg_protein_g: r1(avg(inWeek.map((d) => d.p ?? 0))),
+      avg_protein_pct: weightedPct(inWeek),
       avg_kcal_protein: r0(avg(parts.map((k) => k.kp))),
       avg_kcal_carbs: r0(avg(parts.map((k) => k.kc))),
       avg_kcal_fat: r0(avg(parts.map((k) => k.kf))),
       avg_kcal_other: r0(avg(parts.map((k) => k.ko))),
       avg_goal_calories: r0(avg(inWeek.filter((d) => d.goalCal != null).map((d) => d.goalCal))),
-      avg_goal_protein_g: r1(avg(inWeek.filter((d) => d.goalProt != null).map((d) => d.goalProt))),
     });
   }
 
@@ -189,7 +197,7 @@ export function buildDashboard(inputs) {
     calDays.push({
       day: d.day,
       status,
-      protein_met: Boolean(d.counted && d.goalProt != null && (d.p ?? 0) >= d.goalProt),
+      protein_in_range: Boolean(d.counted && inBand(pctOf(d.p, d.calories))),
     });
   }
 
@@ -199,8 +207,7 @@ export function buildDashboard(inputs) {
   const today_rings = {
     calories: todayLogged ? r0(td.calories) : 0,
     goal_calories: r0(td.goalCal),
-    protein_g: todayLogged ? r1(td.p ?? 0) : 0,
-    goal_protein_g: r1(td.goalProt),
+    protein_pct: todayLogged ? pctOf(td.p, td.calories) : 0,
     logged: todayLogged,
   };
 
@@ -259,7 +266,8 @@ export function buildDashboard(inputs) {
     goals: {
       target_weight_kg: target,
       base_calories: goalNow ? goalNow.base : null,
-      protein_g: goalNow ? goalNow.protein : null,
+      protein_pct_min: pMin,
+      protein_pct_max: pMax,
       plan_kg_per_week: planKgPerWeek,
     },
     today_rings,
