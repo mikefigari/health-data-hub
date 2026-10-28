@@ -168,6 +168,14 @@ export function sevenDayAvg(data) {
   return { avg: mean(win.map((d) => d.calories).filter(isNum)), goal: mean(goals), n: win.length };
 }
 
+// Secondary line under the live weight: the smoothed trend and its change over the range.
+function weightCaption(w, range) {
+  const parts = [];
+  if (isNum(w.current_trend_kg)) parts.push(`Trend ${fmtKg(w.current_trend_kg)}`);
+  if (isNum(w.range_change_kg)) parts.push(`${fmtSigned(w.range_change_kg, 'kg')} in ${rangeLong(range)}`);
+  return parts.join(' · ');
+}
+
 export function kpis(data) {
   const w = data?.weight || {};
   const s = data?.nutrition?.summary || {};
@@ -191,10 +199,10 @@ export function kpis(data) {
     {
       key: 'weight',
       accent: 'weight',
-      label: 'Trend weight',
-      value: fmtKg(w.current_trend_kg),
+      label: 'Weight',
+      value: fmtKg(w.current_kg),
       unit: 'kg',
-      caption: isNum(w.range_change_kg) ? `${fmtSigned(w.range_change_kg, 'kg')} in ${rangeLong(range)}` : 'Not enough weigh-ins',
+      caption: weightCaption(w, range) || 'Not enough weigh-ins',
     },
     { key: 'goal', accent: 'weight', label: 'To goal', value: goalValue, unit: goalUnit, caption: goalCaption },
     {
@@ -248,9 +256,9 @@ export function cardStat(view, data) {
     }
     case 'weight':
       return {
-        value: fmtKg(w.current_trend_kg),
-        unit: 'kg trend',
-        caption: isNum(w.range_change_kg) ? `${fmtSigned(w.range_change_kg, 'kg')} in ${rangeLong(range)}` : `Last ${rangeLong(range)}`,
+        value: fmtKg(w.current_kg),
+        unit: 'kg',
+        caption: weightCaption(w, range) || `Last ${rangeLong(range)}`,
       };
     case 'calories':
       return {

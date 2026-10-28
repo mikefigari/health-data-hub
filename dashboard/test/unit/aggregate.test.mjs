@@ -324,9 +324,19 @@ describe('projection', () => {
     assert.ok(r.weight.weekly_rate_kg < 0);
     const cur = r.weight.projection.current_rate_date;
     assert.match(cur, /^\d{4}-\d{2}-\d{2}$/);
-    const expected = Math.ceil(((r.weight.current_trend_kg - 100) / -r.weight.weekly_rate_kg) * 7);
+    const expected = Math.ceil(((r.weight.current_kg - 100) / -r.weight.weekly_rate_kg) * 7);
     assert.ok(Math.abs(diffDays(cur, '2026-10-26') - expected) <= 2);
     assert.ok(diffDays(cur, '2026-10-26') <= 1095);
+  });
+
+  test('to_goal_kg uses the latest scale reading, not the smoothed trend', () => {
+    const r = buildDashboard(base({
+      goals: [GOAL],
+      weights: [{ day: '2026-10-24', kg: 116 }, { day: '2026-10-25', kg: 116 }, { day: '2026-10-26', kg: 114 }],
+    }));
+    assert.equal(r.weight.current_kg, 114);
+    assert.ok(r.weight.current_trend_kg > 114);
+    assert.equal(r.weight.to_goal_kg, 14);
   });
 
   test('current_rate_date null when gaining', () => {

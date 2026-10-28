@@ -242,7 +242,8 @@ export function buildDashboard(inputs) {
 
   const goalNow = effectiveGoal(goals, today);
   const target = goalNow ? goalNow.target : null;
-  const toGoal = currentTrend != null && target != null ? currentTrend - target : null;
+  // Distance to goal and the projections run off the latest scale reading, not the smoothed trend.
+  const toGoal = last && target != null ? last.kg - target : null;
   let planDate = null;
   let currentRateDate = null;
   if (toGoal != null && toGoal > 0 && last) {
@@ -288,6 +289,7 @@ export function buildDashboard(inputs) {
     weight: {
       scale: weights.filter((w) => w.day >= rangeStart).map((w) => ({ day: w.day, kg: r2(w.kg) })),
       trend: trendInRange.map((p) => ({ day: p.day, kg: r2(p.kg) })),
+      current_kg: last ? r2(last.kg) : null,
       current_trend_kg: r2(currentTrend),
       last_weigh_in_day: last ? last.day : null,
       days_since_weigh_in: last ? diffDays(today, last.day) : null,

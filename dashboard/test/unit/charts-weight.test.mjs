@@ -10,7 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { TOKENS } from '../../public/js/core.mjs';
+import { TOKENS, fmtKg } from '../../public/js/core.mjs';
 import { buildDashboard } from '../../src/aggregate.mjs';
 import { demoInputs } from '../../src/demo.mjs';
 import { ringOption, ringLabel } from '../../public/js/charts/rings.mjs';
@@ -214,10 +214,11 @@ test('weightOption: fewer than 2 weigh-ins -> empty message', () => {
   assert.deepEqual(weightOption(none, tk, { range: 7 }), msg);
 });
 
-test('weightHero: trend kg with range change', () => {
+test('weightHero: live scale kg, with trend and range change in the caption', () => {
   const h = weightHero(data);
-  assert.equal(h.value, '116.0');
-  assert.equal(h.unit, 'kg trend');
+  assert.equal(h.value, fmtKg(data.weight.current_kg));
+  assert.equal(h.unit, 'kg');
+  assert.ok(h.caption.includes(`Trend ${fmtKg(data.weight.current_trend_kg)}`), h.caption);
   assert.ok(h.caption.includes(`${MINUS}0.6 kg`), h.caption);
   assert.ok(h.caption.includes('30 days'), h.caption);
 });
