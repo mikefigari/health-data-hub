@@ -13,8 +13,15 @@ import {
   cardStat,
   emptyMessage,
   fmtDay,
+  fmtKg,
   fmtLongDay,
+  fmtMonthYear,
+  fmtSigned,
   fmtTime,
+  goalProgress,
+  groundRules,
+  ROAD_NOTE,
+  timelineNote,
 } from './core.mjs';
 import { ringOption, ringLabel } from './charts/rings.mjs';
 import { weightOption, weightHero } from './charts/weight.mjs';
@@ -37,7 +44,7 @@ const RINGS = [
     key: 'protein',
     title: 'Protein',
     unit: '%',
-    data: (t, g) => ({ value: t.protein_pct, min: g.protein_pct_min, max: g.protein_pct_max }),
+    data: (t, g) => ({ value: t.protein_pct, grams: t.protein_g, min: g.protein_pct_min, max: g.protein_pct_max }),
   },
 ];
 const ringData = (data, r) => r.data(data?.today_rings || {}, data?.goals || {});
@@ -196,11 +203,99 @@ function kpiTile(k) {
   return el(
     'div',
     { class: 'kpi' },
-    el('div', { class: 'label' }, el('span', { class: `dot dot--${k.accent}`, 'aria-hidden': 'true' }), k.label),
+    el('div', { class: 'label' }, el('span', { class: `dot dot--${k.accent}`, 'aria-hidden': 'true' }), el('span', { class: 'tag', text: k.id }), k.label),
     el('div', { class: 'stat' }, el('span', { class: 'value num', text: k.value }), k.unit ? el('span', { class: 'unit', text: k.unit }) : null),
     el('div', { class: 'caption', text: k.caption })
   );
 }
+
+// ---- Weight-plan card bodies (plain HTML; the numbers come from data.weight.road) ----
+function progressBar(data) {
+  const p = goalProgress(data);
+  if (!p) return null;
+  const fill = el('span');
+  fill.style.width = `${(p.pct * 100).toFixed(1)}%`;
+  return el(
+    'div',
+    { class: 'progress' },
+    el('div', { class: 'bar', role: 'img', 'aria-label': `${Math.round(p.pct * 100)}% of the way to goal` }, fill),
+    el('div', { class: 'bar-labels' }, el('span', { text: p.left }), el('span', { text: p.right }))
+  );
+}
+
+function timelineBody(data) {
+  const { windows } = data.weight.road;
+  return el(
+    'div',
+    { class: 'plain' },
+    windows.length
+      ? el(
+          'div',
+          { class: 'win' },
+          windows.map((w) =>
+            el(
+              'div',
+              { class: w.key === 'likely' ? 'win-cell win-cell--mid' : 'win-cell' },
+              el('div', { class: 'k', text: w.label }),
+              el('div', { class: 'v num', text: fmtMonthYear(w.date) }),
+              el('div', { class: 's num', text: `${w.kg_per_week.toFixed(2)} kg/wk` })
+            )
+          )
+        )
+      : null,
+    el('p', { class: 'caption', text: timelineNote(data) })
+  );
+}
+
+function weeklyBody(data) {
+  const cell = (text, cls) => el('td', { class: cls, text });
+  return el(
+    'div',
+    { class: 'plain' },
+    el(
+      'table',
+      { class: 'tbl' },
+      el('thead', {}, el('tr', {}, ['Week ending', 'Trend', 'Change', 'Weigh-ins'].map((h, i) => el('th', { class: i ? 'n' : null, text: h })))),
+      el(
+        'tbody',
+        {},
+        data.weight.road.weeks.map((w) =>
+          el(
+            'tr',
+            { class: w.trend_kg == null ? 'dim' : null },
+            cell(fmtDay(w.week_end)),
+            cell(fmtKg(w.trend_kg), 'n num'),
+            cell(w.change_kg == null ? '—' : fmtSigned(w.change_kg), 'n num'),
+            cell(String(w.weigh_ins || 'none'), 'n num')
+          )
+        )
+      )
+    ),
+    el('p', { class: 'caption', text: 'Three or four morning weigh-ins a week are plenty. More doesn’t make the trend more accurate.' })
+  );
+}
+
+function milestonesBody(data) {
+  return el(
+    'ul',
+    { class: 'finish' },
+    data.weight.road.finish_lines.map((f) =>
+      el(
+        'li',
+        { class: f.reached ? 'is-done' : null },
+        el('div', { class: 'w num', text: `${fmtKg(f.kg)} kg` }),
+        el('div', { class: 'd', text: f.reached ? 'Reached' : `About ${fmtMonthYear(f.date)}` })
+      )
+    )
+  );
+}
+
+function rulesBody(data) {
+  return el('ul', { class: 'rules' }, groundRules(data).map((t) => el('li', { text: t })));
+}
+
+// Non-chart card bodies, keyed by view.
+const BODIES = { timeline: timelineBody, weekly: weeklyBody, milestones: milestonesBody, rules: rulesBody };
 
 // Today card: two rings side by side, each with an HTML center label.
 function ringsBody(data) {
@@ -257,23 +352,27 @@ function card(c, data) {
   const head = el(
     'div',
     { class: 'card-head' },
-    el('h2', { class: 'label' }, el('span', { class: `dot dot--${c.accent}`, 'aria-hidden': 'true' }), c.title),
+    el('h2', { class: 'label' }, el('span', { class: `dot dot--${c.accent}`, 'aria-hidden': 'true' }), el('span', { class: 'tag', text: String(c.n) }), c.title),
     single && c.ranged ? rangeToggle() : null
   );
   const body = empty
     ? el('div', { class: 'empty', text: empty })
     : c.view === 'today'
       ? ringsBody(data)
-      : el('div', { class: 'chart', 'data-chart': c.view, role: 'img', 'aria-label': `${c.title} chart` });
+      : BODIES[c.view]
+        ? BODIES[c.view](data)
+        : el('div', { class: 'chart', 'data-chart': c.view, role: 'img', 'aria-label': `${c.title} chart` });
   const legend = !empty && c.view === 'calendar' ? calendarLegendEl() : null;
   return el(
     'section',
     { class: `card card--${c.view}`, 'aria-label': c.title },
     head,
-    el('div', { class: 'stat' }, el('span', { class: 'value num', text: stat.value }), stat.unit ? el('span', { class: 'unit', text: stat.unit }) : null),
+    stat.value ? el('div', { class: 'stat' }, el('span', { class: 'value num', text: stat.value }), stat.unit ? el('span', { class: 'unit', text: stat.unit }) : null) : null,
     stat.caption ? el('div', { class: 'caption', text: stat.caption }) : null,
     subtitle ? el('div', { class: 'caption', text: subtitle }) : null,
+    !empty && c.view === 'weight' ? progressBar(data) : null,
     body,
+    !empty && c.view === 'weight' ? el('div', { class: 'caption caption--note', text: ROAD_NOTE }) : null,
     legend
   );
 }
