@@ -15,7 +15,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(HERE, '../../../.claude/runs/dashboard-shots');
 const TOKEN = crypto.randomBytes(30).toString('base64url'); // 40 chars of [A-Za-z0-9_-]
 
-const VIEWS = ['all', 'today', 'weight', 'calories', 'protein', 'calendar', 'ftp'];
+const VIEWS = ['all', 'today', 'weight', 'timeline', 'weekly', 'milestones', 'calories', 'protein', 'calendar', 'ftp', 'rules'];
 const THEMES = ['light', 'dark'];
 const RANGES = [7, 30, 90, 365];
 const SIZES = [
@@ -25,7 +25,7 @@ const SIZES = [
 // Single-panel views are Notion embeds of 460 px or less (A3). They stretch to fill their
 // frame (min-height: 100vh), so they are rendered in a 460 px tall frame at each width.
 const EMBED_HEIGHT = 460;
-const ALL_MAX_HEIGHT_1280 = 1700;
+const ALL_MAX_HEIGHT_1280 = 2400;
 const DARK_BG = 'rgb(25, 25, 25)'; // #191919
 const CALENDAR_MIN_HEIGHT = 80;
 
