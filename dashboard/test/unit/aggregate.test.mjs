@@ -58,7 +58,7 @@ const near = (a, b, tol = 0.011) => assert.ok(Math.abs(a - b) <= tol, `${a} not 
 // Reference EMA (alpha 0.1) over a gap-free daily series of kg values.
 function refTrend(kgs) {
   const out = [kgs[0]];
-  for (let i = 1; i < kgs.length; i++) out.push(out[i - 1] + 0.1 * (kgs[i] - out[i - 1]));
+  for (let i = 1; i < kgs.length; i++) out.push(out[i - 1] + (1 - Math.exp(-1 / 7)) * (kgs[i] - out[i - 1]));
   return out;
 }
 
@@ -228,14 +228,13 @@ describe('today_rings', () => {
 });
 
 describe('weight trend', () => {
-  test('EMA with gap interpolation: 100.00, 100.10, 100.29', () => {
+  test('smoothing weighs a reading by the days since the last one: 100.00, 100.50', () => {
     const r = buildDashboard(base({
       weights: [{ day: '2026-10-20', kg: 100.0 }, { day: '2026-10-22', kg: 102.0 }],
     }));
     assert.deepEqual(r.weight.trend, [
       { day: '2026-10-20', kg: 100.0 },
-      { day: '2026-10-21', kg: 100.1 },
-      { day: '2026-10-22', kg: 100.29 },
+      { day: '2026-10-22', kg: 100.5 },
     ]);
     assert.deepEqual(r.weight.scale, [
       { day: '2026-10-20', kg: 100.0 },
@@ -243,10 +242,10 @@ describe('weight trend', () => {
     ]);
     assert.equal(r.weight.last_weigh_in_day, '2026-10-22');
     assert.equal(r.weight.days_since_weigh_in, 4);
-    assert.equal(r.weight.current_trend_kg, 100.29);
+    assert.equal(r.weight.current_trend_kg, 100.5);
   });
 
-  test('gap over 30 days restarts the trend', () => {
+  test('after a long gap the next reading takes over the trend', () => {
     const r = buildDashboard(base({
       rangeDays: 365,
       weights: [{ day: '2026-08-01', kg: 100.0 }, { day: '2026-10-20', kg: 90.0 }],
