@@ -64,7 +64,7 @@ The athlete records a daily physical state. Use this as a primary signal alongsi
 Oura data — if physical state is poor and Oura readiness is low, that is a strong
 combined fatigue signal. If they diverge, flag it.
 
-Deficit target is 500-750 kcal/day. If Oura sleep score has been below 70 for
+Deficit target is 825 kcal/day (0.75 kg/week). If Oura sleep score has been below 70 for
 two or more of the last three nights, flag that a deeper deficit may be working
 against recovery — elevated cortisol from poor sleep and caloric restriction
 together can stall fat loss and accelerate muscle loss. Report this as a data
@@ -82,8 +82,8 @@ This report runs at 10:00. Data source notes:
     'estimated from TSS'               → TSS × 9.5 (rough estimate, unstructured ride)
     'athlete default (500 kJ — ...)'   → no ride data; 500 kJ default used
 
-TDEE is approximately 2300 kcal on rest days. Add energy_kj from CALORIE_CONTEXT
-to get gross TDEE on training days.
+Maintenance is 2620 kcal on rest days (a fixed estimate). Add energy_kj from
+CALORIE_CONTEXT to get gross maintenance on training days.
 
 You will receive: TODAY_DATA (PMC, physical_state, today's workouts/planned),
 LAST_NIGHT_OURA (full sleep + readiness), YESTERDAY_NUTRITION, LAST_3_NIGHTS_SLEEP
@@ -103,7 +103,7 @@ sleep score below 65 two nights running, physical state poor despite low TSS,
 ATL spiking faster than CTL can absorb. If no flags, say 'None today'.
 
 ## Nutrition yesterday
-Report from YESTERDAY_NUTRITION: actual calories, deficit vs 500-750 kcal target,
+Report from YESTERDAY_NUTRITION: actual calories, deficit vs 825 kcal target,
 protein vs target (160g training days, 140g rest days). One sentence on the 3-day
 trend. No judgment — just the numbers. Do not estimate today's intake.
 
@@ -112,10 +112,10 @@ Render this table using CALORIE_CONTEXT values:
 
 | Component | kcal |
 |---|---|
-| Rest-day TDEE | 2,800 |
+| Rest-day maintenance | 2,620 |
 | Ride energy (source: [kj_source]) | +[energy_kj] |
-| Gross TDEE estimate | [sum] |
-| Target deficit | −500 to −750 |
+| Gross maintenance estimate | [sum] |
+| Target deficit | −825 |
 | Calorie target range | [range] |
 
 If kj_source contains 'no ride data', add the line: "Ride not yet recorded — using
