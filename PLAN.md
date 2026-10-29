@@ -27,7 +27,7 @@ Branch: orch/goal-1900-maintenance
 - New env vars: none. Defaults change only for `WEEKLY_LOSS_TARGET_KG` and `PLAN_KG_PER_WEEK`; README env tables are updated in the same task.
 - Report needs-decision only for: user-visible behavior not covered above, data loss, security, cost, or a spec test that looks wrong.
 ## Tasks
-### T1: Migration 2026-11_04 adds maintenance_calories, the 2026-10-28 goal row and the view column [model: sonnet] [risk: high] [status: todo] [deps: none]
+### T1: Migration 2026-11_04 adds maintenance_calories, the 2026-10-28 goal row and the view column [model: sonnet] [risk: high] [status: needs-decision] [deps: none]
 **Outcome**: After the migration, `nutrition_goals` has `maintenance_calories` (2620 on both rows), a new row effective 2026-10-28 has `base_calories` 1900, and `nutrition_daily.maintenance_calories` equals `maintenance_calories + round(factor * ride kJ)` for food_log days.
 **Files**: `health_data_hub/db/migrations/2026-11_04_maintenance_calories.sql` (new; copy the guard/ledger pattern at `health_data_hub/db/migrations/2026-11_03_dashboard_role.sql:1-16`), `health_data_hub/db/migrations/2026-11_04_maintenance_calories.down.sql` (new), `health_data_hub/db/schema.sql` (mirror the table, seed rows and view at `:620-697` and the ledger insert at `:719`), `health-mcp/test/integration/maintenance_calories.int.test.mjs` (new; copy the harness use in `health-mcp/test/integration/nutrition_daily_view.int.test.mjs`)
 **Non-goals**: no edit to the 2026-10-25 row's `base_calories`, `cycling_kj_factor`, `protein_g`, `target_weight_kg`; no change to the legacy table; no change to existing migrations.
