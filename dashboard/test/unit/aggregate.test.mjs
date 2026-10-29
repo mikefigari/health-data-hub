@@ -41,6 +41,7 @@ function nut(day, o = {}) {
     carbs_g: 200,
     fat_g: 70,
     goal_calories: 2200,
+      baseline_kcal: 2620,
     goal_protein_g: 180,
     logged_complete: true,
     ...o,
@@ -210,6 +211,7 @@ describe('today_rings', () => {
     assert.deepEqual(r.today_rings, {
       calories: 900,
       goal_calories: 2200,
+      baseline_kcal: 2620,
       protein_pct: 26.7, // 4*60/900
       protein_g: 60,
       logged: true,
@@ -220,6 +222,7 @@ describe('today_rings', () => {
     assert.deepEqual(r.today_rings, {
       calories: 0,
       goal_calories: 3000,
+      baseline_kcal: 3020,
       protein_pct: 0,
       protein_g: 0,
       logged: false,

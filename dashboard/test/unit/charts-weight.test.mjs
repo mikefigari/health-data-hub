@@ -251,3 +251,13 @@ test('ftpHero: W/kg with FTP watts', () => {
   assert.equal(h.unit, 'W/kg');
   assert.ok(h.caption.includes('265 W'), h.caption);
 });
+
+test('calorie ring with baseline: green to goal, orange to baseline, strength lap beyond', () => {
+  const tk = TOKENS.light;
+  const gauges = (v) => ringOption({ value: v, goal: 1900, baseline: 2620 }, tk, { accent: 'calories' }).series;
+  assert.equal(gauges(1500).length, 2);
+  assert.equal(gauges(2300)[1].data[0].value, 1900);
+  assert.equal(gauges(2900).length, 3);
+  assert.deepEqual(ringLabel({ value: 1870, goal: 1900, baseline: 2620 }), { big: '1,870', small: 'of 1,900 kcal', caption: '750 deficit' });
+  assert.equal(ringLabel({ value: 2700, goal: 1900, baseline: 2620 }).caption, '80 surplus');
+});

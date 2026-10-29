@@ -39,7 +39,7 @@ const RINGS = [
     key: 'calories',
     title: 'Calories',
     unit: 'kcal',
-    data: (t) => ({ value: t.calories, goal: t.goal_calories }),
+    data: (t) => ({ value: t.calories, goal: t.goal_calories, baseline: t.baseline_kcal }),
   },
   {
     key: 'protein',
