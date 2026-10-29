@@ -1,5 +1,6 @@
 # Plan: 1900 kcal goal from 2026-10-28, with a stored maintenance figure used by daily and weekly deficit math
 Branch: orch/goal-1900-maintenance
+> **Shelved (2026-10-28).** The goal change shipped by hand with an interim fixed maintenance of 2620 kcal + ride kJ in code (no migration, no `maintenance_calories` column). T1's spec test was removed because its migration was never built; Q7 in DECISIONS_NEEDED is moot. Revisit only if maintenance should be stored in `nutrition_goals`.
 ## Context
 - Stack: Postgres (`health_data_hub/db/`), Node 22 ESM services `health-mcp/`, `notion-reporter/`, `dashboard/`. Unit tests: `cd <service> && npm test`. Integration: `cd <service> && TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test npm run test:integration` (private test cluster, never the Pi; shared harness `health-mcp/test/helpers/testdb.mjs`). Python tests: `venv/Scripts/python -m pytest -q`.
 - Today: `goal_calories = base_calories + cycling_kj_factor * powered Ride kJ` (`health_data_hub/db/schema.sql:620-697`, view `nutrition_daily`). The weekly review uses `goal_calories` as maintenance (`notion-reporter/src/utils/nutritionWeek.mjs:48`), so with a 1900 goal it would report almost no deficit.
