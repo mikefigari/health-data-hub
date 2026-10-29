@@ -46,7 +46,7 @@ test('(a) prompt drops stale goal/TDEE and states D1 numbers', () => {
   assert.equal(typeof WEEKLY_SYSTEM_PROMPT, 'string');
   assert.doesNotMatch(WEEKLY_SYSTEM_PROMPT, /27\s?kg/i);
   assert.doesNotMatch(WEEKLY_SYSTEM_PROMPT, /2,?800/);
-  assert.match(WEEKLY_SYSTEM_PROMPT, /0\.75\s?kg/);
+  assert.match(WEEKLY_SYSTEM_PROMPT, /0\.65\s?kg/);
   assert.match(WEEKLY_SYSTEM_PROMPT, /720/);
   assert.match(WEEKLY_SYSTEM_PROMPT, /5,?040/);
 });
