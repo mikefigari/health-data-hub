@@ -517,7 +517,7 @@ async function load({ keepContent = false } = {}) {
   }
 }
 
-// ---- Refresh every 15 min while visible ----
+// ---- Refresh every 5 min while visible ----
 let refreshTimer = null;
 function startRefresh() {
   refreshTimer = setInterval(() => {

@@ -44,7 +44,7 @@ export const VIEWS = Object.freeze(['all', 'today', 'weight', 'timeline', 'weekl
 export const RANGES = Object.freeze([7, 30, 90, 365]);
 export const THEMES = Object.freeze(['light', 'dark']);
 export const DEFAULT_RANGE = 30;
-export const REFRESH_MS = 15 * 60 * 1000;
+export const REFRESH_MS = 5 * 60 * 1000;
 
 export const RANGE_LABELS = Object.freeze({ 7: '7D', 30: '30D', 90: '90D', 365: '1Y' });
 const RANGE_LONG = Object.freeze({ 7: '7 days', 30: '30 days', 90: '90 days', 365: '1 year' });
