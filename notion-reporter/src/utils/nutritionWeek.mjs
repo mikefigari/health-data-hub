@@ -7,7 +7,7 @@ const TREND_WINDOW_DAYS = 28;
 
 export const lossRateKgPerWeek = () => {
   const v = parseFloat(process.env.WEEKLY_LOSS_TARGET_KG);
-  return Number.isFinite(v) && v > 0 ? v : 0.75;
+  return Number.isFinite(v) && v > 0 ? v : 0.6545;
 };
 export const weeklyTargetKcal = () => Math.round(lossRateKgPerWeek() * KCAL_PER_KG);
 

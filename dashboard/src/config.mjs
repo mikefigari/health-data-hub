@@ -13,7 +13,7 @@ export function loadConfig(env = process.env) {
     DASHBOARD_TOKENS = '',
     DASHBOARD_DEMO,
     FRAME_ANCESTORS = 'https://www.notion.so https://notion.so https://*.notion.site',
-    PLAN_KG_PER_WEEK = '0.75',
+    PLAN_KG_PER_WEEK = '0.6545',
     PROTEIN_PCT_MIN = '35',
     PROTEIN_PCT_MAX = '40',
   } = env;

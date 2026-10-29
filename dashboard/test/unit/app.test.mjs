@@ -157,7 +157,7 @@ describe('config: DB_PASSWORD, demo mode, defaults', () => {
     assert.equal(c.DB_USER, 'dashboard_ro');
     assert.equal(c.DB_NAME, 'health_pi');
     assert.equal(c.FRAME_ANCESTORS, FRAME_ANCESTORS);
-    assert.equal(Number(c.PLAN_KG_PER_WEEK), 0.75);
+    assert.equal(Number(c.PLAN_KG_PER_WEEK), 0.6545);
   });
 });
 

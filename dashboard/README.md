@@ -48,7 +48,7 @@ Read from `src/config.mjs`. The service refuses to start on an invalid value.
 | `PORT` | `8878` | no | Listen port. |
 | `HOST` | `127.0.0.1` | no | Bind address; keep loopback, the tunnel reaches it. |
 | `FRAME_ANCESTORS` | `https://www.notion.so https://notion.so https://*.notion.site` | no | CSP `frame-ancestors` allow-list; space-separated, no quotes. |
-| `PLAN_KG_PER_WEEK` | `0.75` | no | Planned loss rate, positive number, drawn as the plan line. |
+| `PLAN_KG_PER_WEEK` | `0.6545` | no | Planned loss rate, positive number, drawn as the plan line. |
 | `PROTEIN_PCT_MIN` | `35` | no | Lower edge of the protein target band, % of daily calories (inclusive). |
 | `PROTEIN_PCT_MAX` | `40` | no | Upper edge of the protein target band (inclusive). Both must be numbers with 0 <= min < max <= 100, otherwise the service refuses to start. |
 | `DASHBOARD_DEMO` | unset | no | `true` serves fake data and needs no database. |

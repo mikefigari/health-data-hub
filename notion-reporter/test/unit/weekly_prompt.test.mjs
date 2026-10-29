@@ -47,8 +47,8 @@ test('(a) prompt drops stale goal/TDEE and states D1 numbers', () => {
   assert.doesNotMatch(WEEKLY_SYSTEM_PROMPT, /27\s?kg/i);
   assert.doesNotMatch(WEEKLY_SYSTEM_PROMPT, /2,?800/);
   assert.match(WEEKLY_SYSTEM_PROMPT, /0\.75\s?kg/);
-  assert.match(WEEKLY_SYSTEM_PROMPT, /825/);
-  assert.match(WEEKLY_SYSTEM_PROMPT, /5,?775/);
+  assert.match(WEEKLY_SYSTEM_PROMPT, /720/);
+  assert.match(WEEKLY_SYSTEM_PROMPT, /5,?040/);
 });
 
 test('(b) Nutrition section judges the 7-day average and states coverage + method', () => {
@@ -96,7 +96,7 @@ test('(e) buildWeeklyContextFrom reviews the prior Mon-Sun only', () => {
   assert.equal(ctx.nutritionWeek.n_usable, 7);
   assert.equal(ctx.nutritionWeek.avg_deficit, 600);
   assert.equal(ctx.nutritionWeek.maintenance_method, 'fixed_maintenance');
-  assert.equal(ctx.nutritionWeek.target_total, 5775);
+  assert.equal(ctx.nutritionWeek.target_total, 5040);
   assert.equal(ctx.weightTrend.latest_kg, 102.5);
   assert.equal(ctx.weightTrend.kg_to_target, 12.5);
   assert.ok(!('deficitAdherence' in ctx) && !('deficitAdherenceStr' in ctx));

@@ -77,5 +77,5 @@ export function demoInputs(today) {
     { day: addDays(today, -20), ftp_w: 265 },
   ];
 
-  return { today, rangeDays: 30, loggingStart: null, planKgPerWeek: 0.75, weights, nutrition, goals, rideKj, ftp };
+  return { today, rangeDays: 30, loggingStart: null, planKgPerWeek: 0.6545, weights, nutrition, goals, rideKj, ftp };
 }

@@ -44,7 +44,7 @@ test('(c) 7 usable days averaging 900', () => {
   assert.equal(r.status, 'deficit');
   assert.equal(r.avg_deficit, 900);
   assert.equal(r.projected_week_total, 6300);
-  assert.equal(r.target_total, 5775);
+  assert.equal(r.target_total, 5040);
   assert.equal(r.n_usable, 7);
 });
 
@@ -57,8 +57,8 @@ test('(d) off track and surplus', () => {
   assert.equal(sur.on_track, false);
 });
 
-test('(d2) on_track boundary is >= 825 and judged on the average, not per day', () => {
-  assert.equal(weeklyDeficit(run('2026-10-26', 7, 825)).on_track, true);
+test('(d2) on_track boundary is >= 720 and judged on the average, not per day', () => {
+  assert.equal(weeklyDeficit(run('2026-10-26', 7, 720)).on_track, true);
   const mixed = [...run('2026-10-26', 3, 1600), ...run('2026-10-29', 4, 300)]; // avg ~857.1 despite 4 low days
   assert.equal(weeklyDeficit(mixed).on_track, true);
 });
@@ -98,8 +98,8 @@ test('(g) weightTrend', () => {
   assert.equal(t.latest_day, '2026-11-02');
   assert.equal(t.days_since_weigh_in, 2);
   near(t.kg_to_target, 8.5, 0.001);
-  // 8.5 kg at 0.75/wk = 79 d; at 0.5/wk = 119 d (from asOf or latest weigh-in)
-  near(dayDiff(t.target_date_at_rate, '2026-11-04'), 79, 3);
+  // 8.5 kg at 0.6545/wk = 91 d; at 0.5/wk = 119 d (from asOf or latest weigh-in)
+  near(dayDiff(t.target_date_at_rate, '2026-11-04'), 91, 3);
   near(dayDiff(t.target_date_at_trend, '2026-11-04'), 119, 3);
 });
 
@@ -144,8 +144,8 @@ test('(i2) thursdayCheck off track', () => {
   const r = thursdayCheck(run('2026-11-02', 3, 400));
   assert.equal(r.on_track, false);
   assert.equal(r.post, true);
-  assert.equal(r.shortfall, 1275);
-  assert.equal(r.needed_per_day_thu_sun, 1144);
+  assert.equal(r.shortfall, 960);
+  assert.equal(r.needed_per_day_thu_sun, 960);
 });
 
 test('(i3) thursdayCheck no data', () => {

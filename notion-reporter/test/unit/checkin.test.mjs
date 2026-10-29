@@ -49,8 +49,8 @@ test('(b) off track: posts once with shortfall and needed kcal/day', async () =>
   const p = s.calls.post[0];
   assert.equal(p.mode, 'checkin');
   assert.equal(p.title, 'Check-in · Week 45');
-  assert.match(p.markdown, /1,?275/);
-  assert.match(p.markdown, /1,?144/);
+  assert.match(p.markdown, /960/);
+  assert.match(p.markdown, /960/);
 });
 
 test('(c) zero usable days: posts the nudge text', async () => {
