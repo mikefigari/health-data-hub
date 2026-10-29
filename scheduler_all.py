@@ -12,7 +12,7 @@ Jobs:
                            backstop only — catches any events missed by the webhook
     - Oura:                every 30 minutes, 5 AM – 3 PM
     - Notion Daily State:  every 30 minutes, 5 AM – 11 PM (configurable)
-    - Body measurements:   hourly at :20, 6 AM – 11 PM PT (Renpho weigh-ins via Health Auto Export)
+    - Body measurements:   every 10 min, 6 AM – 11 PM PT (Renpho weigh-ins via Health Auto Export)
 
 Environment variables (set in dev.env / prod.env):
     STRAVA_POLL_INTERVAL_MIN                Minutes between Strava fallback polls (default: 60)
@@ -156,7 +156,7 @@ scheduler.add_job(
     run_body_poller,
     trigger="cron",
     hour="6-23",
-    minute=20,
+    minute="*/10",
     id="body_poller",
     name="Body measurements poller",
     max_instances=1,
@@ -179,7 +179,7 @@ logger.info(
     "Unified scheduler starting — Strava webhook on port %s, "
     "Strava fallback poll every %d min, Oura every 30 min (5am-3pm), "
     "Notion daily state every %d min (%02d:00-%02d:59), "
-    "Body measurements poller hourly at :20 (6am-11pm), "
+    "Body measurements poller every 10 min (6am-11pm), "
     "FTP/W-kg charts hourly at :40 (6am-11pm), "
     "Weekly power-zone summary Sundays 21:00",
     os.getenv("STRAVA_WEBHOOK_PORT", "8765"),
