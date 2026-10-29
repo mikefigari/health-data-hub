@@ -20,6 +20,7 @@ import { ringOption, ringLabel } from './charts/rings.mjs';
 import { weightOption, weightHero } from './charts/weight.mjs';
 import { ftpOption, ftpHero } from './charts/ftp.mjs';
 import { caloriesOption, caloriesSubtitle, proteinOption, proteinHero } from './charts/nutrition.mjs';
+import { balanceOption, balanceHero } from './charts/balance.mjs';
 import { calendarOption, calendarHeight, calendarLegend } from './charts/calendar.mjs';
 
 // Chart option builders, keyed by a chart node's data-chart attribute:
@@ -46,12 +47,13 @@ const BUILDERS = {
   'today:protein': (data, ctx) => ringOption(ringData(data, RINGS[1]), ctx.tokens, { ...ctx, accent: 'protein' }),
   weight: (data, ctx) => weightOption(data, ctx.tokens, ctx),
   calories: (data, ctx) => caloriesOption(data, ctx.tokens, ctx),
+  balance: (data, ctx) => balanceOption(data, ctx.tokens, ctx),
   protein: (data, ctx) => proteinOption(data, ctx.tokens, ctx),
   calendar: (data, ctx) => calendarOption(data, ctx.tokens, ctx),
   ftp: (data, ctx) => ftpOption(data, ctx.tokens, ctx),
 };
 // Card header hero numbers; other cards use core cardStat().
-const HEROES = { weight: weightHero, ftp: ftpHero, protein: proteinHero };
+const HEROES = { balance: balanceHero, weight: weightHero, ftp: ftpHero, protein: proteinHero };
 // Optional second caption line under a card's hero.
 const SUBTITLES = { calories: (data) => caloriesSubtitle(data, { range: state.range }) };
 // Calendar legend swatches use CSS custom properties so they follow the theme without a re-render.

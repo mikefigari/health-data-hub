@@ -8,6 +8,7 @@ const CALENDAR_DAYS = 182;
 // Food logging began here; the calendar never reaches further back.
 const LOGGING_START = '2026-10-25';
 const MAX_PROJECTION_DAYS = 1095;
+const KCAL_PER_KG = 7700;
 
 const ms = (d) => Date.parse(`${d}T00:00:00Z`);
 export const addDays = (day, n) => new Date(ms(day) + n * DAY_MS).toISOString().slice(0, 10);
@@ -66,6 +67,8 @@ export function buildDashboard(inputs) {
   const today = inputs.today;
   const rangeDays = inputs.rangeDays;
   const planKgPerWeek = num(inputs.planKgPerWeek);
+  const maintenance = num(inputs.maintenanceKcal) ?? 2620;
+  const weekTarget = planKgPerWeek > 0 ? Math.round(planKgPerWeek * KCAL_PER_KG) : null;
   const pMin = num(inputs.proteinPctMin) ?? 35;
   const pMax = num(inputs.proteinPctMax) ?? 40;
   const pctOf = (p, cal) => (cal > 0 ? Math.round(((4 * (p ?? 0)) / cal) * 1000) / 10 : null);
@@ -118,6 +121,8 @@ export function buildDashboard(inputs) {
       c: row ? num(row.carbs_g) : null,
       f: row ? num(row.fat_g) : null,
       goalCal: (row ? num(row.goal_calories) : null) ?? fb.cal,
+      // Energy out: fixed baseline plus ride kJ (1 kJ ~ 1 kcal burned, as in the goal factor).
+      burn: maintenance + (kjByDay.get(day) || 0),
     };
   };
 
@@ -148,6 +153,8 @@ export function buildDashboard(inputs) {
       kcal_fat: has ? r0(k.kf) : null,
       kcal_other: has ? r0(k.ko) : null,
       goal_calories: r0(d.goalCal),
+      maintenance_kcal: r0(d.burn),
+      deficit_kcal: d.status === 'logged' ? r0(d.burn - d.calories) : null,
       protein_pct: pct,
       protein_in_range: inBand(pct),
     };
@@ -185,6 +192,8 @@ export function buildDashboard(inputs) {
       avg_kcal_fat: r0(avg(parts.map((k) => k.kf))),
       avg_kcal_other: r0(avg(parts.map((k) => k.ko))),
       avg_goal_calories: r0(avg(inWeek.filter((d) => d.goalCal != null).map((d) => d.goalCal))),
+      avg_maintenance_kcal: r0(avg(inWeek.map((d) => d.burn))),
+      deficit_kcal: inWeek.length ? r0(inWeek.reduce((a, d) => a + (d.burn - d.calories), 0)) : null,
     });
   }
 
@@ -221,6 +230,26 @@ export function buildDashboard(inputs) {
     goal_calories: r0(td.goalCal),
     protein_pct: todayLogged ? pctOf(td.p, td.calories) : 0,
     logged: todayLogged,
+  };
+
+  // Energy balance for the current Monday-start week: logged complete days only, baseline + ride kJ.
+  const weekStart = mondayOf(today);
+  const weekLogged = [];
+  for (let i = 0; i <= diffDays(today, weekStart); i++) {
+    const d = evalDay(addDays(weekStart, i));
+    if (d.status === 'logged') weekLogged.push(d);
+  }
+  const weekDeficit = weekLogged.reduce((a, d) => a + (d.burn - d.calories), 0);
+  const energy = {
+    maintenance_kcal: maintenance,
+    goal_base_kcal: effectiveGoal(goals, today)?.base ?? null,
+    today_burn_kcal: r0(td.burn),
+    week_start: weekStart,
+    week_days_logged: weekLogged.length,
+    week_deficit_kcal: weekLogged.length ? r0(weekDeficit) : null,
+    week_target_kcal: weekTarget,
+    daily_target_kcal: weekTarget == null ? null : r0(weekTarget / 7),
+    week_ride_kj: kjSum(weekStart),
   };
 
   // Weight.
@@ -284,6 +313,7 @@ export function buildDashboard(inputs) {
     },
     today_rings,
     cycling,
+    energy,
     weight: {
       scale: weights.filter((w) => w.day >= rangeStart).map((w) => ({ day: w.day, kg: r2(w.kg) })),
       trend: trendInRange.map((p) => ({ day: p.day, kg: r2(p.kg) })),

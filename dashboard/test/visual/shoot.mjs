@@ -25,7 +25,7 @@ const SIZES = [
 // Single-panel views are Notion embeds of 460 px or less (A3). They stretch to fill their
 // frame (min-height: 100vh), so they are rendered in a 460 px tall frame at each width.
 const EMBED_HEIGHT = 460;
-const ALL_MAX_HEIGHT_1280 = 1700;
+const ALL_MAX_HEIGHT_1280 = 1800;
 const DARK_BG = 'rgb(25, 25, 25)'; // #191919
 const CALENDAR_MIN_HEIGHT = 80;
 

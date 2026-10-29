@@ -125,7 +125,7 @@ export function createApp({ config, pool, now = () => new Date(), log = console.
       }
       const body = buildDashboard({
         ...inputs,
-        rangeDays, planKgPerWeek: config.PLAN_KG_PER_WEEK,
+        rangeDays, planKgPerWeek: config.PLAN_KG_PER_WEEK, maintenanceKcal: config.MAINTENANCE_KCAL,
         proteinPctMin: config.PROTEIN_PCT_MIN,
         proteinPctMax: config.PROTEIN_PCT_MAX,
       });

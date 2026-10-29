@@ -253,6 +253,7 @@ h1 {
   min-width: 0;
 }
 .card--weight .chart { height: 260px; }
+.card--balance .chart { height: 240px; }
 .card--today .chart { height: 200px; }
 .card--ftp .chart { height: 240px; }
 

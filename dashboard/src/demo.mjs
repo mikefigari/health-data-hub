@@ -26,7 +26,7 @@ export function demoInputs(today) {
   }
 
   const goals = [
-    { effective_from: addDays(today, -200), target_weight_kg: 100, base_calories: 2620, cycling_kj_factor: 1.0, protein_g: 180 },
+    { effective_from: addDays(today, -200), target_weight_kg: 100, base_calories: 1900, cycling_kj_factor: 1.0, protein_g: 180 },
   ];
 
   const rideKj = [];
@@ -43,7 +43,7 @@ export function demoInputs(today) {
   const nutrition = [];
   for (let i = 119; i >= 0; i--) {
     const day = addDays(today, -i);
-    const goal = 2620 + (kjOf.get(day) || 0);
+    const goal = 1900 + (kjOf.get(day) || 0);
     if (i === 3 || i === 12 || i === 40) continue; // missing days
     if (i === 0) {
       nutrition.push({ day, calories: 900, protein_g: 70, carbs_g: 90, fat_g: 30, goal_calories: goal, logged_complete: true });

@@ -40,7 +40,7 @@ export const TOKENS = Object.freeze({
 export const FONT_STACK =
   '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
-export const VIEWS = Object.freeze(['all', 'today', 'weight', 'calories', 'protein', 'calendar', 'ftp']);
+export const VIEWS = Object.freeze(['all', 'today', 'weight', 'calories', 'balance', 'protein', 'calendar', 'ftp']);
 export const RANGES = Object.freeze([7, 30, 90, 365]);
 export const THEMES = Object.freeze(['light', 'dark']);
 export const DEFAULT_RANGE = 30;
@@ -53,6 +53,7 @@ const RANGE_LONG = Object.freeze({ 7: '7 days', 30: '30 days', 90: '90 days', 36
 export const CARDS = Object.freeze([
   { view: 'today', title: 'Today', accent: 'calories', ranged: false },
   { view: 'calories', title: 'Calories', accent: 'calories', ranged: true },
+  { view: 'balance', title: 'Energy balance', accent: 'calories', ranged: true },
   { view: 'weight', title: 'Weight', accent: 'weight', ranged: true },
   { view: 'protein', title: 'Protein', accent: 'protein', ranged: true },
   { view: 'calendar', title: 'Logging', accent: 'calories', ranged: false },
@@ -293,6 +294,8 @@ export function emptyMessage(view, data) {
         ? null
         : 'No weigh-ins in this range';
     case 'calories':
+    case 'balance':
+      return (data?.nutrition?.days || []).some((d) => d.deficit_kcal != null) ? null : 'No complete days logged in this range';
     case 'protein':
       return hasNutrition(data) ? null : 'No food logged in this range';
     case 'calendar':
