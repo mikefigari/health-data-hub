@@ -10,7 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { TOKENS } from '../../public/js/core.mjs';
+import { TOKENS, fmtKg } from '../../public/js/core.mjs';
 import { buildDashboard } from '../../src/aggregate.mjs';
 import { demoInputs } from '../../src/demo.mjs';
 import { ringOption, ringLabel } from '../../public/js/charts/rings.mjs';
@@ -121,73 +121,59 @@ test('ringLabel: center label computed separately', () => {
   assert.deepEqual(ringLabel({ value: 70, goal: 180 }, { unit: 'g' }), { big: '70', small: 'of 180 g', caption: '110 left' });
 });
 
-// ---------- weight ----------
+// ---------- weight (road to goal) ----------
 const wopt = weightOption(data, tk, { range: 30 });
+const road = data.weight.road;
 
-test('weightOption: scale scatter is faint and small', () => {
+test('weightOption: weigh-in dots are small and faint, one per road point', () => {
   const s = seriesOf(wopt, 'scatter', 'scale');
   assert.ok(s, 'scatter series named scale');
   assert.ok(s.symbolSize <= 6);
   const op = s.itemStyle?.opacity ?? s.opacity;
   assert.ok(op <= 0.45 && op > 0, 'opacity <= 0.45');
-  assert.equal(s.data.length, data.weight.scale.length);
-  assert.deepEqual(pt(s.data[0]).map(String), [data.weight.scale[0].day, String(data.weight.scale[0].kg)]);
+  assert.equal(s.data.length, road.series.length);
+  assert.deepEqual(pt(s.data[0]).map(String), [road.series[0].day, String(road.series[0].kg)]);
 });
 
-test('weightOption: smooth trend line with vertical accent gradient area', () => {
+test('weightOption: smooth accent trend line, goal line and today marker', () => {
   const s = seriesOf(wopt, 'line', 'trend');
   assert.ok(s, 'line series named trend');
   assert.ok(s.smooth);
   assert.equal(s.lineStyle.width, 3);
-  assert.equal(rgbHex(s.lineStyle.color ?? s.itemStyle?.color), tk.weight.toLowerCase());
-  assert.equal(s.data.length, data.weight.trend.length);
-  const g = s.areaStyle.color;
-  assert.equal(g.type, 'linear');
-  assert.deepEqual([g.x, g.y, g.x2, g.y2], [0, 0, 0, 1]);
-  const stops = g.colorStops;
-  assert.equal(stops[0].offset, 0);
-  assert.equal(stops.at(-1).offset, 1);
-  assert.equal(rgbHex(stops[0].color), tk.weight.toLowerCase());
-  assert.ok(Math.abs(alphaOf(stops[0].color) - 0.25) < 0.01, 'top alpha 0.25');
-  assert.ok(alphaOf(stops.at(-1).color) < 0.01, 'bottom alpha 0');
+  assert.equal(rgbHex(s.lineStyle.color), tk.weight.toLowerCase());
+  assert.equal(s.data.length, road.series.length);
+  const marks = JSON.stringify(s.markLine.data);
+  assert.ok(marks.includes('Goal 100 kg'), 'goal line labelled');
+  assert.ok(marks.includes(data.today) && marks.includes('Today'), 'today marker');
 });
 
-test('weightOption: goal markLine only when goal is within 3 kg of the y-range', () => {
-  const hasMark = (o) => arr(o.series).some((s) => s.markLine);
-  assert.equal(hasMark(wopt), false, 'demo: goal 100 kg is ~15 kg away -> absent');
-
-  const near = structuredClone(data);
-  near.weight.scale = ['2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24'].map((day, i) => ({ day, kg: 103.2 - i * 0.2 }));
-  near.weight.trend = near.weight.scale.map((p) => ({ day: p.day, kg: p.kg - 0.1 }));
-  const o = weightOption(near, tk, { range: 7 });
-  const s = arr(o.series).find((x) => x.markLine);
-  assert.ok(s, 'goal line present when near');
-  const ml = s.markLine;
-  assert.equal(ml.lineStyle.type, 'dashed');
-  assert.ok(JSON.stringify(ml).includes('Goal 100 kg'), 'labelled Goal 100 kg');
-  assert.ok(JSON.stringify(ml.data).includes('100'), 'at y = 100');
-
-  const far = structuredClone(near);
-  far.goals.target_weight_kg = 90;
-  assert.equal(arr(weightOption(far, tk, { range: 7 }).series).some((x) => x.markLine), false);
+test('weightOption: planned window is a polygon from the Sunday snapshot to the goal line', () => {
+  const s = seriesOf(wopt, 'custom', 'window');
+  assert.ok(s, 'custom series named window');
+  const fake = { coord: ([x, y]) => [x, y] };
+  const shape = s.renderItem({}, fake);
+  assert.equal(shape.type, 'polygon');
+  const pts = shape.shape.points;
+  assert.equal(pts.length, 3);
+  assert.equal(pts[0][1], road.snapshot_trend_kg);
+  assert.equal(pts[1][1], data.goals.target_weight_kg);
+  assert.equal(pts[2][1], data.goals.target_weight_kg);
+  assert.ok(pts[1][0] < pts[2][0], 'brisk ends before gentle');
+  const mid = seriesOf(wopt, 'line', 'likely');
+  assert.equal(mid.lineStyle.type, 'dashed');
+  assert.equal(pt(mid.data.at(-1))[0], road.windows.find((w) => w.key === 'likely').date);
 });
 
-test('weightOption: dashed plan-pace line, 30 days at -plan_kg_per_week/7', () => {
-  const s = seriesOf(wopt, 'line', 'plan pace');
-  assert.ok(s, 'line series named plan pace');
-  assert.equal(s.lineStyle.type, 'dashed');
-  const last = data.weight.trend.at(-1);
-  const first = pt(s.data[0]);
-  const end = pt(s.data.at(-1));
-  assert.equal(first[0], last.day);
-  assert.ok(Math.abs(Number(first[1]) - last.kg) < 0.01);
-  assert.equal(end[0], addDays(last.day, 30));
-  const expected = last.kg - (30 * data.goals.plan_kg_per_week) / 7;
-  assert.ok(Math.abs(Number(end[1]) - expected) < 0.01, `end ${end[1]} ~ ${expected}`);
+test('weightOption: no window once the goal is reached', () => {
+  const done = structuredClone(data);
+  done.weight.road.windows = [];
+  const o = weightOption(done, tk, { range: 30 });
+  assert.equal(seriesOf(o, 'custom', 'window'), undefined);
+  assert.equal(seriesOf(o, 'line', 'likely'), undefined);
 });
 
-test('weightOption: y-axis is data min/max +-1 kg rounded to whole kg', () => {
-  const vals = [...data.weight.scale, ...data.weight.trend].map((p) => p.kg);
+test('weightOption: y-axis spans data and goal, +-1 kg rounded to whole kg', () => {
+  const vals = [...road.series.flatMap((p) => [p.kg, p.trend_kg]), data.goals.target_weight_kg];
   const y = arr(wopt.yAxis)[0];
   assert.equal(y.min, Math.floor(Math.min(...vals) - 1));
   assert.equal(y.max, Math.ceil(Math.max(...vals) + 1));
@@ -205,19 +191,20 @@ test('weightOption: tooltip, axes, motion', () => {
 });
 
 test('weightOption: fewer than 2 weigh-ins -> empty message', () => {
-  const msg = { empty: 'Not enough weigh-ins in this range' };
+  const msg = { empty: 'Not enough weigh-ins yet' };
   const one = structuredClone(data);
-  one.weight.scale = one.weight.scale.slice(0, 1);
+  one.weight.road.series = one.weight.road.series.slice(0, 1);
   assert.deepEqual(weightOption(one, tk, { range: 7 }), msg);
   const none = structuredClone(data);
-  none.weight.scale = [];
+  none.weight.road = null;
   assert.deepEqual(weightOption(none, tk, { range: 7 }), msg);
 });
 
-test('weightHero: trend kg with range change', () => {
+test('weightHero: live scale kg, with trend and range change in the caption', () => {
   const h = weightHero(data);
-  assert.equal(h.value, '116.0');
-  assert.equal(h.unit, 'kg trend');
+  assert.equal(h.value, fmtKg(data.weight.current_kg));
+  assert.equal(h.unit, 'kg');
+  assert.ok(h.caption.includes(`Trend ${fmtKg(data.weight.current_trend_kg)}`), h.caption);
   assert.ok(h.caption.includes(`${MINUS}0.6 kg`), h.caption);
   assert.ok(h.caption.includes('30 days'), h.caption);
 });

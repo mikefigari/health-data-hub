@@ -1,9 +1,8 @@
 // Pure aggregation: raw daily inputs -> dashboard JSON contract. No SQL, no HTTP, no clock.
 // Rounding rule: compute at full precision, round only on output.
+import { buildRoadmap, smoothTrend, trendAt } from './roadmap.mjs';
 
 const DAY_MS = 86400000;
-const TREND_ALPHA = 0.1;
-const TREND_GAP_DAYS = 30;
 const CALENDAR_DAYS = 182;
 // Food logging began here; the calendar never reaches further back.
 const LOGGING_START = '2026-10-25';
@@ -35,32 +34,6 @@ function effectiveGoal(goals, day) {
   let best = null;
   for (const g of goals) if (g.from <= day && (!best || g.from >= best.from)) best = g;
   return best;
-}
-
-function buildTrend(weights) {
-  const trend = []; // chronological [{day, kg}] at full precision
-  const byDay = new Map();
-  let prev = null;
-  let t = null;
-  const put = (day, kg) => {
-    trend.push({ day, kg });
-    byDay.set(day, kg);
-  };
-  for (const w of weights) {
-    if (!prev || diffDays(w.day, prev.day) > TREND_GAP_DAYS) {
-      t = w.kg;
-      put(w.day, t);
-    } else {
-      const gap = diffDays(w.day, prev.day);
-      for (let k = 1; k <= gap; k++) {
-        const v = prev.kg + ((w.kg - prev.kg) * k) / gap;
-        t = t + TREND_ALPHA * (v - t);
-        put(addDays(prev.day, k), t);
-      }
-    }
-    prev = w;
-  }
-  return { trend, byDay };
 }
 
 export function buildDashboard(inputs) {
@@ -229,6 +202,7 @@ export function buildDashboard(inputs) {
     calories: todayLogged ? r0(td.calories) : 0,
     goal_calories: r0(td.goalCal),
     protein_pct: todayLogged ? pctOf(td.p, td.calories) : 0,
+    protein_g: todayLogged ? r0(td.p ?? 0) : 0,
     logged: todayLogged,
   };
 
@@ -260,17 +234,21 @@ export function buildDashboard(inputs) {
     if (kg != null && d <= today) wmap.set(d, kg);
   }
   const weights = [...wmap.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([day, kg]) => ({ day, kg }));
-  const { trend, byDay } = buildTrend(weights);
+  const trendSeries = smoothTrend(weights);
   const last = weights.at(-1) || null;
-  const currentTrend = last ? byDay.get(last.day) : null;
-  const trendInRange = trend.filter((p) => p.day >= rangeStart && p.day <= today);
-  const prior = last ? byDay.get(addDays(last.day, -14)) : undefined;
+  const currentTrend = trendSeries.length ? trendSeries.at(-1).t : null;
+  const trendInRange = trendSeries.filter((p) => p.day >= rangeStart && p.day <= today);
+  const prior = last ? trendAt(trendSeries, addDays(last.day, -14))?.t : null;
   const weeklyRate = currentTrend != null && prior != null ? (currentTrend - prior) / 2 : null;
-  const rangeChange = trendInRange.length >= 2 ? trendInRange.at(-1).kg - trendInRange[0].kg : null;
+  const rangeChange = trendInRange.length >= 2 ? trendInRange.at(-1).t - trendInRange[0].t : null;
 
   const goalNow = effectiveGoal(goals, today);
   const target = goalNow ? goalNow.target : null;
-  const toGoal = currentTrend != null && target != null ? currentTrend - target : null;
+  // The progress bar counts from the first weigh-in on or after the goal took effect.
+  const startKg = goalNow ? (weights.find((w) => w.day >= goalNow.from) || weights[0] || {}).kg : null;
+  const road = buildRoadmap({ series: trendSeries, today, target, cap: planKgPerWeek, startKg });
+  // Distance to goal and the projections run off the latest scale reading, not the smoothed trend.
+  const toGoal = last && target != null ? last.kg - target : null;
   let planDate = null;
   let currentRateDate = null;
   if (toGoal != null && toGoal > 0 && last) {
@@ -316,7 +294,9 @@ export function buildDashboard(inputs) {
     energy,
     weight: {
       scale: weights.filter((w) => w.day >= rangeStart).map((w) => ({ day: w.day, kg: r2(w.kg) })),
-      trend: trendInRange.map((p) => ({ day: p.day, kg: r2(p.kg) })),
+      trend: trendInRange.map((p) => ({ day: p.day, kg: r2(p.t) })),
+      road,
+      current_kg: last ? r2(last.kg) : null,
       current_trend_kg: r2(currentTrend),
       last_weigh_in_day: last ? last.day : null,
       days_since_weigh_in: last ? diffDays(today, last.day) : null,

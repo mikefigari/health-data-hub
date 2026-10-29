@@ -22,10 +22,10 @@ after(async () => {
 });
 
 describe('static assets', () => {
-  test('/assets/js/core.mjs is served with a 1h public cache and CSP', async () => {
+  test('/assets/js/core.mjs is served revalidating (max-age=0) and CSP', async () => {
     const res = await fetch(`${base}/assets/js/core.mjs`);
     assert.equal(res.status, 200);
-    assert.equal(res.headers.get('cache-control'), 'public, max-age=3600');
+    assert.equal(res.headers.get('cache-control'), 'public, max-age=0');
     assert.match(res.headers.get('content-type') || '', /javascript/);
     assert.match(res.headers.get('content-security-policy') || '', /frame-ancestors/);
     assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
@@ -36,7 +36,7 @@ describe('static assets', () => {
     const res = await fetch(`${base}/assets/vendor/echarts.min.js`);
     assert.equal(res.status, 200);
     assert.match(res.headers.get('content-type') || '', /javascript/);
-    assert.equal(res.headers.get('cache-control'), 'public, max-age=3600');
+    assert.equal(res.headers.get('cache-control'), 'public, max-age=0');
     const body = await res.text();
     assert.ok(body.length > 100000);
   });
