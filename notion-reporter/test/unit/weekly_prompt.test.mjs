@@ -27,6 +27,9 @@ import { buildWeeklyContextFrom } from '../../src/utils/buildWeeklyContext.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 const addDays = (d, n) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
 
+// Maintenance pinned to 2600 so the fixture deficits stay at 600 (production default is 2620).
+process.env.MAINTENANCE_KCAL = '2600';
+
 // 2026-10-24 .. 2026-11-03; in-week (10-26..11-01) = 2000 kcal vs goal 2600 (deficit 600); outside = 5000 kcal.
 const rows = Array.from({ length: 11 }, (_, i) => {
   const day = addDays('2026-10-24', i);
@@ -74,7 +77,7 @@ test('(c) user message carries NUTRITION_WEEK and WEIGHT_TREND JSON, no DEFICIT_
   assert.ok(!msg.includes('DEFICIT_ADHERENCE:'));
   assert.match(msg, /"avg_deficit":\s*600/);
   assert.match(msg, /"latest_kg":\s*102\.5/);
-  assert.match(msg, /goal_calories/); // maintenance method is surfaced
+  assert.match(msg, /fixed_maintenance/); // maintenance method is surfaced
   assert.ok(msg.includes('PLANNED_NEXT_WEEK:'));
 });
 
@@ -92,7 +95,7 @@ test('(e) buildWeeklyContextFrom reviews the prior Mon-Sun only', () => {
   assert.equal(ctx.nutritionWeek.n_logged, 7);
   assert.equal(ctx.nutritionWeek.n_usable, 7);
   assert.equal(ctx.nutritionWeek.avg_deficit, 600);
-  assert.equal(ctx.nutritionWeek.maintenance_method, 'goal_calories');
+  assert.equal(ctx.nutritionWeek.maintenance_method, 'fixed_maintenance');
   assert.equal(ctx.nutritionWeek.target_total, 5775);
   assert.equal(ctx.weightTrend.latest_kg, 102.5);
   assert.equal(ctx.weightTrend.kg_to_target, 12.5);

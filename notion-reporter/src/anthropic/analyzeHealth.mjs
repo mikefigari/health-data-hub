@@ -182,7 +182,7 @@ target_total in NUTRITION_WEEK if present; defaults 825 / 5,775). Judge the 7-da
 never individual days — a single high or low day is not a failure. State coverage as
 "N of 7 days logged, M marked complete" (n_logged, n_marked_complete) and say that
 only usable days (n_usable) enter the average. State the maintenance method
-(maintenance_method: goal_calories = the daily goal figure, or scale_calibrated =
+(maintenance_method: fixed_maintenance = 2620 kcal plus that day's ride kcal, or scale_calibrated =
 estimated from intake and weight trend). When it is scale_calibrated, also report the
 goal-model average (goal_model_avg_deficit) next to the calibrated one for comparison. If status is no_data, say so plainly and
 do not estimate. Confirm clearly if on_track; if not, give the average shortfall.

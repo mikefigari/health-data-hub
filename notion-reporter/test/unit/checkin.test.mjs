@@ -18,6 +18,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
+// Fixtures are sized for maintenance 2600; the production default is 2620 (see nutritionWeek.test.mjs (k)).
+process.env.MAINTENANCE_KCAL = '2600';
+
 const row = (day, calories, goal = 2600, complete = true) =>
   ({ day, calories, goal_calories: goal, logged_complete: complete });
 const inputs = (nutrition) => ({ nutrition, weighIns: [], goals: null });

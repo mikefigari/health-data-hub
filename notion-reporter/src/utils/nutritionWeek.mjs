@@ -1,5 +1,5 @@
 // Pure weekly nutrition + weight math. No I/O.
-// Row shape (as buildWeeklyContext): { day:'YYYY-MM-DD', nutrition:{ calories, goal_calories, logged_complete } }
+// Row shape (as buildWeeklyContext): { day:'YYYY-MM-DD', nutrition:{ calories, goal_calories, logged_complete, ride_kcal } }
 // Weigh-ins: [{ day, weight_kg }].
 
 const KCAL_PER_KG = 7700;
@@ -10,6 +10,14 @@ export const lossRateKgPerWeek = () => {
   return Number.isFinite(v) && v > 0 ? v : 0.75;
 };
 export const weeklyTargetKcal = () => Math.round(lossRateKgPerWeek() * KCAL_PER_KG);
+
+// Maintenance is a fixed figure (estimated 2026-10-28: Katch-McArdle BMR x 1.375),
+// not the daily goal. Ride energy is added per day, so ride days raise maintenance.
+export const maintenanceKcal = () => {
+  const v = parseFloat(process.env.MAINTENANCE_KCAL);
+  return Number.isFinite(v) && v > 0 ? v : 2620;
+};
+export const dayMaintenanceKcal = (n) => maintenanceKcal() + (Number(n?.ride_kcal) || 0);
 
 const addDays = (d, n) => {
   const t = new Date(d + 'T00:00:00Z');
@@ -37,7 +45,7 @@ export function currentWeekMonWed(today) {
 
 const num = (v) => (v == null ? null : Number(v));
 
-// Usable = food logged, not marked incomplete, and a maintenance figure is available.
+// Usable = food logged and not marked incomplete.
 function usableDeficits(days, maintenance) {
   const out = [];
   for (const r of days ?? []) {
@@ -45,8 +53,7 @@ function usableDeficits(days, maintenance) {
     if (!n) continue;
     const cal = num(n.calories);
     if (!(cal > 0) || n.logged_complete === false) continue;
-    const maint = maintenance != null ? maintenance : num(n.goal_calories);
-    if (maint == null) continue;
+    const maint = maintenance != null ? maintenance : dayMaintenanceKcal(n);
     out.push(maint - cal);
   }
   return out;
@@ -138,7 +145,7 @@ export function calibratedMaintenance(days, weighIns, { asOf } = {}) {
   }
   const pts = windowWeighIns(weighIns, asOf);
   const span = pts.length ? pts[pts.length - 1].x - pts[0].x : 0;
-  const info = { n_usable: intakes.length, n_weigh_ins: pts.length, method: 'goal_calories', maintenance_est: null };
+  const info = { n_usable: intakes.length, n_weigh_ins: pts.length, method: 'fixed_maintenance', maintenance_est: null };
   if (intakes.length < 21 || pts.length < 4 || span < 21) return info;
   const s = slopePerDay(pts);
   if (s == null) return info;

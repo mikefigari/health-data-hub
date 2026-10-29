@@ -9,7 +9,7 @@
  */
 
 import { Client as NotionClient } from '@notionhq/client';
-import { exportDays, queryRows, getNutritionWeekInputs } from './db.mjs';
+import { exportDays, queryRows, getNutritionWeekInputs, getRideKcalByDay } from './db.mjs';
 import {
   laToday, priorWeekBounds, weeklyDeficit, weightTrend, calibratedMaintenance,
 } from './nutritionWeek.mjs';
@@ -103,18 +103,21 @@ async function fetchPowerZonePage(targetDate) {
 
 /**
  * Pure assembly. rows: exportDays-style rows (may span >7 days, incl. 28-day lookback).
- * opts: { today, weighIns, goals, windowSummary, plannedNextWeek, notionRefs }
+ * opts: { today, weighIns, goals, windowSummary, plannedNextWeek, notionRefs, rideKcalByDay }
  */
 export function buildWeeklyContextFrom(rows, opts = {}) {
-  const { today, weighIns = [], goals = null, windowSummary = null, plannedNextWeek = [], notionRefs } = opts;
+  const { today, weighIns = [], goals = null, windowSummary = null, plannedNextWeek = [], notionRefs, rideKcalByDay = {} } = opts;
   const { start: weekStart, end: weekEnd } = priorWeekBounds(today);
-  const weekRows = (rows ?? []).filter(r => r.day >= weekStart && r.day <= weekEnd);
+  rows = (rows ?? []).map(r => r.nutrition
+    ? { ...r, nutrition: { ...r.nutrition, ride_kcal: rideKcalByDay[r.day] ?? 0 } }
+    : r);
+  const weekRows = rows.filter(r => r.day >= weekStart && r.day <= weekEnd);
 
   const cal = calibratedMaintenance(rows, weighIns, { asOf: weekEnd });
   const calibrated = cal.method === 'scale_calibrated' && cal.maintenance_est != null;
   const nutritionWeek = {
     ...weeklyDeficit(weekRows, calibrated ? { maintenance: cal.maintenance_est } : {}),
-    maintenance_method: calibrated ? 'scale_calibrated' : 'goal_calories',
+    maintenance_method: calibrated ? 'scale_calibrated' : 'fixed_maintenance',
   };
   if (calibrated) {
     nutritionWeek.maintenance_est = Math.round(cal.maintenance_est);
@@ -147,10 +150,11 @@ export async function buildWeeklyContext() {
   const today = laToday();
   const { start: weekStart, end: weekEnd } = priorWeekBounds(today);
 
-  const [data28, data90, inputs, plannedNextWeek, powerZone] = await Promise.all([
+  const [data28, data90, inputs, rideKcalByDay, plannedNextWeek, powerZone] = await Promise.all([
     exportDays(addDays(weekEnd, -27), weekEnd),
     exportDays(addDays(weekEnd, -89), weekEnd),
     getNutritionWeekInputs(weekStart, weekEnd),
+    getRideKcalByDay(addDays(weekEnd, -27), weekEnd),
     fetchPlannedNextWeek(today),
     fetchPowerZonePage(today),
   ]);
@@ -159,6 +163,7 @@ export async function buildWeeklyContext() {
     today,
     weighIns: inputs.weighIns,
     goals: inputs.goals,
+    rideKcalByDay,
     windowSummary: data90.windowSummary,
     plannedNextWeek,
     notionRefs: {

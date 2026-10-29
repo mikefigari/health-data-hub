@@ -1,10 +1,10 @@
-// T1-spec. Row shape (as buildWeeklyContext): { day:'YYYY-MM-DD', nutrition:{ calories, goal_calories, logged_complete } }
+// T1-spec. Row shape (as buildWeeklyContext): { day:'YYYY-MM-DD', nutrition:{ calories, goal_calories, logged_complete, ride_kcal } }
 // Weigh-ins: [{ day, weight_kg }]. Result field names below are the contract.
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   laToday, priorWeekBounds, currentWeekMonWed,
-  weeklyDeficit, weightTrend, calibratedMaintenance, thursdayCheck,
+  weeklyDeficit, weightTrend, calibratedMaintenance, thursdayCheck, maintenanceKcal,
 } from '../../src/utils/nutritionWeek.mjs';
 
 const addDays = (d, n) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
@@ -16,9 +16,17 @@ const at2000 = (days) => days.map(r => ({ ...r, nutrition: { ...r.nutrition, cal
 const near = (a, b, tol) => assert.ok(Math.abs(a - b) <= tol, `${a} not within ${tol} of ${b}`);
 const dayDiff = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5);
 
-let saved;
-beforeEach(() => { saved = process.env.WEEKLY_LOSS_TARGET_KG; delete process.env.WEEKLY_LOSS_TARGET_KG; });
-afterEach(() => { if (saved === undefined) delete process.env.WEEKLY_LOSS_TARGET_KG; else process.env.WEEKLY_LOSS_TARGET_KG = saved; });
+// Helpers use goal 2600, so maintenance is pinned to 2600 here so the deficits are unchanged.
+// The 2620 default is tested at (k).
+let saved, savedMaint;
+beforeEach(() => {
+  saved = process.env.WEEKLY_LOSS_TARGET_KG; delete process.env.WEEKLY_LOSS_TARGET_KG;
+  savedMaint = process.env.MAINTENANCE_KCAL; process.env.MAINTENANCE_KCAL = '2600';
+});
+afterEach(() => {
+  if (saved === undefined) delete process.env.WEEKLY_LOSS_TARGET_KG; else process.env.WEEKLY_LOSS_TARGET_KG = saved;
+  if (savedMaint === undefined) delete process.env.MAINTENANCE_KCAL; else process.env.MAINTENANCE_KCAL = savedMaint;
+});
 
 test('(a) laToday returns the Los Angeles date', () => {
   assert.equal(laToday(new Date('2026-11-02T07:30:00Z')), '2026-11-01');
@@ -59,13 +67,13 @@ test('(e) usable-day filter', () => {
   const days = [
     row('2026-10-26', 0),                 // no food
     row('2026-10-27', 1700, 2600, false), // marked incomplete
-    row('2026-10-28', 1700, null, null),      // no goal
+    row('2026-10-28', 1700, null, null),  // no goal row: maintenance is still fixed -> deficit 900
     row('2026-10-29', 1600, 2600, null),  // null complete counts -> deficit 1000
     row('2026-10-30', 1800, 2600, true),  // deficit 800
     row('2026-10-31', 1800, 2600, false), // incomplete
   ];
   const r = weeklyDeficit(days);
-  assert.equal(r.n_usable, 2);
+  assert.equal(r.n_usable, 3);
   assert.equal(r.avg_deficit, 900);
   assert.equal(r.n_logged, 5);          // calories > 0 days
   assert.equal(r.n_marked_complete, 1); // only logged_complete === true among logged days
@@ -113,16 +121,16 @@ test('(g3) weigh-ins under 7 days apart -> no trend; gaining -> no trend date', 
 test('(h) calibratedMaintenance below thresholds', () => {
   const asOf = '2026-11-02';
   let c = calibratedMaintenance(at2000(run('2026-10-14', 20, 600)), W, { asOf }); // 20 usable days
-  assert.equal(c.method, 'goal_calories');
+  assert.equal(c.method, 'fixed_maintenance');
   assert.equal(c.maintenance_est, null);
   c = calibratedMaintenance(at2000(run('2026-10-13', 21, 600)), W.slice(0, 3), { asOf }); // 3 weigh-ins
-  assert.equal(c.method, 'goal_calories');
+  assert.equal(c.method, 'fixed_maintenance');
   assert.equal(c.maintenance_est, null);
 });
 
 test('(h2) calibratedMaintenance at thresholds', () => {
   const c = calibratedMaintenance(at2000(run('2026-10-13', 21, 600)), W, { asOf: '2026-11-02' }); // 10-13..11-02
-  assert.notEqual(c.method, 'goal_calories');
+  assert.notEqual(c.method, 'fixed_maintenance');
   near(c.maintenance_est, 2000 + (0.5 / 7) * 7700, 1); // 2550
 });
 
@@ -149,4 +157,21 @@ test('(i3) thursdayCheck no data', () => {
 test('(j) rate from WEEKLY_LOSS_TARGET_KG', () => {
   process.env.WEEKLY_LOSS_TARGET_KG = '0.5';
   assert.equal(weeklyDeficit(run('2026-10-26', 7, 900)).target_total, 3850);
+});
+
+test('(k) maintenance defaults to 2620 and ignores the daily goal', () => {
+  delete process.env.MAINTENANCE_KCAL;
+  assert.equal(maintenanceKcal(), 2620);
+  const r = weeklyDeficit([{ day: '2026-10-26', nutrition: { calories: 1700, goal_calories: 1900, logged_complete: true } }]);
+  assert.equal(r.avg_deficit, 920); // 2620 - 1700, not 1900 - 1700
+});
+
+test('(l) ride kcal raises that day\'s maintenance', () => {
+  const days = [
+    { day: '2026-10-26', nutrition: { calories: 1700, logged_complete: true, ride_kcal: 0 } },
+    { day: '2026-10-27', nutrition: { calories: 1700, logged_complete: true, ride_kcal: 500 } },
+  ];
+  const r = weeklyDeficit(days);
+  assert.equal(r.n_usable, 2);
+  assert.equal(r.avg_deficit, 1150); // maintenance pinned to 2600 by beforeEach: (900 + 1400) / 2
 });
