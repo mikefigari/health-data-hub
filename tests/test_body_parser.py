@@ -14,8 +14,6 @@ import logging
 from datetime import date
 from pathlib import Path
 
-import pytest
-
 from health_data_hub.integrations.apple_health.body_poller import parse_body_payloads
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hae_body_sample.json"
