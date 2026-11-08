@@ -127,14 +127,16 @@ Metrics: attempts=2 fix=0 review=none blocked=none
 Metrics: attempts=1 fix=0 review=none blocked=none
 
 
-### T10: Weekly power-zone summary groups rides by Los Angeles day [model: sonnet] [risk: normal] [status: doing] [deps: T6]
+### T10: Weekly power-zone summary groups rides by Los Angeles day [model: sonnet] [risk: normal] [status: done] [deps: T6]
 **Outcome**: The query at `health_data_hub/etl/transform/power_zone_graph.py:478` picks rides by their America/Los_Angeles start date, so a Sunday 18:00 PT ride counts in that week, not the next.
 **Files**: `health_data_hub/etl/transform/power_zone_graph.py` (copy `(start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date` from `notion-reporter/src/utils/db.mjs:79`), `tests/test_power_zone_day.py` (new), `LESSONS.md` (delete the line beginning "notion-reporter/src/utils/db.mjs:79 and power_zone_graph.py:478" as the last step)
 **Non-goals**: no other query or chart changes; no backfill of past Notion summaries.
 **Acceptance tests**: `tests/test_power_zone_day.py`: (a) with a mocked cursor, the SQL the weekly query executes converts `start_time` from UTC to `America/Los_Angeles` before `::date`; (b) no remaining `start_time::date` in `power_zone_graph.py`; (c) the date parameters passed are the week's Monday and Sunday unchanged.
 **Done-when**: `venv/Scripts/python -m pytest -q && ! grep -q "power_zone_graph.py:478 still group" LESSONS.md`
 **Decision rule**: If `workouts_raw.start_time` turns out to be `timestamptz`, use `(start_time AT TIME ZONE 'America/Los_Angeles')::date` instead and log it in Notes.
-**Notes**:
+**Notes**: workouts_raw.start_time is naive TIMESTAMP (schema.sql:16), so used the double AT TIME ZONE form.
+Metrics: attempts=1 fix=0 review=none blocked=none
+
 
 ### T11: Unused-export checker for the Node services [model: sonnet] [risk: normal] [status: doing] [deps: none]
 **Outcome**: `node scripts/check-unused-exports.mjs` prints each `path name` that is exported but referenced by no other tracked `.mjs`/`.js` file, and exits 1 if any exist; it uses only Node built-ins.
