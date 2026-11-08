@@ -61,14 +61,16 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 Metrics: attempts=1 fix=0 review=none blocked=none
 
 
-### T4: README describes the current system; drop finished Datawrapper and nutrition-poller instructions [model: sonnet] [risk: normal] [status: todo] [deps: T1, T2, T3]
+### T4: README describes the current system; drop finished Datawrapper and nutrition-poller instructions [model: sonnet] [risk: normal] [status: done] [deps: T1, T2, T3]
 **Outcome**: `README.md` lists each component with its purpose, test command and docs link; `dashboard/README.md` and `docs/health_auto_export_setup.md` no longer give Datawrapper or `nutrition_poller` instructions.
 **Files**: `README.md` (rewrite), `dashboard/README.md` (remove the Datawrapper mention at :7 and the finished live steps at :147-155 and :237-238), `docs/health_auto_export_setup.md` (remove the `nutrition_poller` setup at :14, :76, :185; nutrition is logged through health-mcp, see `docs/nutrition_logging.md`), `tests/test_readme.py` (new)
 **Non-goals**: no edits to `docs/nutrition_deploy_runbook.md` (its `nutrition_poller` lines describe a past deploy and rollback); no new docs files.
 **Acceptance tests**: `tests/test_readme.py`: (a) `README.md` has a `## Components` section naming `health_data_hub/`, `scheduler_all.py`, `health-mcp/`, `notion-reporter/`, `dashboard/`, `cloudflare-worker/`; (b) a `## Tests` section contains `venv/Scripts/python -m pytest -q` and `npm test` and names every directory that `.github/workflows/kit-ci.yml` runs `npm test` in; (c) no tracked file outside `PLAN.md`, `LESSONS.md`, `RUNLOG.md` contains `datawrapper` (case-insensitive); (d) `docs/health_auto_export_setup.md` does not contain `nutrition_poller`.
 **Done-when**: `venv/Scripts/python -m pytest -q tests/test_readme.py tests/test_docs.py`
 **Decision rule**: If a Datawrapper or nutrition_poller paragraph also holds instructions that still apply (body measurements, Health Auto Export setup), keep those sentences and remove only the stale ones.
-**Notes**:
+**Notes**: Scheduler row links health-data-hub.service (no pi/README.md). Also removed stale Datawrapper rollback and nutrition_poller manual-poll step.
+Metrics: attempts=1 fix=0 review=none blocked=none
+
 
 ### T5: Add ruff (F, I) config and dependency [model: haiku] [risk: normal] [status: done] [deps: T1]
 **Outcome**: `venv/Scripts/python -m ruff check .` runs with rules F and I, `health_data_hub` as first-party, and `venv`, `.venv` and `node_modules` excluded; ruff is installed from `requirements.txt`, so CI gets it from the same `pip install -r requirements.txt` step.
@@ -81,32 +83,38 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 Metrics: attempts=1 fix=0 review=none blocked=none
 
 
-### T6: Zero ruff findings in health_data_hub/etl [model: haiku] [risk: normal] [status: todo] [deps: T5]
+### T6: Zero ruff findings in health_data_hub/etl [model: haiku] [risk: normal] [status: done] [deps: T5]
 **Outcome**: `ruff check health_data_hub/etl` exits 0 and the Python suite passes.
 **Files**: files under `health_data_hub/etl/` that ruff reports (mechanical per A2); `health_data_hub/etl/export_daily_json.py` drops its unused `DB_*` imports
 **Non-goals**: no logic changes; no `# noqa` except for an import kept for its side effect, with a reason comment.
 **Acceptance tests**: none: lint-only; Done-when runs ruff and the suite.
 **Done-when**: `venv/Scripts/python -m ruff check health_data_hub/etl && venv/Scripts/python -m pytest -q`
 **Decision rule**: Run `ruff check --fix` first. For any finding left (F841, F811 and similar), make the smallest edit that keeps behavior; if the only fix changes behavior, report needs-decision.
-**Notes**:
+**Notes**: 28 findings, all mechanical (imports, unused psycopg2, one placeholder-less f-string).
+Metrics: attempts=2 fix=0 review=none blocked=none
 
-### T7: Zero ruff findings in health_data_hub/integrations, quality, utils, config [model: haiku] [risk: normal] [status: todo] [deps: T5]
+
+### T7: Zero ruff findings in health_data_hub/integrations, quality, utils, config [model: haiku] [risk: normal] [status: done] [deps: T5]
 **Outcome**: `ruff check health_data_hub/integrations health_data_hub/quality health_data_hub/utils health_data_hub/config health_data_hub/__init__.py` exits 0 and the Python suite passes.
 **Files**: files under those paths that ruff reports (mechanical per A2); known: `health_data_hub/integrations/oura/poll_oura.py` (unused `traceback`)
 **Non-goals**: no logic changes; no edits under `health_data_hub/db/`.
 **Acceptance tests**: none: lint-only; Done-when runs ruff and the suite.
 **Done-when**: `venv/Scripts/python -m ruff check health_data_hub/integrations health_data_hub/quality health_data_hub/utils health_data_hub/config health_data_hub/__init__.py && venv/Scripts/python -m pytest -q`
 **Decision rule**: Same as T6.
-**Notes**:
+**Notes**: 12 findings, mechanical; poll_oura unused traceback removed.
+Metrics: attempts=1 fix=0 review=none blocked=none
 
-### T8: Zero ruff findings in root scripts and tests [model: haiku] [risk: normal] [status: todo] [deps: T5]
+
+### T8: Zero ruff findings in root scripts and tests [model: haiku] [risk: normal] [status: done] [deps: T5]
 **Outcome**: `ruff check run_all.py scheduler_all.py backfill_body_measurements.py tests` exits 0 and the Python suite passes.
 **Files**: those root scripts and files under `tests/` that ruff reports (mechanical per A2); known: `tests/test_body_parser.py`, `tests/test_quality.py` (unused imports)
 **Non-goals**: no change to what a test asserts; no edits to files committed as `T<n>-spec:` on this branch.
 **Acceptance tests**: none: lint-only; Done-when runs ruff and the suite.
 **Done-when**: `venv/Scripts/python -m ruff check run_all.py scheduler_all.py backfill_body_measurements.py tests && venv/Scripts/python -m pytest -q`
 **Decision rule**: If a finding is in a `T<n>-spec:` file from this branch, report needs-decision (spec files are read-only).
-**Notes**:
+**Notes**: Removed unused FakeConn local in test_quality.py. First worker run blocked only on parallel T4 spec test; re-run committed.
+Metrics: attempts=2 fix=0 review=none blocked=none
+
 
 ### T9: Scheduler-reachable modules log instead of print [model: sonnet] [risk: normal] [status: todo] [deps: T6, T7]
 **Outcome**: No module that `scheduler_all.py` imports, directly or transitively within `health_data_hub`, calls `print()` outside an `if __name__ == "__main__":` block; those messages go through `logging` at the same point in the code.
