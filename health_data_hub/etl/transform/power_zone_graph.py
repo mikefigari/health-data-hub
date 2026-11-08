@@ -474,7 +474,7 @@ def _fetch_weekly_zone_data(week_start: date, week_end: date) -> Optional[dict]:
                     ws.np_watts
                 FROM workouts_raw wr
                 LEFT JOIN workout_summary ws ON ws.workout_id = wr.id
-                WHERE wr.start_time::date BETWEEN %s AND %s
+                WHERE (wr.start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date BETWEEN %s AND %s
                   AND LOWER(REPLACE(wr.sport_type, ' ', '')) LIKE '%%ride%%'
                 ORDER BY wr.start_time
                 """,
