@@ -28,23 +28,27 @@ Branch: orch/code-cleanup
 - No new dependencies except `ruff` (D3). No new env vars. If a task rewires a config key, the README env table for that service is updated in the same task.
 - Report needs-decision only for: user-visible behavior not covered above, data loss, security, cost, or a spec test that looks wrong.
 ## Tasks
-### T1: Delete dead Python modules, root scripts and archive/ [model: haiku] [risk: normal] [status: todo] [deps: none]
+### T1: Delete dead Python modules, root scripts and archive/ [model: haiku] [risk: normal] [status: done] [deps: none]
 **Outcome**: `analyze_training.py`, `print_recent.py`, `health_data_hub/integrations/apple_health/nutrition_reader.py`, `health_data_hub/utils/units.py` and the whole `archive/` directory are gone and every test suite still passes.
 **Files**: `analyze_training.py` (delete), `print_recent.py` (delete), `health_data_hub/integrations/apple_health/nutrition_reader.py` (delete), `health_data_hub/utils/units.py` (delete), `archive/` (delete all 7 files)
 **Non-goals**: no edits to the files that stay; docs that mention these files are T3/T4's job; the `nutrition_daily_legacy` table is not touched.
 **Acceptance tests**: none: deletion only; Done-when proves the files are gone, nothing in code still imports them, and the suites pass.
 **Done-when**: `test ! -e analyze_training.py && test ! -e print_recent.py && test ! -e archive && test ! -e health_data_hub/integrations/apple_health/nutrition_reader.py && test ! -e health_data_hub/utils/units.py && ! git grep -nE "nutrition_reader|utils\.units|convert_kj_to_kcal|analyze_training|print_recent|archive/" -- '*.py' '*.mjs' '*.js' '*.sh' '*.service' '*.yml' '*.json' ':!**/package-lock.json' && venv/Scripts/python -m pytest -q`
 **Decision rule**: If a code file outside this list imports one of them, keep that file, log it in Notes, and finish the rest.
-**Notes**:
+**Notes**: Nothing outside the deleted files referenced them; nothing kept.
+Metrics: attempts=1 fix=0 review=none blocked=none
 
-### T2: Delete stale planning docs [model: haiku] [risk: normal] [status: todo] [deps: none]
+
+### T2: Delete stale planning docs [model: haiku] [risk: normal] [status: done] [deps: none]
 **Outcome**: `PI_MIGRATION_PLAN.md`, `TECHNICAL_ANALYSIS.md`, `n8n-health-coach-discovery.md`, `docs/nutrition-build-plan.md` and `prompts/` are gone, and no tracked file links to them.
 **Files**: `PI_MIGRATION_PLAN.md` (delete), `TECHNICAL_ANALYSIS.md` (delete), `n8n-health-coach-discovery.md` (delete), `docs/nutrition-build-plan.md` (delete), `prompts/future/more automations` (delete)
 **Non-goals**: no edits to runbooks (`docs/*runbook*.md`, `docs/nutrition_logging.md`, `docs/health_auto_export_setup.md`) except removing a link to a deleted file.
 **Acceptance tests**: none: deletion only; Done-when proves the files are gone and nothing references them.
 **Done-when**: `test ! -e PI_MIGRATION_PLAN.md && test ! -e TECHNICAL_ANALYSIS.md && test ! -e n8n-health-coach-discovery.md && test ! -e docs/nutrition-build-plan.md && test ! -e prompts && ! git grep -nE "PI_MIGRATION_PLAN|TECHNICAL_ANALYSIS|n8n-health-coach|nutrition-build-plan|prompts/future" -- ':!PLAN.md' ':!LESSONS.md' ':!RUNLOG.md'`
 **Decision rule**: If another doc links to a deleted file, remove the link sentence; if the link carries information that exists nowhere else, keep a one-line summary in its place and log it in Notes.
-**Notes**:
+**Notes**: Only reference was inside a deleted doc; no links edited.
+Metrics: attempts=1 fix=0 review=none blocked=none
+
 
 ### T3: Docs check: relative links resolve and runbook check steps are read-only [model: sonnet] [risk: normal] [status: todo] [deps: T2]
 **Outcome**: `venv/Scripts/python -m pytest -q tests/test_docs.py` fails when a tracked markdown file has a relative link to a missing path, or when a runbook check step contains a write command. This promotes the count-2 lesson "A runbook check step must not have side effects in production".
