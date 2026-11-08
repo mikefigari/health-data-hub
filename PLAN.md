@@ -1,92 +1,173 @@
-# Plan: 1900 kcal goal from 2026-10-28, with a stored maintenance figure used by daily and weekly deficit math
-Branch: orch/goal-1900-maintenance
-> **Shelved (2026-10-28).** The goal change shipped by hand with an interim fixed maintenance of 2620 kcal + ride kJ in code (no migration, no `maintenance_calories` column). T1's spec test was removed because its migration was never built; Q7 in DECISIONS_NEEDED is moot. Revisit only if maintenance should be stored in `nutrition_goals`.
+# Plan: Code cleanup: remove dead code and stale docs, add ruff and an unused-export check, one config source per constant
+Branch: orch/code-cleanup
 ## Context
-- Stack: Postgres (`health_data_hub/db/`), Node 22 ESM services `health-mcp/`, `notion-reporter/`, `dashboard/`. Unit tests: `cd <service> && npm test`. Integration: `cd <service> && TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test npm run test:integration` (private test cluster, never the Pi; shared harness `health-mcp/test/helpers/testdb.mjs`). Python tests: `venv/Scripts/python -m pytest -q`.
-- Today: `goal_calories = base_calories + cycling_kj_factor * powered Ride kJ` (`health_data_hub/db/schema.sql:620-697`, view `nutrition_daily`). The weekly review uses `goal_calories` as maintenance (`notion-reporter/src/utils/nutritionWeek.mjs:48`), so with a 1900 goal it would report almost no deficit.
-- New model: `maintenance_calories` on `nutrition_goals`; a day's maintenance = `maintenance_calories + round(cycling_kj_factor * ride kJ)`. Deficit for a day = day maintenance - calories eaten. Goal stays `base_calories + round(factor * kJ)`.
-- Headless runs use `--permission-mode dontAsk`: run checks via `npm test`, `npm run <script>`, `node --test`, bare `npm install`.
-- No-touch: the `nutrition_goals` row effective 2026-10-25 (goal fields), existing migrations, `health_data_hub/db/baseline/schema_2026-10.sql`, Oura/Strava pollers, `health_data_hub/etl/export_daily_json.py`.
+- Stack: Python ETL + `scheduler_all.py` (`health_data_hub/`, tests in `tests/`), Node 22 ESM services `dashboard/`, `health-mcp/`, `notion-reporter/`, `cloudflare-worker/`, Postgres schema in `health_data_hub/db/`.
+- Tests: `venv/Scripts/python -m pytest -q`; per service `cd <service> && npm test`; integration `cd <service> && TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test npm run test:integration` (test cluster only, never the Pi).
+- Baseline 2026-11-07: pytest 78 pass, dashboard 205, health-mcp 64, notion-reporter 30, cloudflare-worker 9, all green. No lint configured (`.claude/kit.json` `commands.lint` is empty).
+- Base: main after `orch/goal-1900-maintenance` is merged (D1).
+- Headless runs use `--permission-mode dontAsk`: run checks via `npm test`, `npm run <script>`, `node --test`, `node <script>`, `venv/Scripts/python -m <tool>`.
+- No-touch: `health_data_hub/db/**` (schema, migrations, baseline), `nutrition_daily_legacy` and all data, `health-mcp/oauth.mjs`, `health_data_hub/config/*.env*`, `dashboard/Dockerfile`, `dashboard/docker-compose.yml`, deployed env files on the Pi.
 ## Decisions
-- D1: Goal -> 1900 kcal base from 2026-10-28 (user chose A), as a NEW `nutrition_goals` row; protein 180 g and target weight 100.0 kg carry over.
-- D2: Ride kJ -> factor stays 1.00; 1 kJ of powered Ride work = 1 kcal burned; it is added to both the day's goal and the day's maintenance in every daily and weekly equation.
-- D3: Effective date -> 2026-10-28 (today).
-- D4: Maintenance -> new `maintenance_calories` column; 2620 kcal/day (light activity, x1.375); recalculated by hand at milestones and check-ins by inserting a new goals row.
-- D5: Scope -> the maintenance figure rolls into weekly metrics (weekly review, Thursday check-in, dashboard weekly averages), not only the daily view.
+- D1: Base branch -> merge `orch/goal-1900-maintenance` into main first; this plan branches from that main.
+- D2: Dead code and stale docs -> delete outright (git history keeps them), including `archive/`. CLI tools that are still useful stay: `run_all.py`, `backfill_body_measurements.py`, `etl/extract/strava_reauth_headless.py`, `etl/extract/strava_webhook_setup.py`, `integrations/oura/run_oura_backfill.py`, `integrations/sync_weekly_powerzone_summary.py`, `etl/import_planned_workouts.py` (notion-reporter reads `planned_workouts`), `quality/`.
+- D3: Lint -> ruff for Python (rules F and I) in requirements and CI; Node gets no new dependencies, and a repo script `scripts/check-unused-exports.mjs` fails on exports that nothing references.
+- D4: Constants -> one config source per service: maintenance 2620 and plan pace 0.6545 are read once from that service's config/env reader; 7700 kcal/kg is one named constant per service; prompt text interpolates the configured value. No DB change.
 ## Assumptions
-- A1: Plan pace becomes 0.65 kg/week. 2620 - 1900 = 720 kcal/day = 5040 kcal/week = 0.655 kg at 7700 kcal/kg. The review's `on_track` test and projections would otherwise demand 825 kcal/day against a 720 kcal/day plan and flag every week off track. Default is 0.65 in `WEEKLY_LOSS_TARGET_KG` and `PLAN_KG_PER_WEEK`; deployed env overrides must be updated (live step in T7).
-- A2: The 2026-10-25 row gets `maintenance_calories = 2620` in the migration (its own seed `base_calories`, which was maintenance when no deficit was applied). Its goal fields are not changed. Without this, days 10-25..10-27 would have no maintenance and the review would fall back to `goal_calories` for them.
-- A3: `maintenance_calories` is `INT NOT NULL CHECK (BETWEEN 800 AND 6000)` after the backfill, same bounds as `base_calories`.
-- A4: View `nutrition_daily` gets `maintenance_calories` appended as the LAST column (CREATE OR REPLACE VIEW only allows appended columns); legacy-table rows return `NULL::int`. Consumers fall back to `goal_calories` when it is null.
-- A5: Days with no ride have kJ = 0, so maintenance = `maintenance_calories`.
-- A6: The calibrated-maintenance path (scale trend, 28-day window, at least 21 usable days) stays as is; only its fallback figure and labels change.
+- A1: `health_data_hub/integrations/apple_health/nutrition_reader.py` is dead, not merely unreferenced: it reads `nutrition_daily` as a table, which migration 2026-11_02 renamed to `nutrition_daily_legacy` and replaced with a view of a different shape.
+- A2: The 5-file cap counts hand edits. Deletions, `ruff --fix` output and removing only an `export` keyword or an unused import are mechanical and don't count toward it.
+- A3: The count-3 lesson (spec-integrity per-task re-spec) is a change to `.claude/hooks/spec-integrity.sh` in the agent-kit plugin repo, not this repo. It is out of scope here and its LESSONS.md line stays until that kit change lands.
+- A4: `power_zone_graph.py:478` grouping rides by UTC day is a known bug (LESSONS, 2026-10-26), so fixing it belongs in this cleanup even though it changes the weekly zone summary for rides that start after 17:00 PT.
+- A5: Logging conversion applies only to modules the scheduler imports (directly or transitively). CLI entry points keep `print` for operator output.
+- A6: Ruff runs on the Python version CI already uses; ruff's `target-version` is left at its default unless a finding depends on it.
 ## Default policy
 - If ambiguous, follow the existing pattern in the file being edited and log the choice in the task's Notes.
-- Null handling: `maintenance_calories ?? goal_calories` is the only fallback; never invent a number.
-- Migration style: copy `health_data_hub/db/migrations/2026-11_03_dashboard_role.sql:1-16` (already-applied guard, ledger insert) and its `.down.sql`.
-- Tests go beside existing ones (`test/unit`, `test/integration`); integration suites fail, not skip, without `TEST_DATABASE_URL`.
-- New env vars: none. Defaults change only for `WEEKLY_LOSS_TARGET_KG` and `PLAN_KG_PER_WEEK`; README env tables are updated in the same task.
+- Behavior stays the same except where a task's Outcome says it changes (only T10 and the prompt text in T13). A cleanup edit that would change output, a query result or a schedule is a needs-decision.
+- Before deleting a file or an export, `git grep -w <name>` across the repo. If anything outside the files being deleted still uses it, keep it and log that in Notes.
+- New Python tests go in `tests/` as `test_<topic>.py` and mock the DB like `tests/test_scheduler_wrappers.py`. New Node tests go in the service's `test/unit/`. Once T5 is done, every Python file a spec writer or worker adds must pass `venv/Scripts/python -m ruff check <file>`.
+- Logging: `logger = logging.getLogger(__name__)` at module top, like `health_data_hub/integrations/apple_health/body_poller.py`; never log tokens or full API responses.
+- No new dependencies except `ruff` (D3). No new env vars. If a task rewires a config key, the README env table for that service is updated in the same task.
 - Report needs-decision only for: user-visible behavior not covered above, data loss, security, cost, or a spec test that looks wrong.
 ## Tasks
-### T1: Migration 2026-11_04 adds maintenance_calories, the 2026-10-28 goal row and the view column [model: sonnet] [risk: high] [status: needs-decision] [deps: none]
-**Outcome**: After the migration, `nutrition_goals` has `maintenance_calories` (2620 on both rows), a new row effective 2026-10-28 has `base_calories` 1900, and `nutrition_daily.maintenance_calories` equals `maintenance_calories + round(factor * ride kJ)` for food_log days.
-**Files**: `health_data_hub/db/migrations/2026-11_04_maintenance_calories.sql` (new; copy the guard/ledger pattern at `health_data_hub/db/migrations/2026-11_03_dashboard_role.sql:1-16`), `health_data_hub/db/migrations/2026-11_04_maintenance_calories.down.sql` (new), `health_data_hub/db/schema.sql` (mirror the table, seed rows and view at `:620-697` and the ledger insert at `:719`), `health-mcp/test/integration/maintenance_calories.int.test.mjs` (new; copy the harness use in `health-mcp/test/integration/nutrition_daily_view.int.test.mjs`)
-**Non-goals**: no edit to the 2026-10-25 row's `base_calories`, `cycling_kj_factor`, `protein_g`, `target_weight_kg`; no change to the legacy table; no change to existing migrations.
-**Acceptance tests**: `health-mcp/test/integration/maintenance_calories.int.test.mjs`: (a) fresh install and upgrade install both leave the `nutrition_daily` columns unchanged in order except a trailing `maintenance_calories`; (b) goals rows: 2026-10-25 keeps base 2620, factor 1.00, protein 180 and gains maintenance 2620; 2026-10-28 has base 1900, factor 1.00, protein 180, target 100.0, maintenance 2620; (c) a food_log day on 2026-10-27 with a 1000 kJ powered Ride has goal 3620 and maintenance 3620; a day on 2026-10-28 with the same ride has goal 2900 and maintenance 3620; a no-ride day on 2026-10-29 has goal 1900 and maintenance 2620; (d) a legacy-table day returns `maintenance_calories` NULL; (e) the migration refuses to run twice; (f) the `.down.sql` restores the previous view (no `maintenance_calories`), removes the 2026-10-28 row and drops the column, and `nutrition_writer` and `dashboard_ro` can still SELECT the view after up and after down; (g) an INSERT of a goals row with `maintenance_calories` 100 fails the CHECK.
-**Done-when**: `cd health-mcp && TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test node --test --test-concurrency=1 test/integration/maintenance_calories.int.test.mjs test/integration/nutrition_daily_view.int.test.mjs test/integration/dashboard_role.int.test.mjs`
-**Decision rule**: If a grant or role check in an older suite breaks, fix the migration, not the older suite; if an older suite pins the exact column list, report needs-decision.
+### T1: Delete dead Python modules, root scripts and archive/ [model: haiku] [risk: normal] [status: todo] [deps: none]
+**Outcome**: `analyze_training.py`, `print_recent.py`, `health_data_hub/integrations/apple_health/nutrition_reader.py`, `health_data_hub/utils/units.py` and the whole `archive/` directory are gone and every test suite still passes.
+**Files**: `analyze_training.py` (delete), `print_recent.py` (delete), `health_data_hub/integrations/apple_health/nutrition_reader.py` (delete), `health_data_hub/utils/units.py` (delete), `archive/` (delete all 7 files)
+**Non-goals**: no edits to the files that stay; docs that mention these files are T3/T4's job; the `nutrition_daily_legacy` table is not touched.
+**Acceptance tests**: none: deletion only; Done-when proves the files are gone, nothing in code still imports them, and the suites pass.
+**Done-when**: `test ! -e analyze_training.py && test ! -e print_recent.py && test ! -e archive && test ! -e health_data_hub/integrations/apple_health/nutrition_reader.py && test ! -e health_data_hub/utils/units.py && ! git grep -nE "nutrition_reader|utils\.units|convert_kj_to_kcal|analyze_training|print_recent|archive/" -- '*.py' '*.mjs' '*.js' '*.sh' '*.service' '*.yml' '*.json' ':!**/package-lock.json' && venv/Scripts/python -m pytest -q`
+**Decision rule**: If a code file outside this list imports one of them, keep that file, log it in Notes, and finish the rest.
 **Notes**:
 
-### T2: health-mcp day summary reports maintenance and deficit [model: sonnet] [risk: normal] [status: todo] [deps: T1]
-**Outcome**: `get_day_summary` returns `goals.maintenance_calories` and `deficit_kcal`, and the no-rows branch returns goals plus maintenance from the goals table.
-**Files**: `health-mcp/tools/nutrition/summary.mjs` (pattern at `:28-40` and `:90-130`), `health-mcp/test/integration/summary_maintenance.int.test.mjs` (new; copy `health-mcp/test/integration/summary_edit.int.test.mjs`), `health-mcp/README.md`
-**Non-goals**: no change to write tools; `goal_calories` semantics unchanged.
-**Acceptance tests**: `health-mcp/test/integration/summary_maintenance.int.test.mjs`: (a) a day with a 1000 kJ powered Ride and 2000 kcal eaten returns goals.calories 2900 (base 1900 + 1000, on or after 2026-10-28), goals.maintenance_calories 3620, deficit_kcal 1620; (b) a day with no rows (lesson: cover days with no logged rows from the goals table) returns goals.calories 1900 + ride kcal and maintenance_calories 2620 + ride kcal, totals null, deficit_kcal null; (c) a legacy day returns maintenance_calories null and deficit_kcal null; (d) the existing `summary_edit*.int.test.mjs` and `ride_day.int.test.mjs` still pass.
-**Done-when**: `cd health-mcp && TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test node --test --test-concurrency=1 test/integration/summary_maintenance.int.test.mjs test/integration/summary_edit.int.test.mjs test/integration/summary_edit_review.int.test.mjs test/integration/ride_day.int.test.mjs && npm test`
-**Decision rule**: Round kcal fields to integers; follow the `round1`/`num` helpers already in the file.
+### T2: Delete stale planning docs [model: haiku] [risk: normal] [status: todo] [deps: none]
+**Outcome**: `PI_MIGRATION_PLAN.md`, `TECHNICAL_ANALYSIS.md`, `n8n-health-coach-discovery.md`, `docs/nutrition-build-plan.md` and `prompts/` are gone, and no tracked file links to them.
+**Files**: `PI_MIGRATION_PLAN.md` (delete), `TECHNICAL_ANALYSIS.md` (delete), `n8n-health-coach-discovery.md` (delete), `docs/nutrition-build-plan.md` (delete), `prompts/future/more automations` (delete)
+**Non-goals**: no edits to runbooks (`docs/*runbook*.md`, `docs/nutrition_logging.md`, `docs/health_auto_export_setup.md`) except removing a link to a deleted file.
+**Acceptance tests**: none: deletion only; Done-when proves the files are gone and nothing references them.
+**Done-when**: `test ! -e PI_MIGRATION_PLAN.md && test ! -e TECHNICAL_ANALYSIS.md && test ! -e n8n-health-coach-discovery.md && test ! -e docs/nutrition-build-plan.md && test ! -e prompts && ! git grep -nE "PI_MIGRATION_PLAN|TECHNICAL_ANALYSIS|n8n-health-coach|nutrition-build-plan|prompts/future" -- ':!PLAN.md' ':!LESSONS.md' ':!RUNLOG.md'`
+**Decision rule**: If another doc links to a deleted file, remove the link sentence; if the link carries information that exists nowhere else, keep a one-line summary in its place and log it in Notes.
 **Notes**:
 
-### T3: Weekly deficit math measures against daily maintenance and plans 0.65 kg/week [model: sonnet] [risk: normal] [status: todo] [deps: none]
-**Outcome**: `weeklyDeficit`, `thursdayCheck` and `calibratedMaintenance` use each row's `nutrition.maintenance_calories`, fall back to `goal_calories` when it is null, and the default loss target is 0.65 kg/week.
-**Files**: `notion-reporter/src/utils/nutritionWeek.mjs` (edit `:8-12`, `:40-53`, `:128-151`), `notion-reporter/src/utils/buildCheckin.mjs` (map `maintenance_calories` at `:30-37`), `notion-reporter/test/unit/nutritionWeek.test.mjs`, `notion-reporter/test/unit/checkin.test.mjs`
-**Non-goals**: no change to the calibration thresholds (21 days, 4 weigh-ins, 21 day span) or the 7700 kcal/kg constant.
-**Acceptance tests**: `notion-reporter/test/unit/nutritionWeek.test.mjs`, `checkin.test.mjs`: (a) a row with calories 1900, maintenance_calories 2620, goal_calories 1900 gives deficit 720, not 0; (b) a row with maintenance_calories null falls back to goal_calories; (c) default `weeklyTargetKcal()` = round(0.65 * 7700) = 5005 and target_daily 715; an avg deficit of 720 is `on_track`, 700 is not; (d) `WEEKLY_LOSS_TARGET_KG=0.5` still overrides; (e) `weeklyDeficit` output includes `avg_maintenance` and `avg_calories` over usable days (integers, null when no data); (f) a ride day (maintenance 3620, calories 2900) contributes deficit 720; (g) Thursday check: Mon-Wed rows each with a 720 deficit give on_track true and post false, rows with a 400 deficit give post true and needed_per_day_thu_sun computed from the 5005 target; (h) a `maintenance` option passed in (calibrated) wins over row values; (i) `calibratedMaintenance` counts a row as usable when maintenance_calories or goal_calories is present and reports method 'daily_maintenance' (was 'goal_calories') when not calibrated.
-**Done-when**: `cd notion-reporter && npm test`
-**Decision rule**: Existing tests that pin 0.75 or 825 are re-specified here to the 0.65/715 values; do not keep both.
+### T3: Docs check: relative links resolve and runbook check steps are read-only [model: sonnet] [risk: normal] [status: todo] [deps: T2]
+**Outcome**: `venv/Scripts/python -m pytest -q tests/test_docs.py` fails when a tracked markdown file has a relative link to a missing path, or when a runbook check step contains a write command. This promotes the count-2 lesson "A runbook check step must not have side effects in production".
+**Files**: `tests/test_docs.py` (new; list files with `git ls-files` via `subprocess` like `tests/test_scheduler_wrappers.py` uses stdlib only), `LESSONS.md` (delete the "runbook check step must not have side effects" line as the last step), up to 3 runbook files only if the current tree fails the check
+**Non-goals**: no external URL checks; no change to runbook meaning beyond making a check step read-only.
+**Acceptance tests**: `tests/test_docs.py`: (a) scans every tracked `*.md` except `PLAN.md`, `LESSONS.md`, `RUNLOG.md`, `.claude/**`, `.github/**`; (b) every relative markdown link target (strip `#anchor`) exists relative to the linking file; (c) a "check step" is a line matching `(?i)\b(check|verify|smoke[- ]test)\b[^:\n]*:` plus the fenced code block that directly follows it; (d) a check step fails if its inline or fenced code matches any of: SQL `\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|CREATE)\b`, `curl` with `-X (POST|PUT|PATCH|DELETE)` or `-d`/`--data`, `systemctl (start|stop|restart)`, `docker compose (up|down|restart)`, `psql .* -f `; (e) self-tests of the detector on inline sample strings: one passing read-only sample and one failing sample per pattern in (d); (f) the current tree passes.
+**Done-when**: `venv/Scripts/python -m pytest -q tests/test_docs.py && ! grep -q "runbook \"check\" step must not have side effects" LESSONS.md`
+**Decision rule**: If the current tree fails (b) or (d) in more than 3 files, report needs-decision with the list rather than editing them.
 **Notes**:
 
-### T4: Weekly context, DB inputs and analysis prompt carry maintenance [model: sonnet] [risk: normal] [status: todo] [deps: T1, T3]
-**Outcome**: The nutrition rows fetched for the weekly review and exportDays include `maintenance_calories`, the weekly context reports `maintenance_method` 'daily_maintenance' or 'scale_calibrated', and the prompt text uses 0.65 kg/week and the new method name.
-**Files**: `notion-reporter/src/utils/db.mjs` (`:100-110`, `:215-232`, `:247-270`), `notion-reporter/src/utils/buildWeeklyContext.mjs` (`:108-125`), `notion-reporter/src/anthropic/analyzeHealth.mjs` (`:127`, `:146`, `:179-191`), `notion-reporter/test/integration/nutrition_week_inputs.int.test.mjs`, `notion-reporter/test/unit/weekly_prompt.test.mjs`
-**Non-goals**: no new Notion layout; no change to the calibrated estimate math.
-**Acceptance tests**: `notion-reporter/test/integration/nutrition_week_inputs.int.test.mjs`, `notion-reporter/test/unit/weekly_prompt.test.mjs`: (a) `getNutritionWeekInputs` rows include `maintenance_calories` (number or numeric string); (b) the exportDays `nutrition` JSON object includes `maintenance_calories`; (c) `buildWeeklyContextFrom` with rows at maintenance 2620 and calories 1900 gives `nutritionWeek.avg_deficit` 720, `maintenance_method` 'daily_maintenance', and carries `avg_maintenance` (lesson: check the context object carries every figure the prompt asks to report); (d) when calibrated, `goal_model_avg_deficit` equals the daily-maintenance deficit; (e) the prompt contains "0.65 kg/week" and "daily_maintenance" and does not contain "0.75"; (f) rows with only goal_calories still build a context.
-**Done-when**: `cd notion-reporter && TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test npm run test:integration && npm test`
-**Decision rule**: Prompt wording changes only where it names the rate or method; the rest of the prompt text stays byte-identical.
+### T4: README describes the current system; drop finished Datawrapper and nutrition-poller instructions [model: sonnet] [risk: normal] [status: todo] [deps: T1, T2, T3]
+**Outcome**: `README.md` lists each component with its purpose, test command and docs link; `dashboard/README.md` and `docs/health_auto_export_setup.md` no longer give Datawrapper or `nutrition_poller` instructions.
+**Files**: `README.md` (rewrite), `dashboard/README.md` (remove the Datawrapper mention at :7 and the finished live steps at :147-155 and :237-238), `docs/health_auto_export_setup.md` (remove the `nutrition_poller` setup at :14, :76, :185; nutrition is logged through health-mcp, see `docs/nutrition_logging.md`), `tests/test_readme.py` (new)
+**Non-goals**: no edits to `docs/nutrition_deploy_runbook.md` (its `nutrition_poller` lines describe a past deploy and rollback); no new docs files.
+**Acceptance tests**: `tests/test_readme.py`: (a) `README.md` has a `## Components` section naming `health_data_hub/`, `scheduler_all.py`, `health-mcp/`, `notion-reporter/`, `dashboard/`, `cloudflare-worker/`; (b) a `## Tests` section contains `venv/Scripts/python -m pytest -q` and `npm test` and names every directory that `.github/workflows/kit-ci.yml` runs `npm test` in; (c) no tracked file outside `PLAN.md`, `LESSONS.md`, `RUNLOG.md` contains `datawrapper` (case-insensitive); (d) `docs/health_auto_export_setup.md` does not contain `nutrition_poller`.
+**Done-when**: `venv/Scripts/python -m pytest -q tests/test_readme.py tests/test_docs.py`
+**Decision rule**: If a Datawrapper or nutrition_poller paragraph also holds instructions that still apply (body measurements, Health Auto Export setup), keep those sentences and remove only the stale ones.
 **Notes**:
 
-### T5: Dashboard data layer reports daily and weekly maintenance and deficit [model: sonnet] [risk: normal] [status: todo] [deps: T1]
-**Outcome**: `buildDashboard` returns per-day `maintenance_calories`; per-week `avg_maintenance_calories` and `avg_deficit_kcal`; summary `avg_deficit_kcal`; goals include `maintenance_calories`; a missing nutrition-row maintenance falls back to the goals row plus `factor * ride kJ`.
-**Files**: `dashboard/src/queries.mjs` (`:7-20`), `dashboard/src/aggregate.mjs` (`:76-83`, `:110-125`, `:145-190`, `:270-285`), `dashboard/src/demo.mjs` (`:29`, `:49`, `:67`), `dashboard/test/unit/aggregate.test.mjs`, `dashboard/test/integration/queries.int.test.mjs`
-**Non-goals**: no UI edit (T6); `avg_balance_kcal` (calories - goal) stays and keeps its meaning.
-**Acceptance tests**: `dashboard/test/unit/aggregate.test.mjs`, `dashboard/test/integration/queries.int.test.mjs`: (a) goals output includes `maintenance_calories` from the effective goals row; (b) a logged day with calories 1900 and row maintenance 2620 has `maintenance_calories` 2620 and deficit 720; (c) a ride day (1000 kJ, factor 1.0) with no row maintenance falls back to goals maintenance 2620 + 1000 = 3620; (d) week `avg_deficit_kcal` averages deficits over logged days only, `avg_maintenance_calories` likewise, both null with 0 logged days; (e) summary `avg_deficit_kcal` is over logged days with a maintenance figure; (f) days before any goals row have null maintenance and are excluded; (g) the queries return `maintenance_calories` for goals and nutrition rows; (h) demo inputs include `maintenance_calories` 2620 and stay deterministic.
-**Done-when**: `cd dashboard && TEST_DATABASE_URL=postgres://postgres@localhost:5433/hdh_test npm run test:integration && npm test`
-**Decision rule**: Round with the existing `r0`/`r1` helpers; follow the shape of `avg_goal_calories` when adding week fields.
+### T5: Add ruff (F, I) config and dependency [model: haiku] [risk: normal] [status: todo] [deps: T1]
+**Outcome**: `venv/Scripts/python -m ruff check .` runs with rules F and I, `health_data_hub` as first-party, and `venv`, `.venv` and `node_modules` excluded; ruff is installed from `requirements.txt`, so CI gets it from the same `pip install -r requirements.txt` step.
+**Files**: `ruff.toml` (new), `requirements.txt` (add `ruff`), `requirements.pinned.txt` (add `ruff==<version>`)
+**Non-goals**: no fixes to findings (T6-T8); no CI edits (T16); no rules beyond F and I.
+**Acceptance tests**: none: config only; Done-when proves ruff is installed and the config parses with the expected rules.
+**Done-when**: `venv/Scripts/python -m pip install -q -r requirements.txt && venv/Scripts/python -m ruff --version && venv/Scripts/python -m ruff check --exit-zero . >/dev/null && grep -qE 'select *= *\[ *"F" *, *"I" *\]' ruff.toml && grep -qi "^ruff" requirements.txt && grep -qi "^ruff==" requirements.pinned.txt`
+**Decision rule**: Pin the newest ruff release on PyPI that is at least 14 days old and record it in Notes.
 **Notes**:
 
-### T6: Dashboard shows the deficit and plans 0.65 kg/week [model: haiku] [risk: normal] [status: todo] [deps: T5]
-**Outcome**: The calorie summary caption shows the average daily deficit, and the default plan pace is 0.65 kg/week in config, env example and README.
-**Files**: `dashboard/public/js/core.mjs` (`:255-262`), `dashboard/src/config.mjs` (`:16`), `dashboard/dashboard.env.example` (`:13`), `dashboard/README.md` (env table `:51`), `dashboard/test/unit/core.test.mjs`, `dashboard/test/unit/app.test.mjs` (`:160`), `dashboard/test/unit/env-example.test.mjs`
-**Non-goals**: no new chart; no new env var (lesson: when an env default changes, update the README table in the same task).
-**Acceptance tests**: `dashboard/test/unit/core.test.mjs`, `app.test.mjs`, `env-example.test.mjs`, `config.test.mjs`: (a) the caption for `summary.avg_goal_calories` 1900, `avg_deficit_kcal` 720, 5 days logged reads exactly `Goal 1,900 · Deficit 720/day · 5 days logged` (thousands format follows `fmtInt`); (b) with `avg_deficit_kcal` null the caption is unchanged from today; (c) the `PLAN_KG_PER_WEEK` default is 0.65 in config, env example and README table; (d) an explicit `PLAN_KG_PER_WEEK=0.5` still overrides.
+### T6: Zero ruff findings in health_data_hub/etl [model: haiku] [risk: normal] [status: todo] [deps: T5]
+**Outcome**: `ruff check health_data_hub/etl` exits 0 and the Python suite passes.
+**Files**: files under `health_data_hub/etl/` that ruff reports (mechanical per A2); `health_data_hub/etl/export_daily_json.py` drops its unused `DB_*` imports
+**Non-goals**: no logic changes; no `# noqa` except for an import kept for its side effect, with a reason comment.
+**Acceptance tests**: none: lint-only; Done-when runs ruff and the suite.
+**Done-when**: `venv/Scripts/python -m ruff check health_data_hub/etl && venv/Scripts/python -m pytest -q`
+**Decision rule**: Run `ruff check --fix` first. For any finding left (F841, F811 and similar), make the smallest edit that keeps behavior; if the only fix changes behavior, report needs-decision.
+**Notes**:
+
+### T7: Zero ruff findings in health_data_hub/integrations, quality, utils, config [model: haiku] [risk: normal] [status: todo] [deps: T5]
+**Outcome**: `ruff check health_data_hub/integrations health_data_hub/quality health_data_hub/utils health_data_hub/config health_data_hub/__init__.py` exits 0 and the Python suite passes.
+**Files**: files under those paths that ruff reports (mechanical per A2); known: `health_data_hub/integrations/oura/poll_oura.py` (unused `traceback`)
+**Non-goals**: no logic changes; no edits under `health_data_hub/db/`.
+**Acceptance tests**: none: lint-only; Done-when runs ruff and the suite.
+**Done-when**: `venv/Scripts/python -m ruff check health_data_hub/integrations health_data_hub/quality health_data_hub/utils health_data_hub/config health_data_hub/__init__.py && venv/Scripts/python -m pytest -q`
+**Decision rule**: Same as T6.
+**Notes**:
+
+### T8: Zero ruff findings in root scripts and tests [model: haiku] [risk: normal] [status: todo] [deps: T5]
+**Outcome**: `ruff check run_all.py scheduler_all.py backfill_body_measurements.py tests` exits 0 and the Python suite passes.
+**Files**: those root scripts and files under `tests/` that ruff reports (mechanical per A2); known: `tests/test_body_parser.py`, `tests/test_quality.py` (unused imports)
+**Non-goals**: no change to what a test asserts; no edits to files committed as `T<n>-spec:` on this branch.
+**Acceptance tests**: none: lint-only; Done-when runs ruff and the suite.
+**Done-when**: `venv/Scripts/python -m ruff check run_all.py scheduler_all.py backfill_body_measurements.py tests && venv/Scripts/python -m pytest -q`
+**Decision rule**: If a finding is in a `T<n>-spec:` file from this branch, report needs-decision (spec files are read-only).
+**Notes**:
+
+### T9: Scheduler-reachable modules log instead of print [model: sonnet] [risk: normal] [status: todo] [deps: T6, T7]
+**Outcome**: No module that `scheduler_all.py` imports, directly or transitively within `health_data_hub`, calls `print()` outside an `if __name__ == "__main__":` block; those messages go through `logging` at the same point in the code.
+**Files**: `tests/test_no_print_in_scheduler.py` (new), `health_data_hub/integrations/notion/notion_strava_sync.py`, `health_data_hub/etl/extract/strava_refresh.py`, `health_data_hub/etl/extract/strava_oauth.py`, plus any other module the test finds (copy the logger pattern in `health_data_hub/integrations/apple_health/body_poller.py`)
+**Non-goals**: CLI-only modules keep `print` (A5); no change to log setup in `health_data_hub/utils/logging_config.py`; no message text changes except dropping secrets.
+**Acceptance tests**: `tests/test_no_print_in_scheduler.py`: (a) builds the import closure from `scheduler_all.py` by parsing `import`/`from` statements with `ast` and following `health_data_hub.*` modules; (b) asserts the closure includes `health_data_hub.integrations.poll_strava` and `health_data_hub.integrations.notion.notion_strava_sync` (guards against an empty closure); (c) no `print` call in any closure module outside an `if __name__ == "__main__":` block; (d) `strava_oauth.py`'s token-exchange failure path doesn't log the response body (assert with a mocked `requests.post` returning a body containing `access_token` and `caplog`).
+**Done-when**: `venv/Scripts/python -m pytest -q && venv/Scripts/python -m ruff check health_data_hub tests`
+**Decision rule**: print -> `logger.info`, a print in an error branch -> `logger.warning` or `logger.error` by existing wording. If the closure has more than 5 files with prints, convert them all (mechanical) and log the count in Notes.
+**Notes**:
+
+### T10: Weekly power-zone summary groups rides by Los Angeles day [model: sonnet] [risk: normal] [status: todo] [deps: T6]
+**Outcome**: The query at `health_data_hub/etl/transform/power_zone_graph.py:478` picks rides by their America/Los_Angeles start date, so a Sunday 18:00 PT ride counts in that week, not the next.
+**Files**: `health_data_hub/etl/transform/power_zone_graph.py` (copy `(start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date` from `notion-reporter/src/utils/db.mjs:79`), `tests/test_power_zone_day.py` (new), `LESSONS.md` (delete the line beginning "notion-reporter/src/utils/db.mjs:79 and power_zone_graph.py:478" as the last step)
+**Non-goals**: no other query or chart changes; no backfill of past Notion summaries.
+**Acceptance tests**: `tests/test_power_zone_day.py`: (a) with a mocked cursor, the SQL the weekly query executes converts `start_time` from UTC to `America/Los_Angeles` before `::date`; (b) no remaining `start_time::date` in `power_zone_graph.py`; (c) the date parameters passed are the week's Monday and Sunday unchanged.
+**Done-when**: `venv/Scripts/python -m pytest -q && ! grep -q "power_zone_graph.py:478 still group" LESSONS.md`
+**Decision rule**: If `workouts_raw.start_time` turns out to be `timestamptz`, use `(start_time AT TIME ZONE 'America/Los_Angeles')::date` instead and log it in Notes.
+**Notes**:
+
+### T11: Unused-export checker for the Node services [model: sonnet] [risk: normal] [status: todo] [deps: none]
+**Outcome**: `node scripts/check-unused-exports.mjs` prints each `path name` that is exported but referenced by no other tracked `.mjs`/`.js` file, and exits 1 if any exist; it uses only Node built-ins.
+**Files**: `scripts/check-unused-exports.mjs` (new), `scripts/unused-exports.allow` (new; `path name  # reason` per line, starts empty), `scripts/test/check-unused-exports.test.mjs` (new)
+**Non-goals**: no fixes to findings (T14, T15); no root `package.json`; no new dependencies.
+**Acceptance tests**: `scripts/test/check-unused-exports.test.mjs` on temp-dir fixtures: (a) `export function|const|let|class|async function NAME` and `export { a, b as c }` are collected; (b) a name counts as used when another file contains it as a whole word (tests included); (c) `import * as ns from './x.mjs'` marks every export of `x.mjs` used; (d) allowlisted `path name` pairs are skipped; (e) exit 0 with no findings, exit 1 and one `path name` line per finding otherwise; (f) scans `git ls-files` output, skipping `node_modules/` and `package-lock.json`.
+**Done-when**: `node --test scripts/test/`
+**Decision rule**: Prefer false negatives over false positives: if a pattern is ambiguous (string-built names, re-exports), treat the export as used and log the case in Notes.
+**Notes**:
+
+### T12: Dashboard reads maintenance, plan pace and kcal/kg from one place [model: sonnet] [risk: normal] [status: todo] [deps: none]
+**Outcome**: In `dashboard/src` and `dashboard/public/js`, the literals `2620` and `0.6545` appear only in `dashboard/src/config.mjs`, and `7700` appears only once as a named constant; the aggregate's `?? 2620` fallback and `demo.mjs`'s `0.6545` read the config value instead.
+**Files**: `dashboard/src/aggregate.mjs` (:10, :43), `dashboard/src/demo.mjs` (:80), `dashboard/src/config.mjs` (:16-17, export the parsed defaults), `dashboard/test/unit/constants.test.mjs` (new), `dashboard/README.md` (env table, only if a key or default changes)
+**Non-goals**: no change to any number the dashboard shows with the default env; no new env vars.
+**Acceptance tests**: `dashboard/test/unit/constants.test.mjs`: (a) scanning `dashboard/src/**` and `dashboard/public/js/**`, `2620` and `0.6545` appear only in `src/config.mjs` and `7700` appears exactly once; (b) aggregate with no `maintenanceKcal` input uses the config default 2620; (c) with `MAINTENANCE_KCAL=2500` the aggregate's maintenance is 2500; (d) demo data's `planKgPerWeek` equals the config `PLAN_KG_PER_WEEK`.
 **Done-when**: `cd dashboard && npm test`
-**Decision rule**: Keep the existing caption punctuation (middle dot); if the number format differs from `fmtInt`, follow `fmtInt` and adjust the test string.
+**Decision rule**: If a literal is needed in browser code (`public/js`), have the server pass it in the API payload rather than duplicating it; if that changes the payload shape, add the field without removing any.
 **Notes**:
 
-### T7: Docs and live steps for the goal change [model: haiku] [risk: normal] [status: todo] [deps: T1, T2, T3, T4, T5, T6]
-**Outcome**: The docs state the maintenance formula, and the live steps run in an order that works (migration before any deploy).
-**Files**: `docs/nutrition_logging.md` (`:66`), `docs/weekly-nutrition-review-runbook.md`, `docs/nutrition_deploy_runbook.md`
-**Non-goals**: no code; no command that writes to production in a "check" step (lesson).
-**Acceptance tests**: none: docs only. The Done-when greps are the check.
-**Done-when**: `grep -q "maintenance_calories" docs/nutrition_logging.md && grep -q "2026-11_04_maintenance_calories" docs/nutrition_deploy_runbook.md && grep -q "0.65" docs/weekly-nutrition-review-runbook.md && ! grep -n "0\.75 kg" docs/weekly-nutrition-review-runbook.md`
-**Decision rule**: Live-step order is: (1) copy repo files to the Pi, (2) apply migration 2026-11_04 to `health_pi`, (3) set `PLAN_KG_PER_WEEK=0.65` and `WEEKLY_LOSS_TARGET_KG=0.65` in the Pi env files if they were set to 0.75, (4) redeploy reporter and dashboard. Include how to add the next maintenance row (INSERT with a later `effective_from`) at a milestone.
+### T13: notion-reporter reads maintenance and plan pace from one place; prompts use the configured numbers [model: sonnet] [risk: normal] [status: todo] [deps: none]
+**Outcome**: In `notion-reporter/src` and `notion-reporter/index.mjs`, `2620` and `0.6545` appear only as the defaults in `nutritionWeek.mjs`, `7700` appears once, and the prompt text in `analyzeHealth.mjs:85` and `:185` uses the configured maintenance value instead of a literal.
+**Files**: `notion-reporter/src/anthropic/analyzeHealth.mjs` (:85, :185), `notion-reporter/src/utils/nutritionWeek.mjs` (:5-18), `notion-reporter/test/unit/constants.test.mjs` (new; copy prompt-building setup from `notion-reporter/test/unit/weekly_prompt.test.mjs`)
+**Non-goals**: no other prompt wording changes; no new env vars; no change to the weekly or daily math.
+**Acceptance tests**: `notion-reporter/test/unit/constants.test.mjs`: (a) scanning `notion-reporter/src/**` and `index.mjs`, `2620` and `0.6545` appear only in `src/utils/nutritionWeek.mjs` and `7700` exactly once; (b) with the maintenance env var unset, the daily and weekly prompts contain `2620`; (c) with it set to `2500`, both prompts contain `2500` and not `2620`.
+**Done-when**: `cd notion-reporter && npm test`
+**Decision rule**: Use whatever env var name `nutritionWeek.mjs:18` already reads; if the daily and weekly prompts are built in different files, both read the same exported getter.
+**Notes**:
+
+### T14: Remove unused exports in dashboard [model: haiku] [risk: normal] [status: todo] [deps: T11, T12]
+**Outcome**: `node scripts/check-unused-exports.mjs` reports nothing under `dashboard/`, and dashboard unit tests pass.
+**Files**: `dashboard/public/js/core.mjs`, `dashboard/public/js/charts/common.mjs`, `dashboard/public/js/charts/balance.mjs`, `dashboard/public/js/charts/ftp.mjs`, `dashboard/public/js/charts/nutrition.mjs`, `dashboard/public/js/charts/weight.mjs` (removing an `export` keyword is mechanical per A2)
+**Non-goals**: no rendering changes; no edits to `dashboard/src` beyond what the checker reports.
+**Acceptance tests**: none: the T11 checker and the existing dashboard suite are the check.
+**Done-when**: `node scripts/check-unused-exports.mjs | (! grep -q "^dashboard/") && cd dashboard && npm test`
+**Decision rule**: If a name is used inside its own file, drop only `export`; if it's used nowhere, delete it. Never add a name to the allowlist without a reason comment.
+**Notes**:
+
+### T15: Remove unused exports in health-mcp and notion-reporter [model: haiku] [risk: normal] [status: todo] [deps: T11, T13]
+**Outcome**: `node scripts/check-unused-exports.mjs` exits 0 (nothing left anywhere), and the health-mcp, notion-reporter and cloudflare-worker unit tests pass.
+**Files**: `health-mcp/app.mjs`, `health-mcp/tools/nutrition/{common,edit,favorites,log-food,search,summary}.mjs`, `notion-reporter/src/utils/nutritionWeek.mjs`, `scripts/unused-exports.allow` (mechanical per A2)
+**Non-goals**: no change to MCP tool names, descriptions or schemas; `health-mcp/oauth.mjs` is not touched.
+**Acceptance tests**: none: the T11 checker and the existing suites are the check.
+**Done-when**: `node scripts/check-unused-exports.mjs && cd health-mcp && npm test && cd ../notion-reporter && npm test && cd ../cloudflare-worker && npm test`
+**Decision rule**: Same as T14. Tool `*_DESCRIPTION` constants used in their own file lose only `export`.
+**Notes**:
+
+### T16: CI and kit run ruff, the unused-export check and cloudflare-worker tests [model: sonnet] [risk: high] [status: todo] [deps: T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15]
+**Outcome**: The CI workflow runs `python -m ruff check .`, `node scripts/check-unused-exports.mjs`, `node --test scripts/test/` and `cloudflare-worker` `npm ci && npm test`; `.claude/kit.json` `commands.lint` runs ruff and the export check; every check passes on the branch.
+**Files**: `.github/workflows/kit-ci.yml` (add steps beside the existing pytest step at :14-15 and the npm steps at :46-66), `.claude/kit.json` (`commands.lint`)
+**Non-goals**: no change to existing CI steps, triggers or the Postgres service; no other kit.json keys.
+**Acceptance tests**: none: CI config; Done-when runs every new check locally and greps the workflow for each step.
+**Done-when**: `venv/Scripts/python -m ruff check . && node scripts/check-unused-exports.mjs && node --test scripts/test/ && venv/Scripts/python -m pytest -q && (cd dashboard && npm test) && (cd health-mcp && npm test) && (cd notion-reporter && npm test) && (cd cloudflare-worker && npm test) && grep -q "ruff check" .github/workflows/kit-ci.yml && grep -q "check-unused-exports" .github/workflows/kit-ci.yml && grep -q "cloudflare-worker" .github/workflows/kit-ci.yml && grep -q "ruff" .claude/kit.json`
+**Decision rule**: Every tool a new CI step runs must be installed by the files that workflow installs from (ruff from `requirements.txt`; Node built-ins only). If ruff fails on a `T<n>-spec:` file, report needs-decision.
 **Notes**:
