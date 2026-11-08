@@ -8,6 +8,7 @@ and only calls the Strava refresh endpoint when the token is within
 
 import fcntl
 import json
+import logging
 import os
 import threading
 import time
@@ -19,6 +20,8 @@ from health_data_hub.config.settings import (
     STRAVA_CLIENT_SECRET,
     TOKEN_FILE,
 )
+
+logger = logging.getLogger(__name__)
 
 TOKEN_URL = "https://www.strava.com/oauth/token"
 _EXPIRY_BUFFER_SECONDS = 3600  # refresh if less than 60 min remaining
@@ -102,10 +105,10 @@ def _get_valid_access_token_locked():
     access_token = token_data.get("access_token")
 
     if access_token and expires_at and time.time() < expires_at - _EXPIRY_BUFFER_SECONDS:
-        print("[Token] Stored token still valid, skipping refresh.")
+        logger.info("[Token] Stored token still valid, skipping refresh.")
         return access_token
 
-    print("[Token] Token expired or expiring soon, refreshing...")
+    logger.info("[Token] Token expired or expiring soon, refreshing...")
 
     refresh_token = token_data.get("refresh_token")
     if not refresh_token:
@@ -128,7 +131,7 @@ def _get_valid_access_token_locked():
             break
         if attempt < _MAX_REFRESH_RETRIES:
             delay = _REFRESH_RETRY_DELAYS[attempt - 1]
-            print(
+            logger.warning(
                 f"[Token] 401 on refresh attempt {attempt}/{_MAX_REFRESH_RETRIES}, "
                 f"retrying in {delay}s..."
             )
@@ -154,5 +157,5 @@ def _get_valid_access_token_locked():
         raise RuntimeError(f"No access_token returned from Strava: {tokens}")
 
     _save_token_file(tokens)
-    print("[Token] Token refreshed and saved.")
+    logger.info("[Token] Token refreshed and saved.")
     return new_token

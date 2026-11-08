@@ -9,6 +9,7 @@ Targets:
 - Notion database: NOTION_WORKOUT_DB_ID
 """
 
+import logging
 import os
 from datetime import date, timedelta
 from pathlib import Path
@@ -28,6 +29,8 @@ from health_data_hub.etl.transform.power_zone_graph import (
     generate_weekly_zone_summary_graph,
 )
 from health_data_hub.utils.db_connect import get_connection
+
+logger = logging.getLogger(__name__)
 
 if not NOTION_TOKEN or not NOTION_WORKOUT_DB_ID:
     raise RuntimeError("Missing Notion configuration in environment.")
@@ -223,12 +226,12 @@ def _upsert_power_zone_graph_block(page_id: str, file_upload_id: str):
 def _sync_power_zone_cover(page_id: str, workout_id: int):
     graph = generate_power_zone_graph(workout_id)
     if graph is None:
-        print(f"[Notion] No power-zone graph available for workout {workout_id}; skipping cover upload.")
+        logger.info(f"[Notion] No power-zone graph available for workout {workout_id}; skipping cover upload.")
         return
 
     file_upload_id = _upload_file_to_notion(Path(graph["output_path"]))
     _upsert_power_zone_graph_block(page_id, file_upload_id)
-    print(f"[Notion] Attached power-zone graph to workout {workout_id}")
+    logger.info(f"[Notion] Attached power-zone graph to workout {workout_id}")
 
 
 # -------------------------------------------------------------------
@@ -332,7 +335,7 @@ def upsert_workout(notion: Client, database_id: str, row: dict):
     name = row.get("name") or "Untitled workout"
 
     if DRY_RUN:
-        print(f"[DRY RUN] Would sync workout {workout_id}: {name}")
+        logger.info(f"[DRY RUN] Would sync workout {workout_id}: {name}")
         return None
 
     page_id = _find_page_id(notion, database_id, workout_id)
@@ -340,14 +343,14 @@ def upsert_workout(notion: Client, database_id: str, row: dict):
 
     if page_id:
         notion.pages.update(page_id=page_id, properties=props)
-        print(f"Updated workout {workout_id}: {name}")
+        logger.info(f"Updated workout {workout_id}: {name}")
     else:
         created = notion.pages.create(
             parent={"database_id": database_id},
             properties=props,
         )
         page_id = created["id"]
-        print(f"Created workout {workout_id}: {name}")
+        logger.info(f"Created workout {workout_id}: {name}")
 
     # if page_id and _is_cycling_workout(row):
     #     try:
@@ -367,10 +370,10 @@ def sync_to_notion(since: date | None = None):
         since = date.today()
 
     rows = fetch_workouts_since(since)
-    print(f"Found {len(rows)} workouts on or after {since}.")
+    logger.info(f"Found {len(rows)} workouts on or after {since}.")
 
     if not rows:
-        print("No workouts to sync.")
+        logger.info("No workouts to sync.")
         return
 
     notion = Client(auth=NOTION_TOKEN, notion_version=NOTION_SDK_VERSION)
@@ -378,7 +381,7 @@ def sync_to_notion(since: date | None = None):
     for row in rows:
         upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
 
-    print("Sync complete.")
+    logger.info("Sync complete.")
 
 
 # -------------------------------------------------------------------
@@ -406,12 +409,12 @@ def sync_single_newest():
         conn.close()
 
     if not row:
-        print("[Notion] No workouts found to sync.")
+        logger.info("[Notion] No workouts found to sync.")
         return
 
     notion = Client(auth=NOTION_TOKEN, notion_version=NOTION_SDK_VERSION)
     upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
-    print(f"[Notion] Synced newest workout: {row.get('name')}")
+    logger.info(f"[Notion] Synced newest workout: {row.get('name')}")
 
 
 # -------------------------------------------------------------------
@@ -430,7 +433,7 @@ def sync_specific_workout(workout_id: int):
 
     notion = Client(auth=NOTION_TOKEN, notion_version=NOTION_SDK_VERSION)
     upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
-    print(f"[Notion] Synced specific workout: {row.get('name')} (ID {workout_id})")
+    logger.info(f"[Notion] Synced specific workout: {row.get('name')} (ID {workout_id})")
 
 
 # -------------------------------------------------------------------
@@ -443,7 +446,7 @@ def _fetch_powerzone_page_id_for_week(week_start: date) -> str | None:
     Falls back to the most recently edited page if the date filter finds nothing.
     """
     if not NOTION_POWERZONE_DB_ID:
-        print("[Notion] NOTION_POWERZONE_DB_ID not set — skipping PowerZone page lookup.")
+        logger.info("[Notion] NOTION_POWERZONE_DB_ID not set — skipping PowerZone page lookup.")
         return None
 
     date_prop = NOTION_POWERZONE_DATE_PROP
@@ -479,7 +482,7 @@ def _fetch_powerzone_page_id_for_week(week_start: date) -> str | None:
         if results:
             return results[0]["id"]
     except Exception as exc:
-        print(f"[Notion] Could not fetch PowerZone page: {exc}")
+        logger.warning(f"[Notion] Could not fetch PowerZone page: {exc}")
 
     return None
 
@@ -542,22 +545,22 @@ def sync_weekly_zone_summary(week_start: date | None = None):
             week_start -= timedelta(weeks=1)
 
     if DRY_RUN:
-        print(f"[DRY RUN] Would generate weekly zone summary for week of {week_start}.")
+        logger.info(f"[DRY RUN] Would generate weekly zone summary for week of {week_start}.")
         return
 
     graph = generate_weekly_zone_summary_graph(week_start)
     if graph is None:
-        print(f"[Notion] No cycling data found for week of {week_start}; skipping weekly zone summary.")
+        logger.info(f"[Notion] No cycling data found for week of {week_start}; skipping weekly zone summary.")
         return
 
     powerzone_page_id = _fetch_powerzone_page_id_for_week(week_start)
     if not powerzone_page_id:
-        print(f"[Notion] No PowerZone page found for week of {week_start}; skipping upload.")
+        logger.info(f"[Notion] No PowerZone page found for week of {week_start}; skipping upload.")
         return
 
     file_upload_id = _upload_file_to_notion(Path(graph["output_path"]))
     _upsert_weekly_zone_summary_block(powerzone_page_id, file_upload_id)
-    print(
+    logger.info(
         f"[Notion] Attached weekly zone summary for {graph['week_start']}–{graph['week_end']} "
         f"({graph['workout_count']} rides) to PowerZone page."
     )
