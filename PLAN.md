@@ -138,14 +138,16 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 Metrics: attempts=1 fix=0 review=none blocked=none
 
 
-### T11: Unused-export checker for the Node services [model: sonnet] [risk: normal] [status: doing] [deps: none]
+### T11: Unused-export checker for the Node services [model: sonnet] [risk: normal] [status: needs-decision] [deps: none]
 **Outcome**: `node scripts/check-unused-exports.mjs` prints each `path name` that is exported but referenced by no other tracked `.mjs`/`.js` file, and exits 1 if any exist; it uses only Node built-ins.
 **Files**: `scripts/check-unused-exports.mjs` (new), `scripts/unused-exports.allow` (new; `path name  # reason` per line, starts empty), `scripts/test/check-unused-exports.test.mjs` (new)
 **Non-goals**: no fixes to findings (T14, T15); no root `package.json`; no new dependencies.
 **Acceptance tests**: `scripts/test/check-unused-exports.test.mjs` on temp-dir fixtures: (a) `export function|const|let|class|async function NAME` and `export { a, b as c }` are collected; (b) a name counts as used when another file contains it as a whole word (tests included); (c) `import * as ns from './x.mjs'` marks every export of `x.mjs` used; (d) allowlisted `path name` pairs are skipped; (e) exit 0 with no findings, exit 1 and one `path name` line per finding otherwise; (f) scans `git ls-files` output, skipping `node_modules/` and `package-lock.json`.
 **Done-when**: `node --test scripts/test/`
 **Decision rule**: Prefer false negatives over false positives: if a pattern is ambiguous (string-built names, re-exports), treat the export as used and log the case in Notes.
-**Notes**:
+**Notes**: Spec 550943c written. Done-when `node --test scripts/test/` fails on Node 22.14 (directory arg is loaded as a module); see Q8. T16 uses the same form.
+Metrics: attempts=0 fix=0 review=none blocked=plan
+
 
 ### T12: Dashboard reads maintenance, plan pace and kcal/kg from one place [model: sonnet] [risk: normal] [status: done] [deps: none]
 **Outcome**: In `dashboard/src` and `dashboard/public/js`, the literals `2620` and `0.6545` appear only in `dashboard/src/config.mjs`, and `7700` appears only once as a named constant; the aggregate's `?? 2620` fallback and `demo.mjs`'s `0.6545` read the config value instead.
