@@ -9,8 +9,8 @@
 import { Client as NotionClient } from '@notionhq/client';
 import { exportDays, getLastStravaSyncStatus, getHrvBaseline, getLastRecordedWeight } from './db.mjs';
 import { fetchTodayWorkout } from './fetchCalendarWorkout.mjs';
+import { maintenanceKcal } from './nutritionWeek.mjs';
 
-const TDEE_BASELINE        = 2800;
 const DEFAULT_RIDE_KJ      = 500;
 
 function isoToday() {
@@ -251,7 +251,7 @@ function computeDailyCalorieContext(todayRow, yesterdayRow) {
     kj_source = 'athlete default (500 kJ — no ride data)';
   }
 
-  const estTdee   = TDEE_BASELINE + energy_kj;
+  const estTdee   = maintenanceKcal() + energy_kj;
   const calories  = nutrition.calories  ?? null;
   const protein_g = nutrition.protein_g ?? null;
   const deficit   = calories != null ? Math.round(estTdee - calories) : null;

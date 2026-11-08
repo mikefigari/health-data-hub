@@ -148,3 +148,61 @@ describe('protein share (T16)', () => {
     for (const t of texts) assert.ok(!BAD.test(String(t ?? '').trim()), `gram/goal-met text: ${t}`);
   });
 });
+
+// Weight plan: numbered cards, lettered tiles and the cards ported from the Steady Weight page.
+import { CARDS, VIEWS, goalProgress, emptyMessage, timelineNote, groundRules, fmtMonthYear } from '../../public/js/core.mjs';
+
+describe('weight plan cards', () => {
+  const data = buildDashboard({ ...demoInputs('2026-10-26'), rangeDays: 30 });
+
+  test('cards are numbered 1..n in order, and every card view is an embeddable view', () => {
+    assert.deepEqual(CARDS.map((c) => c.n), CARDS.map((_, i) => i + 1));
+    for (const c of CARDS) assert.ok(VIEWS.includes(c.view), c.view);
+    assert.equal(CARDS.find((c) => c.view === 'weight').title, 'Road to goal');
+  });
+
+  test('tiles are lettered A-D', () => {
+    assert.deepEqual(kpis(data).map((k) => k.id), ['A', 'B', 'C', 'D']);
+  });
+
+  test('tile A is the live scale weight with the trend in the caption', () => {
+    const [a] = kpis(data);
+    assert.equal(a.label, 'Weight');
+    assert.equal(a.value, fmtKg(data.weight.current_kg));
+    assert.ok(a.caption.startsWith(`Trend ${fmtKg(data.weight.current_trend_kg)}`), a.caption);
+  });
+
+  test('goalProgress: live reading against the start weight; reached clamps to 100%', () => {
+    const d = structuredClone(data);
+    d.weight.road.start_kg = 116;
+    d.weight.current_kg = 108;
+    d.goals.target_weight_kg = 100;
+    const p = goalProgress(d);
+    assert.equal(p.pct, 0.5);
+    assert.equal(p.right, `${fmtKg(8)} kg to ${fmtKg(100)}`);
+    d.weight.current_kg = 99;
+    assert.deepEqual(goalProgress(d), { pct: 1, left: p.left, right: 'Goal reached' });
+    d.weight.road = null;
+    assert.equal(goalProgress(d), null);
+  });
+
+  test('timeline, weekly and finish-line stats', () => {
+    const likely = data.weight.road.windows.find((w) => w.key === 'likely');
+    const t = cardStat('timeline', data);
+    assert.equal(t.value, fmtMonthYear(likely.date));
+    assert.ok(t.caption.startsWith('Brisk ') && t.caption.includes('Gentle '), t.caption);
+    assert.equal(cardStat('weekly', data).unit, 'last week');
+    const f = cardStat('milestones', data);
+    assert.match(f.caption, /^\d+ of 6 reached/);
+    assert.deepEqual(cardStat('rules', data), { value: '', unit: '', caption: '' });
+  });
+
+  test('empty states and notes', () => {
+    const none = { ...data, weight: { ...data.weight, road: null } };
+    for (const v of ['weight', 'timeline', 'weekly', 'milestones']) assert.equal(emptyMessage(v, none), 'Not enough weigh-ins yet');
+    for (const v of ['weight', 'timeline', 'weekly', 'milestones']) assert.equal(emptyMessage(v, data), null);
+    assert.match(timelineNote(data), /^Set from the .* check-in \(trend [\d.]+ kg\)\. Next update /);
+    assert.equal(groundRules(data).length, 3);
+    assert.ok(groundRules(data)[1].includes(`${data.weight.road.pace.cap_kg_per_week} kg`));
+  });
+});

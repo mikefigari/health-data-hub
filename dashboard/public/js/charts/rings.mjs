@@ -34,7 +34,7 @@ function ring(tokens, { value, max, color, track, z }) {
   };
 }
 
-// Band target (protein share, D12): d = { value: pct, min, max }. Calorie ring: d = { value, goal }.
+// Band target (protein share, D12): d = { value: pct, grams?, min, max }. Calorie ring: d = { value, goal }.
 const isBand = (d) => isNum(d?.min) && isNum(d?.max);
 
 export function ringOption(d, tokens, opts = {}) {
@@ -45,6 +45,20 @@ export function ringOption(d, tokens, opts = {}) {
     const max = d.max > 0 ? d.max : Math.max(value, 1);
     const track = withAlpha(color, TRACK_ALPHA);
     return { ...frame(tokens, opts), series: [ring(tokens, { value: Math.min(value, max), max, color, track, z: 2 })] };
+  }
+  if (isNum(d?.baseline) && d.baseline > 0) {
+    // Three bands on one lap of the baseline: green to the goal, orange from goal to baseline,
+    // then a second lap in the strength color once eating passes the baseline.
+    const base = d.baseline;
+    const track = withAlpha(tokens.calories, TRACK_ALPHA);
+    const series = [ring(tokens, { value: Math.min(value, base), max: base, color: tokens.over, track, z: 2 })];
+    if (isNum(d.goal) && d.goal > 0 && d.goal < base) {
+      series.push(ring(tokens, { value: Math.min(value, d.goal), max: base, color: tokens.calories, track: null, z: 3 }));
+    } else {
+      series[0].progress.itemStyle.color = tokens.calories;
+    }
+    if (value > base) series.push(ring(tokens, { value: Math.min(value - base, base), max: base, color: tokens.ftp, track: null, z: 4 }));
+    return { ...frame(tokens, opts), series };
   }
   const goal = isNum(d?.goal) && d.goal > 0 ? d.goal : Math.max(value, 1);
   const series = [ring(tokens, { value: Math.min(value, goal), max: goal, color, track: withAlpha(color, TRACK_ALPHA), z: 2 })];
@@ -58,11 +72,20 @@ export function ringOption(d, tokens, opts = {}) {
 export function ringLabel(d, { unit = 'kcal' } = {}) {
   if (isBand(d)) {
     const pct = isNum(d.value) ? Math.max(0, d.value) : 0;
-    return { big: `${Math.round(pct)}%`, small: 'of calories', caption: `Target ${d.min}–${d.max}%` };
+    const grams = isNum(d.grams) ? `${fmtInt(d.grams)} g · ` : '';
+    return { big: `${Math.round(pct)}%`, small: 'of calories', caption: `${grams}Target ${d.min}–${d.max}%` };
   }
   const value = isNum(d?.value) ? d.value : null;
   const goal = isNum(d?.goal) ? d.goal : null;
   if (goal === null) return { big: fmtInt(value), small: unit, caption: 'No goal set' };
+  if (isNum(d.baseline) && d.baseline > 0) {
+    const gap = d.baseline - (value ?? 0);
+    return {
+      big: fmtInt(value),
+      small: `of ${fmtInt(goal)} ${unit}`,
+      caption: gap >= 0 ? `${fmtInt(gap)} deficit` : `${fmtInt(-gap)} surplus`,
+    };
+  }
   const left = goal - (value ?? 0);
   return {
     big: fmtInt(value),

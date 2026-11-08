@@ -27,13 +27,14 @@ export function buildCheckinMarkdown(r) {
 
 export async function runCheckin({ today, fetchInputs, post }) {
   const { start, end } = currentWeekMonWed(today);
-  const { nutrition } = await fetchInputs(start, end);
+  const { nutrition, rideKcalByDay = {} } = await fetchInputs(start, end);
   const days = (nutrition ?? []).map(r => ({
     day: r.day,
     nutrition: {
       calories: r.calories,
       goal_calories: r.goal_calories,
       logged_complete: r.logged_complete,
+      ride_kcal: rideKcalByDay[r.day] ?? 0,
     },
   }));
   const result = thursdayCheck(days);

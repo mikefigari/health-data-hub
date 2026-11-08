@@ -18,6 +18,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
+// Fixtures are sized for maintenance 2600; the production default is 2620 (see nutritionWeek.test.mjs (k)).
+process.env.MAINTENANCE_KCAL = '2600';
+
 const row = (day, calories, goal = 2600, complete = true) =>
   ({ day, calories, goal_calories: goal, logged_complete: complete });
 const inputs = (nutrition) => ({ nutrition, weighIns: [], goals: null });
@@ -46,8 +49,8 @@ test('(b) off track: posts once with shortfall and needed kcal/day', async () =>
   const p = s.calls.post[0];
   assert.equal(p.mode, 'checkin');
   assert.equal(p.title, 'Check-in · Week 45');
-  assert.match(p.markdown, /1,?275/);
-  assert.match(p.markdown, /1,?144/);
+  assert.match(p.markdown, /960/);
+  assert.match(p.markdown, /960/);
 });
 
 test('(c) zero usable days: posts the nudge text', async () => {

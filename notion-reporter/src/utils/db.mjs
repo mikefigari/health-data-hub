@@ -268,7 +268,37 @@ export async function getNutritionWeekInputs(startDay, endDay) {
      LIMIT 1`,
     [endDay],
   );
-  return { nutrition, weighIns, goals: goalRows[0] ?? null };
+  const rideKcalByDay = await getRideKcalByDay(startDay, endDay);
+  return { nutrition, weighIns, goals: goalRows[0] ?? null, rideKcalByDay };
+}
+
+/**
+ * Ride energy in kcal per LA day, as {day: kcal}. Same rule as nutrition_daily:
+ * powered Rides only, UTC start converted to LA, kJ times the cycling factor of
+ * the goal in effect that day.
+ */
+export async function getRideKcalByDay(startDay, endDay) {
+  const rows = await queryRows(
+    `WITH rides AS (
+         SELECT (start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date AS day,
+                sum(kj) AS kj
+           FROM workout_summary
+          WHERE sport_type = 'Ride' AND device_watts AND kj > 0
+          GROUP BY 1
+     )
+     SELECT r.day::text AS day,
+            round(coalesce(g.cycling_kj_factor, 1) * r.kj::numeric)::int AS ride_kcal
+       FROM rides r
+       LEFT JOIN LATERAL (
+           SELECT cycling_kj_factor FROM nutrition_goals g0
+            WHERE g0.effective_from <= r.day
+            ORDER BY g0.effective_from DESC
+            LIMIT 1
+       ) g ON true
+      WHERE r.day BETWEEN $1::date AND $2::date`,
+    [startDay, endDay],
+  );
+  return Object.fromEntries(rows.map(r => [r.day, Number(r.ride_kcal)]));
 }
 
 /**
