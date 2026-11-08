@@ -1,5 +1,6 @@
 // Pure aggregation: raw daily inputs -> dashboard JSON contract. No SQL, no HTTP, no clock.
 // Rounding rule: compute at full precision, round only on output.
+import { energyDefaults } from './config.mjs';
 import { buildRoadmap, smoothTrend, trendAt } from './roadmap.mjs';
 
 const DAY_MS = 86400000;
@@ -40,7 +41,7 @@ export function buildDashboard(inputs) {
   const today = inputs.today;
   const rangeDays = inputs.rangeDays;
   const planKgPerWeek = num(inputs.planKgPerWeek);
-  const maintenance = num(inputs.maintenanceKcal) ?? 2620;
+  const maintenance = num(inputs.maintenanceKcal) ?? energyDefaults().MAINTENANCE_KCAL;
   const weekTarget = planKgPerWeek > 0 ? Math.round(planKgPerWeek * KCAL_PER_KG) : null;
   const pMin = num(inputs.proteinPctMin) ?? 35;
   const pMax = num(inputs.proteinPctMax) ?? 40;

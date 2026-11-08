@@ -1,3 +1,19 @@
+// Single source for the plan pace and maintenance defaults.
+const DEFAULT_PLAN_KG_PER_WEEK = '0.6545';
+const DEFAULT_MAINTENANCE_KCAL = '2620';
+
+// Lenient read of the two energy settings (no token/DB validation); invalid values fall back to the defaults.
+export function energyDefaults(env = process.env) {
+  const pick = (v, d) => {
+    const n = Number(v ?? d);
+    return Number.isFinite(n) && n > 0 ? n : Number(d);
+  };
+  return {
+    PLAN_KG_PER_WEEK: pick(env.PLAN_KG_PER_WEEK, DEFAULT_PLAN_KG_PER_WEEK),
+    MAINTENANCE_KCAL: pick(env.MAINTENANCE_KCAL, DEFAULT_MAINTENANCE_KCAL),
+  };
+}
+
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,}$/;
 
 // Reads and validates configuration from an env-like object. Throws on bad env.
@@ -13,8 +29,8 @@ export function loadConfig(env = process.env) {
     DASHBOARD_TOKENS = '',
     DASHBOARD_DEMO,
     FRAME_ANCESTORS = 'https://www.notion.so https://notion.so https://*.notion.site',
-    PLAN_KG_PER_WEEK = '0.6545',
-    MAINTENANCE_KCAL = '2620',
+    PLAN_KG_PER_WEEK = DEFAULT_PLAN_KG_PER_WEEK,
+    MAINTENANCE_KCAL = DEFAULT_MAINTENANCE_KCAL,
     PROTEIN_PCT_MIN = '35',
     PROTEIN_PCT_MAX = '40',
   } = env;
