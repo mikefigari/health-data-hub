@@ -9,8 +9,9 @@ Only fires if report.has_failures — call unconditionally after every run.
 
 from __future__ import annotations
 
-from .checks import QualityReport
 from health_data_hub.utils.alert import send_alert
+
+from .checks import QualityReport
 
 
 def send_quality_alert(report: QualityReport) -> None:

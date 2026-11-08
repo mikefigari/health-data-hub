@@ -14,7 +14,9 @@ from __future__ import annotations
 import sys
 from datetime import date, timedelta
 
-from health_data_hub.integrations.notion.notion_strava_sync import sync_weekly_zone_summary
+from health_data_hub.integrations.notion.notion_strava_sync import (
+    sync_weekly_zone_summary,
+)
 
 
 def _parse_week_start(arg: str) -> date:

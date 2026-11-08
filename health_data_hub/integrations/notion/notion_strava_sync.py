@@ -9,19 +9,19 @@ Targets:
 - Notion database: NOTION_WORKOUT_DB_ID
 """
 
+import os
 from datetime import date, timedelta
 from pathlib import Path
 
-import os
 import requests
 from notion_client import Client
 from psycopg2.extras import RealDictCursor
 
 from health_data_hub.config.settings import (
+    NOTION_POWERZONE_DATE_PROP,
+    NOTION_POWERZONE_DB_ID,
     NOTION_TOKEN,
     NOTION_WORKOUT_DB_ID,
-    NOTION_POWERZONE_DB_ID,
-    NOTION_POWERZONE_DATE_PROP,
 )
 from health_data_hub.etl.transform.power_zone_graph import (
     generate_power_zone_graph,
