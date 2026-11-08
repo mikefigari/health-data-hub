@@ -116,16 +116,18 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 Metrics: attempts=2 fix=0 review=none blocked=none
 
 
-### T9: Scheduler-reachable modules log instead of print [model: sonnet] [risk: normal] [status: todo] [deps: T6, T7]
+### T9: Scheduler-reachable modules log instead of print [model: sonnet] [risk: normal] [status: done] [deps: T6, T7]
 **Outcome**: No module that `scheduler_all.py` imports, directly or transitively within `health_data_hub`, calls `print()` outside an `if __name__ == "__main__":` block; those messages go through `logging` at the same point in the code.
 **Files**: `tests/test_no_print_in_scheduler.py` (new), `health_data_hub/integrations/notion/notion_strava_sync.py`, `health_data_hub/etl/extract/strava_refresh.py`, `health_data_hub/etl/extract/strava_oauth.py`, plus any other module the test finds (copy the logger pattern in `health_data_hub/integrations/apple_health/body_poller.py`)
 **Non-goals**: CLI-only modules keep `print` (A5); no change to log setup in `health_data_hub/utils/logging_config.py`; no message text changes except dropping secrets.
 **Acceptance tests**: `tests/test_no_print_in_scheduler.py`: (a) builds the import closure from `scheduler_all.py` by parsing `import`/`from` statements with `ast` and following `health_data_hub.*` modules; (b) asserts the closure includes `health_data_hub.integrations.poll_strava` and `health_data_hub.integrations.notion.notion_strava_sync` (guards against an empty closure); (c) no `print` call in any closure module outside an `if __name__ == "__main__":` block; (d) `strava_oauth.py`'s token-exchange failure path doesn't log the response body (assert with a mocked `requests.post` returning a body containing `access_token` and `caplog`).
 **Done-when**: `venv/Scripts/python -m pytest -q && venv/Scripts/python -m ruff check health_data_hub tests`
 **Decision rule**: print -> `logger.info`, a print in an error branch -> `logger.warning` or `logger.error` by existing wording. If the closure has more than 5 files with prints, convert them all (mechanical) and log the count in Notes.
-**Notes**:
+**Notes**: Closure had 2 files with prints (21 calls). strava_oauth.py is CLI-only but its prints were converted too because spec (d) checks stdout; its operator messages now need logging configured.
+Metrics: attempts=1 fix=0 review=none blocked=none
 
-### T10: Weekly power-zone summary groups rides by Los Angeles day [model: sonnet] [risk: normal] [status: todo] [deps: T6]
+
+### T10: Weekly power-zone summary groups rides by Los Angeles day [model: sonnet] [risk: normal] [status: doing] [deps: T6]
 **Outcome**: The query at `health_data_hub/etl/transform/power_zone_graph.py:478` picks rides by their America/Los_Angeles start date, so a Sunday 18:00 PT ride counts in that week, not the next.
 **Files**: `health_data_hub/etl/transform/power_zone_graph.py` (copy `(start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date` from `notion-reporter/src/utils/db.mjs:79`), `tests/test_power_zone_day.py` (new), `LESSONS.md` (delete the line beginning "notion-reporter/src/utils/db.mjs:79 and power_zone_graph.py:478" as the last step)
 **Non-goals**: no other query or chart changes; no backfill of past Notion summaries.
