@@ -7,3 +7,4 @@ numpy
 apscheduler
 Pillow
 pytest
+ruff
