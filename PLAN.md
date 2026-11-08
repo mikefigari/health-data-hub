@@ -50,14 +50,16 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 Metrics: attempts=1 fix=0 review=none blocked=none
 
 
-### T3: Docs check: relative links resolve and runbook check steps are read-only [model: sonnet] [risk: normal] [status: todo] [deps: T2]
+### T3: Docs check: relative links resolve and runbook check steps are read-only [model: sonnet] [risk: normal] [status: done] [deps: T2]
 **Outcome**: `venv/Scripts/python -m pytest -q tests/test_docs.py` fails when a tracked markdown file has a relative link to a missing path, or when a runbook check step contains a write command. This promotes the count-2 lesson "A runbook check step must not have side effects in production".
 **Files**: `tests/test_docs.py` (new; list files with `git ls-files` via `subprocess` like `tests/test_scheduler_wrappers.py` uses stdlib only), `LESSONS.md` (delete the "runbook check step must not have side effects" line as the last step), up to 3 runbook files only if the current tree fails the check
 **Non-goals**: no external URL checks; no change to runbook meaning beyond making a check step read-only.
 **Acceptance tests**: `tests/test_docs.py`: (a) scans every tracked `*.md` except `PLAN.md`, `LESSONS.md`, `RUNLOG.md`, `.claude/**`, `.github/**`; (b) every relative markdown link target (strip `#anchor`) exists relative to the linking file; (c) a "check step" is a line matching `(?i)\b(check|verify|smoke[- ]test)\b[^:\n]*:` plus the fenced code block that directly follows it; (d) a check step fails if its inline or fenced code matches any of: SQL `\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|CREATE)\b`, `curl` with `-X (POST|PUT|PATCH|DELETE)` or `-d`/`--data`, `systemctl (start|stop|restart)`, `docker compose (up|down|restart)`, `psql .* -f `; (e) self-tests of the detector on inline sample strings: one passing read-only sample and one failing sample per pattern in (d); (f) the current tree passes.
 **Done-when**: `venv/Scripts/python -m pytest -q tests/test_docs.py && ! grep -q "runbook \"check\" step must not have side effects" LESSONS.md`
 **Decision rule**: If the current tree fails (b) or (d) in more than 3 files, report needs-decision with the list rather than editing them.
-**Notes**:
+**Notes**: Current tree passed the check; no runbooks edited. LESSONS line deleted.
+Metrics: attempts=1 fix=0 review=none blocked=none
+
 
 ### T4: README describes the current system; drop finished Datawrapper and nutrition-poller instructions [model: sonnet] [risk: normal] [status: todo] [deps: T1, T2, T3]
 **Outcome**: `README.md` lists each component with its purpose, test command and docs link; `dashboard/README.md` and `docs/health_auto_export_setup.md` no longer give Datawrapper or `nutrition_poller` instructions.
@@ -68,14 +70,16 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 **Decision rule**: If a Datawrapper or nutrition_poller paragraph also holds instructions that still apply (body measurements, Health Auto Export setup), keep those sentences and remove only the stale ones.
 **Notes**:
 
-### T5: Add ruff (F, I) config and dependency [model: haiku] [risk: normal] [status: todo] [deps: T1]
+### T5: Add ruff (F, I) config and dependency [model: haiku] [risk: normal] [status: done] [deps: T1]
 **Outcome**: `venv/Scripts/python -m ruff check .` runs with rules F and I, `health_data_hub` as first-party, and `venv`, `.venv` and `node_modules` excluded; ruff is installed from `requirements.txt`, so CI gets it from the same `pip install -r requirements.txt` step.
 **Files**: `ruff.toml` (new), `requirements.txt` (add `ruff`), `requirements.pinned.txt` (add `ruff==<version>`)
 **Non-goals**: no fixes to findings (T6-T8); no CI edits (T16); no rules beyond F and I.
 **Acceptance tests**: none: config only; Done-when proves ruff is installed and the config parses with the expected rules.
 **Done-when**: `venv/Scripts/python -m pip install -q -r requirements.txt && venv/Scripts/python -m ruff --version && venv/Scripts/python -m ruff check --exit-zero . >/dev/null && grep -qE 'select *= *\[ *"F" *, *"I" *\]' ruff.toml && grep -qi "^ruff" requirements.txt && grep -qi "^ruff==" requirements.pinned.txt`
 **Decision rule**: Pin the newest ruff release on PyPI that is at least 14 days old and record it in Notes.
-**Notes**:
+**Notes**: Pinned ruff==0.17.2 (0.17.3 dated 2026-10-27, under 14 days). venv resolves 0.17.4 from unpinned requirements.txt.
+Metrics: attempts=1 fix=0 review=none blocked=none
+
 
 ### T6: Zero ruff findings in health_data_hub/etl [model: haiku] [risk: normal] [status: todo] [deps: T5]
 **Outcome**: `ruff check health_data_hub/etl` exits 0 and the Python suite passes.
@@ -122,7 +126,7 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 **Decision rule**: If `workouts_raw.start_time` turns out to be `timestamptz`, use `(start_time AT TIME ZONE 'America/Los_Angeles')::date` instead and log it in Notes.
 **Notes**:
 
-### T11: Unused-export checker for the Node services [model: sonnet] [risk: normal] [status: todo] [deps: none]
+### T11: Unused-export checker for the Node services [model: sonnet] [risk: normal] [status: doing] [deps: none]
 **Outcome**: `node scripts/check-unused-exports.mjs` prints each `path name` that is exported but referenced by no other tracked `.mjs`/`.js` file, and exits 1 if any exist; it uses only Node built-ins.
 **Files**: `scripts/check-unused-exports.mjs` (new), `scripts/unused-exports.allow` (new; `path name  # reason` per line, starts empty), `scripts/test/check-unused-exports.test.mjs` (new)
 **Non-goals**: no fixes to findings (T14, T15); no root `package.json`; no new dependencies.
@@ -131,23 +135,27 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 **Decision rule**: Prefer false negatives over false positives: if a pattern is ambiguous (string-built names, re-exports), treat the export as used and log the case in Notes.
 **Notes**:
 
-### T12: Dashboard reads maintenance, plan pace and kcal/kg from one place [model: sonnet] [risk: normal] [status: todo] [deps: none]
+### T12: Dashboard reads maintenance, plan pace and kcal/kg from one place [model: sonnet] [risk: normal] [status: done] [deps: none]
 **Outcome**: In `dashboard/src` and `dashboard/public/js`, the literals `2620` and `0.6545` appear only in `dashboard/src/config.mjs`, and `7700` appears only once as a named constant; the aggregate's `?? 2620` fallback and `demo.mjs`'s `0.6545` read the config value instead.
 **Files**: `dashboard/src/aggregate.mjs` (:10, :43), `dashboard/src/demo.mjs` (:80), `dashboard/src/config.mjs` (:16-17, export the parsed defaults), `dashboard/test/unit/constants.test.mjs` (new), `dashboard/README.md` (env table, only if a key or default changes)
 **Non-goals**: no change to any number the dashboard shows with the default env; no new env vars.
 **Acceptance tests**: `dashboard/test/unit/constants.test.mjs`: (a) scanning `dashboard/src/**` and `dashboard/public/js/**`, `2620` and `0.6545` appear only in `src/config.mjs` and `7700` appears exactly once; (b) aggregate with no `maintenanceKcal` input uses the config default 2620; (c) with `MAINTENANCE_KCAL=2500` the aggregate's maintenance is 2500; (d) demo data's `planKgPerWeek` equals the config `PLAN_KG_PER_WEEK`.
 **Done-when**: `cd dashboard && npm test`
 **Decision rule**: If a literal is needed in browser code (`public/js`), have the server pass it in the API payload rather than duplicating it; if that changes the payload shape, add the field without removing any.
-**Notes**:
+**Notes**: Added DEFAULT_* constants and energyDefaults() to config.mjs (no token/DB validation, so aggregate/demo can import at load). KCAL_PER_KG 7700 already single; README untouched.
+Metrics: attempts=1 fix=0 review=none blocked=none
 
-### T13: notion-reporter reads maintenance and plan pace from one place; prompts use the configured numbers [model: sonnet] [risk: normal] [status: todo] [deps: none]
+
+### T13: notion-reporter reads maintenance and plan pace from one place; prompts use the configured numbers [model: sonnet] [risk: normal] [status: done] [deps: none]
 **Outcome**: In `notion-reporter/src` and `notion-reporter/index.mjs`, `2620` and `0.6545` appear only as the defaults in `nutritionWeek.mjs`, `7700` appears once, and the prompt text in `analyzeHealth.mjs:85` and `:185` uses the configured maintenance value instead of a literal.
 **Files**: `notion-reporter/src/anthropic/analyzeHealth.mjs` (:85, :185), `notion-reporter/src/utils/nutritionWeek.mjs` (:5-18), `notion-reporter/test/unit/constants.test.mjs` (new; copy prompt-building setup from `notion-reporter/test/unit/weekly_prompt.test.mjs`)
 **Non-goals**: no other prompt wording changes; no new env vars; no change to the weekly or daily math.
 **Acceptance tests**: `notion-reporter/test/unit/constants.test.mjs`: (a) scanning `notion-reporter/src/**` and `index.mjs`, `2620` and `0.6545` appear only in `src/utils/nutritionWeek.mjs` and `7700` exactly once; (b) with the maintenance env var unset, the daily and weekly prompts contain `2620`; (c) with it set to `2500`, both prompts contain `2500` and not `2620`.
 **Done-when**: `cd notion-reporter && npm test`
 **Decision rule**: Use whatever env var name `nutritionWeek.mjs:18` already reads; if the daily and weekly prompts are built in different files, both read the same exported getter.
-**Notes**:
+**Notes**: Both prompts interpolate maintenanceKcal() from nutritionWeek.mjs; the daily prompt is in a commented-out block.
+Metrics: attempts=1 fix=0 review=none blocked=none
+
 
 ### T14: Remove unused exports in dashboard [model: haiku] [risk: normal] [status: todo] [deps: T11, T12]
 **Outcome**: `node scripts/check-unused-exports.mjs` reports nothing under `dashboard/`, and dashboard unit tests pass.
