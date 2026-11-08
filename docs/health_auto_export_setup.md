@@ -1,8 +1,7 @@
 # Health Auto Export — Setup Guide
 
 This guide configures the **Health Auto Export** iOS app (by Gregory Chicote) to push
-Apple Health nutrition data to the Cloudflare Worker, which the Pi poller then pulls
-nightly at 22:00. A second automation pushes Renpho body measurements (weight, body
+Apple Health nutrition data to the Cloudflare Worker. A second automation pushes Renpho body measurements (weight, body
 fat, lean mass, BMI) to a separate endpoint — see
 [Body measurements automation](#body-measurements-automation).
 
@@ -11,7 +10,6 @@ fat, lean mass, BMI) to a separate endpoint — see
 ## Prerequisites
 
 - Health Auto Export installed from the App Store
-- The `nutrition_poller` job running inside `health-data-hub.service` on the Pi
 
 ---
 
@@ -69,17 +67,8 @@ In Health Auto Export:
 ### Option A — Test from within the app
 
 After configuring the webhook, tap **Test** or **Send Now** in the automation settings.
-Then trigger a manual poll on the Pi to confirm it was picked up:
-
-```bash
-cd ~/projects/health-data-hub
-HEALTH_ENV=prod .venv/bin/python -m health_data_hub.integrations.apple_health.nutrition_poller
-```
-
-Expected log line:
-```
-Nutrition upserted for 2026-03-24: 2150 kcal
-```
+Then confirm the Worker stored it with `GET https://health.michaelfigari.com/health/latest`.
+Nutrition is logged through health-mcp; see [nutrition_logging.md](nutrition_logging.md).
 
 ### Option B — Manual curl test
 
@@ -182,9 +171,6 @@ iPhone (Health Auto Export)
       → stores the raw payload as body:<received_at>:<id> in KV
 
 Pi (health-data-hub.service / scheduler_all.py)
-  → nutrition_poller runs nightly at 22:00
-      → GET https://health.michaelfigari.com/health/latest
-      → upserts into nutrition_daily (PostgreSQL)
   → body_poller runs hourly at :20 (6am–11pm)
       → GET https://health.michaelfigari.com/health/body?since=<10 days ago>
       → upserts into body_measurements; body_weight_daily view = first weigh-in per day

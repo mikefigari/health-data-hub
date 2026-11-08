@@ -4,7 +4,7 @@
 
 A small Node 22 service (express + pg + echarts, no build step) that serves a
 weight, nutrition and FTP dashboard, built to be embedded in Notion. It
-replaces the Datawrapper charts: weight with 7-day average, daily calories,
+shows weight with 7-day average, daily calories,
 daily protein, weekly goals met, today's calorie and protein rings, and FTP
 and W/kg.
 
@@ -144,16 +144,6 @@ Run on the Pi as `mike`, in order. Steps that run repo files come after the
    `/api/dashboard` means the database became unreachable or a query failed
    while the server was running. A `401` means the token is wrong.
 
-8. Stop the Datawrapper jobs: restart the scheduler so it loads the code without them.
-
-   ```bash
-   sudo systemctl restart health-hub.service
-   ```
-
-   TODO: confirm the unit name on the Pi. `pi/README.md` says `health-hub.service`, the repo's unit file is `health-data-hub.service`.
-
-9. Remove `DATAWRAPPER_API_TOKEN` from the Pi's `prod.env` (`health_data_hub/config/prod.env`), then restart the unit once more.
-
 ### Cloudflare Tunnel
 
 The existing tunnel is `health-webhook` (`18a4d3ef-25b8-4989-b22f-3f42264c2d5e`), config in `/etc/cloudflared/config.yml`. Back it up, then add this rule above the catch-all (`http_status:404`) rule:
@@ -234,6 +224,4 @@ psql -U postgres -d health_pi -v ON_ERROR_STOP=1 --single-transaction \
   -f health_data_hub/db/migrations/2026-11_03_dashboard_role.down.sql
 ```
 
-The Datawrapper jobs were removed in the same PR; `git revert` that PR to bring
-them back. The published Datawrapper charts stay on datawrapper.de until you
-delete them.
+
