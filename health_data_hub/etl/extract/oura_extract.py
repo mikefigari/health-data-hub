@@ -5,11 +5,7 @@ that match your Postgres schemas.
 """
 
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
-
-
-
-
+from typing import Any, Dict, List
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -5,10 +5,9 @@ One row per weigh-in timestamp, keyed on (source, measured_at). Re-ingesting the
 same weigh-in only fills in fields that are non-null in the new data.
 """
 
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from psycopg2.extras import Json
-
 
 SQL = """
 INSERT INTO body_measurements

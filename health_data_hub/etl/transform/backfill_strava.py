@@ -8,13 +8,13 @@ workouts and samples that already exist.
 
 from datetime import datetime, timezone
 
-from health_data_hub.utils.db_connect import get_connection
-from health_data_hub.etl.extract.strava_refresh import get_valid_access_token
 from health_data_hub.etl.extract.strava_api import (
-    get_all_strava_activities,
     get_activity_streams,
+    get_all_strava_activities,
 )
+from health_data_hub.etl.extract.strava_refresh import get_valid_access_token
 from health_data_hub.etl.load.insert_workout import insert_workout_metadata
+from health_data_hub.utils.db_connect import get_connection
 
 AFTER_2022 = int(datetime(2022, 1, 1, tzinfo=timezone.utc).timestamp())
 

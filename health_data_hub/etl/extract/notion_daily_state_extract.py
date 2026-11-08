@@ -5,8 +5,7 @@ into clean dicts matching the daily_physical_state schema.
 """
 
 from datetime import datetime
-from typing import List, Dict, Any
-
+from typing import Any, Dict, List
 
 # ---------------------------------------------------------------------------
 # Helpers

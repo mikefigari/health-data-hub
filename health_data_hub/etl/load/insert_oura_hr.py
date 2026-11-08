@@ -2,11 +2,9 @@
 Insert or update Oura heart rate / hrv samples.
 """
 
-from typing import List, Dict, Any
-import psycopg2
+from typing import Any, Dict, List
+
 from psycopg2.extras import Json
-
-
 
 SQL = """
 INSERT INTO oura_hr_samples (

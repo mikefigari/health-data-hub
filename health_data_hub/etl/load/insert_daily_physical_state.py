@@ -2,8 +2,7 @@
 Insert or update daily_physical_state records from Notion.
 """
 
-from typing import List, Dict, Any
-
+from typing import Any, Dict, List
 
 SQL = """
 INSERT INTO daily_physical_state

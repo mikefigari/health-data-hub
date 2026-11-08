@@ -13,7 +13,6 @@ from psycopg2.extras import RealDictCursor
 from health_data_hub.config.settings import PROJECT_ROOT
 from health_data_hub.utils.db_connect import get_connection
 
-
 DEFAULT_GRAPH_DIR = PROJECT_ROOT / "generated" / "power_zone_graphs"
 DEFAULT_ZONE_CONFIG_PATH = PROJECT_ROOT / "health_data_hub" / "config" / "power_zones.json"
 

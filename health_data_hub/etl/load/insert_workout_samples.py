@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 from health_data_hub.utils.db_connect import get_connection
 
