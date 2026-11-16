@@ -3,7 +3,7 @@
 import { cardStat, fmtInt } from '../core.mjs';
 import { axisTooltip, dayTs, fadeGradient, fmtTsDay, frame, grid, isNum, timeAxis, tipRow, valueAxis } from './common.mjs';
 
-export const EMPTY_FTP = 'No FTP tests yet';
+const EMPTY_FTP = 'No FTP tests yet';
 const TICKS = 4;
 
 // Nice [min, max] with exactly TICKS intervals, so the two y-axes share grid lines.

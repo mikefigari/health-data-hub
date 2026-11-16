@@ -1,0 +1,8 @@
+# Ruff lint config (T5). Rules F (pyflakes) and I (isort) only.
+exclude = ["venv", ".venv", "node_modules"]
+
+[lint]
+select = ["F", "I"]
+
+[lint.isort]
+known-first-party = ["health_data_hub"]

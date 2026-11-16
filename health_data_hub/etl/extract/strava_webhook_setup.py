@@ -22,6 +22,7 @@ Worker) must be running and reachable before you run 'create'.
 """
 
 import sys
+
 import requests
 
 from health_data_hub.config.settings import (
@@ -77,7 +78,7 @@ def create_subscription() -> dict:
     if resp.status_code == 201:
         sub = resp.json()
         print(f"Subscription created successfully. id={sub['id']}")
-        print(f"Save this ID if you need to delete the subscription later.")
+        print("Save this ID if you need to delete the subscription later.")
         return sub
     else:
         print(f"ERROR: {resp.status_code} — {resp.text}")

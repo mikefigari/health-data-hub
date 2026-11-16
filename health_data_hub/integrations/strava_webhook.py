@@ -19,15 +19,20 @@ import json
 import logging
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 from health_data_hub.config.settings import (
-    STRAVA_WEBHOOK_VERIFY_TOKEN,
     STRAVA_WEBHOOK_PORT,
+    STRAVA_WEBHOOK_VERIFY_TOKEN,
 )
-from health_data_hub.etl.extract.strava_refresh import get_valid_access_token, StravaAuthError
 from health_data_hub.etl.extract.strava_api import get_activity, get_activity_streams
-from health_data_hub.etl.load.insert_workout import insert_workout_metadata as insert_workout
+from health_data_hub.etl.extract.strava_refresh import (
+    StravaAuthError,
+    get_valid_access_token,
+)
+from health_data_hub.etl.load.insert_workout import (
+    insert_workout_metadata as insert_workout,
+)
 from health_data_hub.etl.load.insert_workout_samples import insert_workout_samples
 from health_data_hub.etl.transform.build_workout_summary import build_summary_for
 from health_data_hub.integrations.notion.notion_strava_sync import sync_specific_workout

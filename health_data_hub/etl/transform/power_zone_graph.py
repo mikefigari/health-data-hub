@@ -13,7 +13,6 @@ from psycopg2.extras import RealDictCursor
 from health_data_hub.config.settings import PROJECT_ROOT
 from health_data_hub.utils.db_connect import get_connection
 
-
 DEFAULT_GRAPH_DIR = PROJECT_ROOT / "generated" / "power_zone_graphs"
 DEFAULT_ZONE_CONFIG_PATH = PROJECT_ROOT / "health_data_hub" / "config" / "power_zones.json"
 
@@ -475,7 +474,7 @@ def _fetch_weekly_zone_data(week_start: date, week_end: date) -> Optional[dict]:
                     ws.np_watts
                 FROM workouts_raw wr
                 LEFT JOIN workout_summary ws ON ws.workout_id = wr.id
-                WHERE wr.start_time::date BETWEEN %s AND %s
+                WHERE (wr.start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date BETWEEN %s AND %s
                   AND LOWER(REPLACE(wr.sport_type, ' ', '')) LIKE '%%ride%%'
                 ORDER BY wr.start_time
                 """,

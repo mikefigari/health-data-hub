@@ -13,3 +13,6 @@ One row per kit-run run. Written by kit-run; don't edit by hand.
 | 2026-10-27 03:30 | orch/nutrition-dashboard | 14/14 | - | 36% | 5/1 | - | 69m | review PASS -> merge gate | https://github.com/mikefigari/health-data-hub/pull/7 |
 | 2026-10-27 07:05 | orch/nutrition-dashboard | 16/16 | - | 38% | 5/1 | - | 212m | review PASS -> merge gate | https://github.com/mikefigari/health-data-hub/pull/7 |
 | 2026-10-29 02:26 | orch/goal-1900-maintenance | 0/7 | - | - | 0/0 | - | 4m | decision | - |
+| 2026-11-08 02:34 | orch/code-cleanup | 12/16 | - | 83% | 0/0 | - | 9m | decision | - |
+| 2026-11-16 19:25 | orch/code-cleanup | 15/16 | - | 87% | 0/0 | - | 7m | failed | - |
+| 2026-11-16 19:44 | orch/code-cleanup | 16/16 | - | 88% | 0/2 | - | 10m | review PASS -> merge gate | https://github.com/mikefigari/health-data-hub/pull/11 |

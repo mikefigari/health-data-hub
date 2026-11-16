@@ -9,6 +9,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { join, dirname } from 'path';
+import { maintenanceKcal } from '../utils/nutritionWeek.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROMPT_MD_PATH = join(__dirname, '..', '..', '..', 'prompt.md');
@@ -82,7 +83,7 @@ This report runs at 10:00. Data source notes:
     'estimated from TSS'               → TSS × 9.5 (rough estimate, unstructured ride)
     'athlete default (500 kJ — ...)'   → no ride data; 500 kJ default used
 
-Maintenance is 2620 kcal on rest days (a fixed estimate). Add energy_kj from
+Maintenance is ${maintenanceKcal()} kcal on rest days (a fixed estimate). Add energy_kj from
 CALORIE_CONTEXT to get gross maintenance on training days.
 
 You will receive: TODAY_DATA (PMC, physical_state, today's workouts/planned),
@@ -182,7 +183,7 @@ target_total in NUTRITION_WEEK if present; defaults 720 / 5,040). Judge the 7-da
 never individual days — a single high or low day is not a failure. State coverage as
 "N of 7 days logged, M marked complete" (n_logged, n_marked_complete) and say that
 only usable days (n_usable) enter the average. State the maintenance method
-(maintenance_method: fixed_maintenance = 2620 kcal plus that day's ride kcal, or scale_calibrated =
+(maintenance_method: fixed_maintenance = ${maintenanceKcal()} kcal plus that day's ride kcal, or scale_calibrated =
 estimated from intake and weight trend). When it is scale_calibrated, also report the
 goal-model average (goal_model_avg_deficit) next to the calibrated one for comparison. If status is no_data, say so plainly and
 do not estimate. Confirm clearly if on_track; if not, give the average shortfall.

@@ -1,5 +1,6 @@
 // Deterministic fake inputs for demo mode. Seeded PRNG: same `today` -> same output.
 import { addDays } from './aggregate.mjs';
+import { energyDefaults } from './config.mjs';
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -77,5 +78,5 @@ export function demoInputs(today) {
     { day: addDays(today, -20), ftp_w: 265 },
   ];
 
-  return { today, rangeDays: 30, loggingStart: null, planKgPerWeek: 0.6545, weights, nutrition, goals, rideKj, ftp };
+  return { today, rangeDays: 30, loggingStart: null, planKgPerWeek: energyDefaults().PLAN_KG_PER_WEEK, weights, nutrition, goals, rideKj, ftp };
 }

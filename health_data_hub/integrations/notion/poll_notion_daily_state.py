@@ -15,10 +15,14 @@ from datetime import datetime, timedelta, timezone
 
 from notion_client import Client
 
-from health_data_hub.config.settings import NOTION_TOKEN, NOTION_DAILY_STATE_DB_ID
+from health_data_hub.config.settings import NOTION_DAILY_STATE_DB_ID, NOTION_TOKEN
+from health_data_hub.etl.extract.notion_daily_state_extract import (
+    extract_daily_state_records,
+)
+from health_data_hub.etl.load.insert_daily_physical_state import (
+    insert_daily_physical_state,
+)
 from health_data_hub.utils.db_connect import get_connection
-from health_data_hub.etl.extract.notion_daily_state_extract import extract_daily_state_records
-from health_data_hub.etl.load.insert_daily_physical_state import insert_daily_physical_state
 
 logger = logging.getLogger(__name__)
 

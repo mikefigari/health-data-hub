@@ -57,9 +57,10 @@ def main() -> int:
 
     if args.fail_fast:
         # Wrap run_all to short-circuit on first error
-        from health_data_hub.quality.checks import QualityReport
         import uuid
         from datetime import datetime, timezone
+
+        from health_data_hub.quality.checks import QualityReport
 
         report = QualityReport(run_id=str(uuid.uuid4()), run_at=datetime.now(timezone.utc))
         for check in runner.checks:

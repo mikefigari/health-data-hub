@@ -12,6 +12,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
+      - run: python -m ruff check .
       - run: python -m pytest -q
   node:
     runs-on: ubuntu-latest
@@ -64,3 +65,12 @@ jobs:
       - name: dashboard integration tests
         working-directory: dashboard
         run: npm run test:integration
+      - name: unused-export check
+        working-directory: .
+        run: node scripts/check-unused-exports.mjs
+      - name: scripts tests
+        working-directory: .
+        run: node --test scripts/test/*.test.mjs
+      - name: cloudflare-worker tests
+        working-directory: cloudflare-worker
+        run: npm test

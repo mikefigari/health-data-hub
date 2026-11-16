@@ -3,7 +3,7 @@
 import { fmtDay, fmtInt, fmtPct, proteinBand } from '../core.mjs';
 import { axisTooltip, frame, grid, isNum, tipRow, valueAxis, withAlpha } from './common.mjs';
 
-export const EMPTY_NUTRITION = 'No food logged in this range';
+const EMPTY_NUTRITION = 'No food logged in this range';
 const MACROS = ['protein', 'carbs', 'fat', 'other'];
 const LABEL = { protein: 'Protein', carbs: 'Carbs', fat: 'Fat', other: 'Other' };
 const DAY_KEY = { protein: 'kcal_protein', carbs: 'kcal_carbs', fat: 'kcal_fat', other: 'kcal_other' };

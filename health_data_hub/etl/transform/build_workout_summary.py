@@ -7,6 +7,7 @@ Computes NP, IF, and TSS at insert time using FTP history.
 
 import logging
 from typing import Iterable, Optional, Tuple
+
 import numpy as np
 
 from health_data_hub.utils.db_connect import get_connection
@@ -193,6 +194,7 @@ def build_summary_for(workout_id: int) -> None:
 
 if __name__ == "__main__":
     import sys
+
     from health_data_hub.utils.logging_config import setup_logging
     setup_logging()
 

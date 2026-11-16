@@ -37,13 +37,13 @@ export const TOKENS = Object.freeze({
   }),
 });
 
-export const FONT_STACK =
+const FONT_STACK =
   '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
 export const VIEWS = Object.freeze(['all', 'today', 'weight', 'timeline', 'weekly', 'milestones', 'calories', 'balance', 'protein', 'calendar', 'ftp', 'rules']);
 export const RANGES = Object.freeze([7, 30, 90, 365]);
 export const THEMES = Object.freeze(['light', 'dark']);
-export const DEFAULT_RANGE = 30;
+const DEFAULT_RANGE = 30;
 export const REFRESH_MS = 5 * 60 * 1000;
 
 export const RANGE_LABELS = Object.freeze({ 7: '7D', 30: '30D', 90: '90D', 365: '1Y' });
@@ -131,7 +131,7 @@ export function fmtDay(day) {
 }
 
 // "Oct 26", or "Jun 14, 2027" when the year differs from the reference day's year.
-export function fmtDayYear(day, refDay) {
+function fmtDayYear(day, refDay) {
   const p = parseDay(day);
   if (!p) return DASH;
   const r = parseDay(refDay);
@@ -157,7 +157,7 @@ export function fmtTime(date) {
   return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(date);
 }
 
-export function rangeLong(range) {
+function rangeLong(range) {
   return RANGE_LONG[range] || `${range} days`;
 }
 
@@ -170,7 +170,7 @@ function addDays(day, n) {
 }
 
 // Average calories over logged (complete, past) days in the 7 days ending today.
-export function sevenDayAvg(data) {
+function sevenDayAvg(data) {
   const days = data?.nutrition?.days || [];
   if (!data?.today) return { avg: null, goal: null, n: 0 };
   const from = addDays(data.today, -6);

@@ -4,8 +4,8 @@ Computes NP, IF, and TSS for each workout via build_summary_for().
 Safe to re-run — build_summary_for uses ON CONFLICT DO UPDATE.
 """
 
-from health_data_hub.utils.db_connect import get_connection
 from health_data_hub.etl.transform.build_workout_summary import build_summary_for
+from health_data_hub.utils.db_connect import get_connection
 
 
 def build_all_summaries():

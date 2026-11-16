@@ -17,17 +17,22 @@ import logging
 import time
 from datetime import datetime, timezone
 
-from health_data_hub.utils.db_connect import get_connection
-from health_data_hub.etl.extract.strava_refresh import get_valid_access_token, StravaAuthError
-from health_data_hub.utils.alert import send_alert
 from health_data_hub.etl.extract.strava_api import (
-    get_recent_activities,
     get_activity_streams,
+    get_recent_activities,
 )
-from health_data_hub.etl.load.insert_workout import insert_workout_metadata as insert_workout
+from health_data_hub.etl.extract.strava_refresh import (
+    StravaAuthError,
+    get_valid_access_token,
+)
+from health_data_hub.etl.load.insert_workout import (
+    insert_workout_metadata as insert_workout,
+)
 from health_data_hub.etl.load.insert_workout_samples import insert_workout_samples
 from health_data_hub.etl.transform.build_workout_summary import build_summary_for
 from health_data_hub.integrations.notion.notion_strava_sync import sync_specific_workout
+from health_data_hub.utils.alert import send_alert
+from health_data_hub.utils.db_connect import get_connection
 
 logger = logging.getLogger(__name__)
 

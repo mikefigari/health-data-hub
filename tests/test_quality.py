@@ -14,9 +14,6 @@ from __future__ import annotations
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock
-
-import pytest
 
 from health_data_hub.quality.checks import (
     AnomalyCheck,
@@ -28,7 +25,6 @@ from health_data_hub.quality.checks import (
     SchemaCheck,
     ValueRangeCheck,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fake DB connection
@@ -308,7 +304,6 @@ class TestCheckRunner:
             RowCountCheck("workouts_raw", min_rows=1),
             NullCheck("workouts_raw", "external_id"),
         ]
-        conn = FakeConn((10,))  # both checks will return (10,) or (0, 10)
         # NullCheck expects (nulls, total) — patch individually
         results = []
         for check in checks:

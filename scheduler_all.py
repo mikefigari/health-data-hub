@@ -37,12 +37,17 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 from apscheduler.schedulers.blocking import BlockingScheduler
+
+from health_data_hub.integrations.apple_health.body_poller import poll_once as poll_body
+from health_data_hub.integrations.notion.notion_strava_sync import (
+    sync_weekly_zone_summary,
+)
+from health_data_hub.integrations.notion.poll_notion_daily_state import (
+    poll_notion_daily_state,
+)
+from health_data_hub.integrations.oura.poll_oura import poll_oura
 from health_data_hub.integrations.poll_strava import poll_once
 from health_data_hub.integrations.strava_webhook import start_webhook_server
-from health_data_hub.integrations.oura.poll_oura import poll_oura
-from health_data_hub.integrations.notion.poll_notion_daily_state import poll_notion_daily_state
-from health_data_hub.integrations.apple_health.body_poller import poll_once as poll_body
-from health_data_hub.integrations.notion.notion_strava_sync import sync_weekly_zone_summary
 
 # -------------------------------------------------------------------
 # Configuration

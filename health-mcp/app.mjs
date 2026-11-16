@@ -5,7 +5,7 @@ import { createOAuthRouter } from './oauth.mjs';
 import { registerReadTools } from './tools/read.mjs';
 import { createWriteGuard } from './lib/write-guard.mjs';
 
-export const SERVER_INSTRUCTIONS =
+const SERVER_INSTRUCTIONS =
   'Food logging: the user tells you what they ate (text or photo). ' +
   '(1) Call `search_foods` for each distinct food, using the food name only, without quantities. ' +
   '(2) Prefer a favorite if one matches. Otherwise use a USDA match with a portion, otherwise your own estimate. ' +

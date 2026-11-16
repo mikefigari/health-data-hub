@@ -13,9 +13,11 @@ Steps:
 from health_data_hub.etl.init_db import initialize_database
 from health_data_hub.etl.transform.backfill_strava import backfill_all
 from health_data_hub.etl.transform.build_all_summaries import build_all_summaries
+from health_data_hub.utils.logging_config import setup_logging
 
 
 def main():
+    setup_logging()
     print("Step 1: Initializing DB schema...")
     initialize_database()
 

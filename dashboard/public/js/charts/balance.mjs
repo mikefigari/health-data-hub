@@ -3,13 +3,12 @@
 import { fmtDay, fmtInt } from '../core.mjs';
 import { axisTooltip, frame, grid, isNum, tipRow, valueAxis, withAlpha } from './common.mjs';
 
-export const EMPTY_BALANCE = 'No complete days logged in this range';
+const EMPTY_BALANCE = 'No complete days logged in this range';
 const TOP_RADIUS = [6, 6, 0, 0];
 const BAR_MAX = 28;
 
 const rangeOf = (data, opts) => opts?.range ?? data?.range_days ?? 30;
 const isWeekly = (data, opts) => rangeOf(data, opts) > 30;
-export const fmtDeficit = (v) => (isNum(v) ? `${v < 0 ? '+' : '−'}${fmtInt(Math.abs(v))}` : '—');
 
 export function balanceOption(data, tokens, opts = {}) {
   const weekly = isWeekly(data, opts);

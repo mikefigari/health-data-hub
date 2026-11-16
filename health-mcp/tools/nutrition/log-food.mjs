@@ -16,7 +16,7 @@ import {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const LOG_FOOD_DESCRIPTION =
+const LOG_FOOD_DESCRIPTION =
   'Log one or more foods the user ate (up to 25 per call, all or none). ' +
   'Call first WITHOUT `confirm` (default false): nothing is written, and you get the computed rows plus projected day totals. ' +
   'Show the user a compact table (item, amount, kcal, P/C/F, confidence, source) and the projected day total, ' +

@@ -1,5 +1,6 @@
 import http.server
 import json
+import logging
 import os
 import socketserver
 import threading
@@ -11,6 +12,8 @@ import requests
 
 # Load environment variables via settings (handles HEALTH_ENV-based dotenv loading)
 from health_data_hub.config.settings import TOKEN_FILE
+
+logger = logging.getLogger(__name__)
 
 
 def _get_env(key: str) -> str:
@@ -48,8 +51,8 @@ class OAuthHandler(http.server.SimpleHTTPRequestHandler):
         if "access_token" not in tokens:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(f"Token exchange failed: {tokens}".encode())
-            print(f"[OAuth] Token exchange failed: {tokens}")
+            self.wfile.write(b"Token exchange failed.")
+            logger.error("[OAuth] Token exchange failed (HTTP %s)", response.status_code)
             return
 
         temp_file = Path(str(TOKEN_FILE) + ".tmp")
@@ -62,7 +65,7 @@ class OAuthHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"Authorization complete. You may close this window.")
-        print(f"[OAuth] Tokens saved to {TOKEN_FILE}")
+        logger.info(f"[OAuth] Tokens saved to {TOKEN_FILE}")
 
         # Shut down the server from a separate thread (can't call from within a request handler)
         threading.Thread(target=self.server.shutdown, daemon=True).start()
@@ -85,15 +88,18 @@ def run_oauth():
     )
 
     PORT = 8000
-    print("Opening Strava OAuth page...")
+    logger.info("Opening Strava OAuth page...")
     webbrowser.open(auth_url)
 
     with socketserver.TCPServer(("", PORT), OAuthHandler) as httpd:
-        print(f"Listening for Strava redirect on http://localhost:{PORT} ...")
+        logger.info(f"Listening for Strava redirect on http://localhost:{PORT} ...")
         httpd.serve_forever()
 
-    print("[OAuth] Done.")
+    logger.info("[OAuth] Done.")
 
 
 if __name__ == "__main__":
+    from health_data_hub.utils.logging_config import setup_logging
+
+    setup_logging()
     run_oauth()

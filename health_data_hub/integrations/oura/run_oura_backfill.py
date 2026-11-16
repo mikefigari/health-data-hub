@@ -1,25 +1,21 @@
-from datetime import date, timedelta
 import time
-
-from health_data_hub.integrations.oura.oura_api import (
-    fetch_sleep,
-    fetch_activity,
-)
+from datetime import date, timedelta
 
 from health_data_hub.etl.extract.oura_extract import (
-    extract_sleep_records,
-    extract_readiness_records,
-    extract_hr_samples,
     extract_activity_records,
+    extract_hr_samples,
+    extract_readiness_records,
+    extract_sleep_records,
 )
-
-from health_data_hub.etl.load.insert_oura_sleep import insert_oura_sleep
-from health_data_hub.etl.load.insert_oura_readiness import insert_oura_readiness
-from health_data_hub.etl.load.insert_oura_hr import insert_oura_hr
 from health_data_hub.etl.load.insert_oura_activity import insert_oura_activity
-
+from health_data_hub.etl.load.insert_oura_hr import insert_oura_hr
+from health_data_hub.etl.load.insert_oura_readiness import insert_oura_readiness
+from health_data_hub.etl.load.insert_oura_sleep import insert_oura_sleep
+from health_data_hub.integrations.oura.oura_api import (
+    fetch_activity,
+    fetch_sleep,
+)
 from health_data_hub.utils.db_connect import get_connection
-
 
 BACKFILL_DAYS = 60
 SLEEP_BETWEEN_DAYS = 0.1  # keep polite but fast

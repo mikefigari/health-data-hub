@@ -18,9 +18,7 @@ from datetime import date
 import psycopg2
 import psycopg2.extras
 
-from health_data_hub.config.settings import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 from health_data_hub.utils.db_connect import get_connection
-
 
 _QUERY = """
 WITH RECURSIVE date_series AS (
