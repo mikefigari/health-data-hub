@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ToolError, validationError, errorResult, jsonResult, num, round2 } from './common.mjs';
 
-export const SEARCH_FOODS_DESCRIPTION =
+const SEARCH_FOODS_DESCRIPTION =
   "Search the user's saved favorite foods by name or alias (typo and word-order tolerant). " +
   'Results are ranked exact alias match first, then similarity, then how often the favorite is used. ' +
   'Use before estimating a food: if a favorite matches, log it with match_source favorite and its my_food_id. ' +
@@ -14,11 +14,11 @@ export function normalizeText(s) {
   return String(s).trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-export function stripFiller(norm) {
+function stripFiller(norm) {
   return norm.replace(FILLER, ' ').replace(/\s+/g, ' ').trim();
 }
 
-export function queryVariants(query) {
+function queryVariants(query) {
   const v1 = normalizeText(query);
   const stripped = stripFiller(v1);
   return { v1, v2: stripped === '' ? v1 : stripped };
@@ -26,7 +26,7 @@ export function queryVariants(query) {
 
 // Exact: the alias equals the query, or (query had filler words) the alias with
 // filler removed equals the query with filler removed.
-export function isExact(aliasNorm, v1, v2) {
+function isExact(aliasNorm, v1, v2) {
   if (aliasNorm === v1) return true;
   return v2 !== v1 && stripFiller(aliasNorm) === v2;
 }
@@ -43,7 +43,7 @@ const SQL = `
           OR word_similarity($1, a.alias_norm) >= 0.4
           OR word_similarity($2, a.alias_norm) >= 0.4)`;
 
-export async function searchFavorites(pool, query, limit = 10) {
+async function searchFavorites(pool, query, limit = 10) {
   const { v1, v2 } = queryVariants(query);
   if (v1 === '') throw validationError('query must not be empty', 'query');
   const { rows } = await pool.query(SQL, [v1, v2]);

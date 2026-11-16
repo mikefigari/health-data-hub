@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ToolError, validationError, errorResult, jsonResult, num } from './common.mjs';
 import { normalizeText } from './search.mjs';
 
-export const SAVE_FAVORITE_DESCRIPTION =
+const SAVE_FAVORITE_DESCRIPTION =
   'Create, update or archive a favorite food (a reusable serving with known nutrients). ' +
   'Create: give name, serving (serving_qty, serving_unit, optional serving_grams), calories, protein_g, carbs_g, fat_g, ' +
   'confidence and basis (label | usda | recipe | restaurant | estimate); or give from_log_id to copy serving and nutrients from a food_log entry. ' +

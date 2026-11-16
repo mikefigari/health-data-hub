@@ -147,7 +147,7 @@ export function laDayString(dateOrMs) {
   return `${p.year}-${pad(p.month)}-${pad(p.day)}`;
 }
 
-export function inferMeal(ms) {
+function inferMeal(ms) {
   const h = laParts(ms).hour;
   if (h < 11) return 'breakfast';
   if (h < 15) return 'lunch';

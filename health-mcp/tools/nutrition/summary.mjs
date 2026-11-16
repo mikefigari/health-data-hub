@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ToolError, validationError, errorResult, jsonResult, num, round1, round2, laDayString } from './common.mjs';
 
-export const GET_DAY_SUMMARY_DESCRIPTION =
+const GET_DAY_SUMMARY_DESCRIPTION =
   "Show what's logged for a day (default: today in Los Angeles): totals, goal, remaining calories, per-meal breakdown, " +
   'cycling calories earned, latest weight and kg_to_target, and every item with its id, confidence and source. ' +
   'Use the item ids with update_log_entry and delete_log_entry.';
@@ -81,7 +81,7 @@ function byMeal(items) {
   return out;
 }
 
-export async function buildDaySummary(pool, day, includeItems) {
+async function buildDaySummary(pool, day, includeItems) {
   const daily = (await pool.query(DAILY_SQL, [day])).rows[0];
   const goal = (await pool.query(GOAL_SQL, [day])).rows[0];
   const factor = goal ? Number(goal.cycling_kj_factor) : 1;

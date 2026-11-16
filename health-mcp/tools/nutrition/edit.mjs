@@ -14,19 +14,19 @@ import {
 import { ITEM_COLUMNS, mapDbRow, dailyTotals, EMPTY_TOTALS } from './log-food.mjs';
 import { parseDay } from './summary.mjs';
 
-export const UPDATE_LOG_ENTRY_DESCRIPTION =
+const UPDATE_LOG_ENTRY_DESCRIPTION =
   'Correct a logged item (wrong portion, wrong meal, wrong day, better estimate). Get ids from get_day_summary. ' +
   'patch may contain only: eaten_at, day, meal, description, quantity, unit, grams, servings, calories, protein_g, carbs_g, ' +
   'fat_g, fiber_g, sugar_g, sodium_mg, confidence, match_source, my_food_id, fdc_id, ref_label, notes; any other field is rejected. ' +
   'Patching `servings` on a favorite entry without nutrients rescales the nutrients from the favorite. ' +
   'Returns {before, after, day_totals}, with totals for both days if the day changed.';
 
-export const DELETE_LOG_ENTRY_DESCRIPTION =
+const DELETE_LOG_ENTRY_DESCRIPTION =
   'Remove logged items (soft delete; reversible with restore=true). ' +
   'Confirm with the user before deleting more than 3 items. Up to 25 ids per call; nothing changes if any id does not exist. ' +
   'Returns {affected, unchanged, day_totals}.';
 
-export const MARK_DAY_COMPLETE_DESCRIPTION =
+const MARK_DAY_COMPLETE_DESCRIPTION =
   'Mark a day (default: today in Los Angeles) as fully logged or not, with an optional note. ' +
   'Use after the user says they have logged everything for the day.';
 
