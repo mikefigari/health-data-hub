@@ -99,4 +99,7 @@ def run_oauth():
 
 
 if __name__ == "__main__":
+    from health_data_hub.utils.logging_config import setup_logging
+
+    setup_logging()
     run_oauth()

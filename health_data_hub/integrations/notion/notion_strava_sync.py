@@ -571,4 +571,7 @@ def sync_weekly_zone_summary(week_start: date | None = None):
 # -------------------------------------------------------------------
 
 if __name__ == "__main__":
+    from health_data_hub.utils.logging_config import setup_logging
+
+    setup_logging()
     sync_to_notion(date(2025, 11, 23))

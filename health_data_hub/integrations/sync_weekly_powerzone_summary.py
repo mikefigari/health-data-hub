@@ -17,6 +17,7 @@ from datetime import date, timedelta
 from health_data_hub.integrations.notion.notion_strava_sync import (
     sync_weekly_zone_summary,
 )
+from health_data_hub.utils.logging_config import setup_logging
 
 
 def _parse_week_start(arg: str) -> date:
@@ -26,6 +27,7 @@ def _parse_week_start(arg: str) -> date:
 
 
 def main() -> int:
+    setup_logging()
     if len(sys.argv) > 2:
         print(__doc__)
         return 1
