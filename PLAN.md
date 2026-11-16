@@ -39,7 +39,7 @@ Branch: orch/peloton-notion-autofill
 **Done-when**: `venv/Scripts/python -m pytest -q tests/test_notion_peloton_icon.py && venv/Scripts/python -m pytest -q && venv/Scripts/python -m ruff check health_data_hub/integrations/notion/notion_strava_sync.py tests/test_notion_peloton_icon.py`
 **Decision rule**: If the Notion API rejects `file_upload` as a page icon in a way the mocks cannot settle, keep the per-page upload and record it in Notes; do not switch to an external URL host.
 **Notes**: `_find_page_id` now returns the page object (icon, properties); T2 should reuse it. NOTION_TOKEN/NOTION_WORKOUT_DB_ID re-read from env when settings.py gave None.
-Lesson: When a helper's return type changes (id to object), check each caller and tell the next task in the plan | `_find_page_id` consumers (T2 relation and icon logic)
+Lesson (logged): When a helper's return type changes (id to object), check each caller and tell the next task in the plan | `_find_page_id` consumers (T2 relation and icon logic)
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T2: Cycling rides link to the Power Zone week covering their LA date, creating the next week from the template [model: sonnet] [risk: normal] [review: full] [status: done] [deps: T1]
