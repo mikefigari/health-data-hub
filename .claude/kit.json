@@ -2,7 +2,7 @@
   "baseBranch": "main",
   "commands": {
     "test": "venv/Scripts/python -m pytest -q",
-    "lint": "",
+    "lint": "venv/Scripts/python -m ruff check . && node scripts/check-unused-exports.mjs",
     "typecheck": "",
     "build": ""
   },
