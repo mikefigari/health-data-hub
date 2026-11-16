@@ -180,7 +180,8 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 **Acceptance tests**: none: the T11 checker and the existing dashboard suite are the check.
 **Done-when**: `node scripts/check-unused-exports.mjs | (! grep -q "^dashboard/") && cd dashboard && npm test`
 **Decision rule**: If a name is used inside its own file, drop only `export`; if it's used nowhere, delete it. Never add a name to the allowlist without a reason comment.
-**Notes**:
+**Notes**: Dropped `export` from names used in their own file; deleted unreferenced `fmtDeficit` (balance.mjs). Checker clean for dashboard/, npm test 210 pass.
+Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T15: Remove unused exports in health-mcp and notion-reporter [model: haiku] [risk: normal] [status: todo] [deps: T11, T13]
 **Outcome**: `node scripts/check-unused-exports.mjs` exits 0 (nothing left anywhere), and the health-mcp, notion-reporter and cloudflare-worker unit tests pass.
