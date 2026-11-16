@@ -139,7 +139,7 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 Metrics: attempts=1 fix=0 review=none blocked=none
 
 
-### T11: Unused-export checker for the Node services [model: sonnet] [risk: normal] [status: todo] [deps: none]
+### T11: Unused-export checker for the Node services [model: sonnet] [risk: normal] [status: done] [deps: none]
 **Outcome**: `node scripts/check-unused-exports.mjs` prints each `path name` that is exported but referenced by no other tracked `.mjs`/`.js` file, and exits 1 if any exist; it uses only Node built-ins.
 **Files**: `scripts/check-unused-exports.mjs` (new), `scripts/unused-exports.allow` (new; `path name  # reason` per line, starts empty), `scripts/test/check-unused-exports.test.mjs` (new)
 **Non-goals**: no fixes to findings (T14, T15); no root `package.json`; no new dependencies.
@@ -147,7 +147,8 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 **Done-when**: `node --test scripts/test/*.test.mjs`
 **Decision rule**: Prefer false negatives over false positives: if a pattern is ambiguous (string-built names, re-exports), treat the export as used and log the case in Notes.
 **Notes**: Spec 550943c written. Done-when changed from the directory form to the glob form by D5 (Q8, 2026-11-16).
-Metrics: attempts=0 fix=0 review=none blocked=plan
+Worker: 12/12 spec tests pass; real repo yields 26 findings for T14/T15. Ambiguous cases (`export {..} from` re-exports, `import * as`, dynamic import) count as used.
+Metrics: attempts=1 fix=0 review=none blocked=none
 
 
 ### T12: Dashboard reads maintenance, plan pace and kcal/kg from one place [model: sonnet] [risk: normal] [status: done] [deps: none]
