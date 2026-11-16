@@ -16,3 +16,4 @@ One row per kit-run run. Written by kit-run; don't edit by hand.
 | 2026-11-08 02:34 | orch/code-cleanup | 12/16 | - | 83% | 0/0 | - | 9m | decision | - |
 | 2026-11-16 19:25 | orch/code-cleanup | 15/16 | - | 87% | 0/0 | - | 7m | failed | - |
 | 2026-11-16 19:44 | orch/code-cleanup | 16/16 | - | 88% | 0/2 | - | 10m | review PASS -> merge gate | https://github.com/mikefigari/health-data-hub/pull/11 |
+| 2026-11-16 19:58 | orch/peloton-notion-autofill | 2/2 | - | 100% | 0/0 | - | 9m | review PASS -> merge gate | https://github.com/mikefigari/health-data-hub/pull/12 |

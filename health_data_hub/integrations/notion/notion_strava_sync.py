@@ -9,10 +9,13 @@ Targets:
 - Notion database: NOTION_WORKOUT_DB_ID
 """
 
+import argparse
 import logging
+import mimetypes
 import os
 from datetime import date, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 from notion_client import Client
@@ -28,9 +31,17 @@ from health_data_hub.etl.transform.power_zone_graph import (
     generate_power_zone_graph,
     generate_weekly_zone_summary_graph,
 )
+from health_data_hub.integrations.notion.powerzone_week import (
+    find_or_create_week_page,
+    ride_local_date,
+)
 from health_data_hub.utils.db_connect import get_connection
 
 logger = logging.getLogger(__name__)
+
+# settings.py snapshots env at first import; re-read so a later-set env still works.
+NOTION_TOKEN = NOTION_TOKEN or os.getenv("NOTION_TOKEN")
+NOTION_WORKOUT_DB_ID = NOTION_WORKOUT_DB_ID or os.getenv("NOTION_WORKOUT_DB_ID")
 
 if not NOTION_TOKEN or not NOTION_WORKOUT_DB_ID:
     raise RuntimeError("Missing Notion configuration in environment.")
@@ -39,6 +50,7 @@ DRY_RUN = os.getenv("NOTION_DRY_RUN", "0") == "1"
 NOTION_SDK_VERSION = "2022-06-28"
 NOTION_FILE_UPLOAD_VERSION = "2026-03-11"
 NOTION_API_BASE = "https://api.notion.com/v1"
+PELOTON_TEMPLATE_PAGE_ID = "260993b90201801e8a8cc4720b2234ef"
 POWER_ZONE_GRAPH_CAPTION = "Power Zone Graph"
 WEEKLY_ZONE_SUMMARY_CAPTION = "Weekly Zone Summary"
 CYCLING_SPORT_TYPES = {
@@ -132,6 +144,94 @@ def _upload_file_to_notion(file_path: Path) -> str:
     send_resp.raise_for_status()
     return upload_id
 
+
+
+def _upload_bytes_to_notion(data: bytes, filename: str, content_type: str) -> str:
+    create_resp = requests.post(
+        f"{NOTION_API_BASE}/file_uploads",
+        headers=_notion_headers(),
+        json={},
+        timeout=30,
+    )
+    create_resp.raise_for_status()
+    upload_id = create_resp.json()["id"]
+
+    send_resp = requests.post(
+        f"{NOTION_API_BASE}/file_uploads/{upload_id}/send",
+        headers={
+            "Authorization": f"Bearer {NOTION_TOKEN}",
+            "Notion-Version": NOTION_FILE_UPLOAD_VERSION,
+        },
+        files={"file": (filename, data, content_type)},
+        timeout=120,
+    )
+    send_resp.raise_for_status()
+    return upload_id
+
+
+_peloton_icon_cache: dict | None = None
+
+
+def _peloton_template_icon() -> dict | None:
+    """Fetch (once per process) the Peloton template page's icon.
+
+    Returns {"icon": <notion icon>, "bytes": ..., "filename": ..., "content_type": ...}
+    for a file icon (bytes downloaded), or {"icon": <icon>} for emoji/external.
+    Returns None (not cached) when the template has no icon or a fetch fails.
+    """
+    global _peloton_icon_cache
+    if _peloton_icon_cache is not None:
+        return _peloton_icon_cache
+
+    resp = requests.get(
+        f"{NOTION_API_BASE}/pages/{PELOTON_TEMPLATE_PAGE_ID}",
+        headers=_notion_headers(),
+        timeout=30,
+    )
+    resp.raise_for_status()
+    icon = resp.json().get("icon")
+    if not icon:
+        logger.warning("[Notion] Peloton template page has no icon")
+        return None
+
+    if icon.get("type") == "file":
+        url = icon["file"]["url"]
+        dl = requests.get(url, timeout=60)
+        dl.raise_for_status()
+        filename = Path(urlparse(url).path).name or "peloton-icon.png"
+        content_type = mimetypes.guess_type(filename)[0] or "image/png"
+        _peloton_icon_cache = {
+            "icon": icon,
+            "bytes": dl.content,
+            "filename": filename,
+            "content_type": content_type,
+        }
+    else:
+        _peloton_icon_cache = {"icon": icon}
+    return _peloton_icon_cache
+
+
+def _apply_peloton_icon(page_id: str, current_icon: dict | None):
+    """Set the Peloton template icon on a page whose icon is empty."""
+    if current_icon:
+        return
+    template = _peloton_template_icon()
+    if not template:
+        return
+    if "bytes" in template:
+        upload_id = _upload_bytes_to_notion(
+            template["bytes"], template["filename"], template["content_type"]
+        )
+        icon_payload = {"type": "file_upload", "file_upload": {"id": upload_id}}
+    else:
+        icon_payload = template["icon"]
+    response = requests.patch(
+        f"{NOTION_API_BASE}/pages/{page_id}",
+        headers=_notion_headers(),
+        json={"icon": icon_payload},
+        timeout=30,
+    )
+    response.raise_for_status()
 
 
 def _set_page_cover(page_id: str, file_upload_id: str):
@@ -326,8 +426,26 @@ def _find_page_id(notion: Client, database_id: str, workout_id: int):
         },
     )
     results = response.get("results", [])
-    return results[0]["id"] if results else None
+    return results[0] if results else None
 
+
+
+def _link_powerzone_week(notion: Client, page_id: str, row: dict, existing: dict | None) -> None:
+    """Set PowerZone [DB] to the week covering the ride's LA date, only when empty."""
+    if existing:
+        relation = ((existing.get("properties") or {}).get("PowerZone [DB]") or {}).get("relation")
+        if relation:
+            return
+    fallback = row.get("workout_date")
+    ride_date = ride_local_date(row["workout_id"], fallback)
+    pz_id = find_or_create_week_page(ride_date)
+    if not pz_id:
+        return
+    notion.pages.update(
+        page_id=page_id,
+        properties={"PowerZone [DB]": {"relation": [{"id": pz_id}]}},
+    )
+    logger.info(f"[Notion] Linked workout {row['workout_id']} to PowerZone page {pz_id}")
 
 
 def upsert_workout(notion: Client, database_id: str, row: dict):
@@ -338,7 +456,9 @@ def upsert_workout(notion: Client, database_id: str, row: dict):
         logger.info(f"[DRY RUN] Would sync workout {workout_id}: {name}")
         return None
 
-    page_id = _find_page_id(notion, database_id, workout_id)
+    existing = _find_page_id(notion, database_id, workout_id)
+    page_id = existing["id"] if existing else None
+    current_icon = existing.get("icon") if existing else None
     props = build_properties(row)
 
     if page_id:
@@ -351,6 +471,18 @@ def upsert_workout(notion: Client, database_id: str, row: dict):
         )
         page_id = created["id"]
         logger.info(f"Created workout {workout_id}: {name}")
+
+    if page_id and determine_tag(row) == "Peloton Bike":
+        try:
+            _apply_peloton_icon(page_id, current_icon)
+        except Exception as exc:
+            logger.warning(f"[Notion] Peloton icon failed for workout {workout_id}: {exc}")
+
+    if page_id and _is_cycling_workout(row) and NOTION_POWERZONE_DB_ID:
+        try:
+            _link_powerzone_week(notion, page_id, row, existing)
+        except Exception as exc:
+            logger.warning(f"[Notion] PowerZone link failed for workout {workout_id}: {exc}")
 
     # if page_id and _is_cycling_workout(row):
     #     try:
@@ -574,4 +706,12 @@ if __name__ == "__main__":
     from health_data_hub.utils.logging_config import setup_logging
 
     setup_logging()
-    sync_to_notion(date(2025, 11, 23))
+    parser = argparse.ArgumentParser(description="Sync workouts to Notion")
+    parser.add_argument(
+        "--since",
+        type=date.fromisoformat,
+        default=date.today(),
+        help="Sync workouts on or after this date (YYYY-MM-DD); default today",
+    )
+    args = parser.parse_args()
+    sync_to_notion(args.since)
