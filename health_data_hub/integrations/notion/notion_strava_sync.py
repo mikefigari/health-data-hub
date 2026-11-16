@@ -31,6 +31,10 @@ from health_data_hub.etl.transform.power_zone_graph import (
     generate_power_zone_graph,
     generate_weekly_zone_summary_graph,
 )
+from health_data_hub.integrations.notion.powerzone_week import (
+    find_or_create_week_page,
+    ride_local_date,
+)
 from health_data_hub.utils.db_connect import get_connection
 
 logger = logging.getLogger(__name__)
@@ -426,6 +430,24 @@ def _find_page_id(notion: Client, database_id: str, workout_id: int):
 
 
 
+def _link_powerzone_week(notion: Client, page_id: str, row: dict, existing: dict | None) -> None:
+    """Set PowerZone [DB] to the week covering the ride's LA date, only when empty."""
+    if existing:
+        relation = ((existing.get("properties") or {}).get("PowerZone [DB]") or {}).get("relation")
+        if relation:
+            return
+    fallback = row.get("workout_date")
+    ride_date = ride_local_date(row["workout_id"], fallback)
+    pz_id = find_or_create_week_page(ride_date)
+    if not pz_id:
+        return
+    notion.pages.update(
+        page_id=page_id,
+        properties={"PowerZone [DB]": {"relation": [{"id": pz_id}]}},
+    )
+    logger.info(f"[Notion] Linked workout {row['workout_id']} to PowerZone page {pz_id}")
+
+
 def upsert_workout(notion: Client, database_id: str, row: dict):
     workout_id = row["workout_id"]
     name = row.get("name") or "Untitled workout"
@@ -455,6 +477,12 @@ def upsert_workout(notion: Client, database_id: str, row: dict):
             _apply_peloton_icon(page_id, current_icon)
         except Exception as exc:
             logger.warning(f"[Notion] Peloton icon failed for workout {workout_id}: {exc}")
+
+    if page_id and _is_cycling_workout(row) and NOTION_POWERZONE_DB_ID:
+        try:
+            _link_powerzone_week(notion, page_id, row, existing)
+        except Exception as exc:
+            logger.warning(f"[Notion] PowerZone link failed for workout {workout_id}: {exc}")
 
     # if page_id and _is_cycling_workout(row):
     #     try:
