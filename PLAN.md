@@ -12,6 +12,7 @@ Branch: orch/code-cleanup
 - D2: Dead code and stale docs -> delete outright (git history keeps them), including `archive/`. CLI tools that are still useful stay: `run_all.py`, `backfill_body_measurements.py`, `etl/extract/strava_reauth_headless.py`, `etl/extract/strava_webhook_setup.py`, `integrations/oura/run_oura_backfill.py`, `integrations/sync_weekly_powerzone_summary.py`, `etl/import_planned_workouts.py` (notion-reporter reads `planned_workouts`), `quality/`.
 - D3: Lint -> ruff for Python (rules F and I) in requirements and CI; Node gets no new dependencies, and a repo script `scripts/check-unused-exports.mjs` fails on exports that nothing references.
 - D4: Constants -> one config source per service: maintenance 2620 and plan pace 0.6545 are read once from that service's config/env reader; 7700 kcal/kg is one named constant per service; prompt text interpolates the configured value. No DB change.
+- D5: Node test runner form (Q8) -> `node --test scripts/test/*.test.mjs` (a glob, not a directory) in T11 and T16 Done-when and in the CI step; Node 22.14 loads a directory argument as a module.
 ## Assumptions
 - A1: `health_data_hub/integrations/apple_health/nutrition_reader.py` is dead, not merely unreferenced: it reads `nutrition_daily` as a table, which migration 2026-11_02 renamed to `nutrition_daily_legacy` and replaced with a view of a different shape.
 - A2: The 5-file cap counts hand edits. Deletions, `ruff --fix` output and removing only an `export` keyword or an unused import are mechanical and don't count toward it.
@@ -138,14 +139,14 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 Metrics: attempts=1 fix=0 review=none blocked=none
 
 
-### T11: Unused-export checker for the Node services [model: sonnet] [risk: normal] [status: needs-decision] [deps: none]
+### T11: Unused-export checker for the Node services [model: sonnet] [risk: normal] [status: todo] [deps: none]
 **Outcome**: `node scripts/check-unused-exports.mjs` prints each `path name` that is exported but referenced by no other tracked `.mjs`/`.js` file, and exits 1 if any exist; it uses only Node built-ins.
 **Files**: `scripts/check-unused-exports.mjs` (new), `scripts/unused-exports.allow` (new; `path name  # reason` per line, starts empty), `scripts/test/check-unused-exports.test.mjs` (new)
 **Non-goals**: no fixes to findings (T14, T15); no root `package.json`; no new dependencies.
 **Acceptance tests**: `scripts/test/check-unused-exports.test.mjs` on temp-dir fixtures: (a) `export function|const|let|class|async function NAME` and `export { a, b as c }` are collected; (b) a name counts as used when another file contains it as a whole word (tests included); (c) `import * as ns from './x.mjs'` marks every export of `x.mjs` used; (d) allowlisted `path name` pairs are skipped; (e) exit 0 with no findings, exit 1 and one `path name` line per finding otherwise; (f) scans `git ls-files` output, skipping `node_modules/` and `package-lock.json`.
-**Done-when**: `node --test scripts/test/`
+**Done-when**: `node --test scripts/test/*.test.mjs`
 **Decision rule**: Prefer false negatives over false positives: if a pattern is ambiguous (string-built names, re-exports), treat the export as used and log the case in Notes.
-**Notes**: Spec 550943c written. Done-when `node --test scripts/test/` fails on Node 22.14 (directory arg is loaded as a module); see Q8. T16 uses the same form.
+**Notes**: Spec 550943c written. Done-when changed from the directory form to the glob form by D5 (Q8, 2026-11-16).
 Metrics: attempts=0 fix=0 review=none blocked=plan
 
 
@@ -190,10 +191,10 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 **Notes**:
 
 ### T16: CI and kit run ruff, the unused-export check and cloudflare-worker tests [model: sonnet] [risk: high] [status: todo] [deps: T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15]
-**Outcome**: The CI workflow runs `python -m ruff check .`, `node scripts/check-unused-exports.mjs`, `node --test scripts/test/` and `cloudflare-worker` `npm ci && npm test`; `.claude/kit.json` `commands.lint` runs ruff and the export check; every check passes on the branch.
+**Outcome**: The CI workflow runs `python -m ruff check .`, `node scripts/check-unused-exports.mjs`, `node --test scripts/test/*.test.mjs` and `cloudflare-worker` `npm ci && npm test`; `.claude/kit.json` `commands.lint` runs ruff and the export check; every check passes on the branch.
 **Files**: `.github/workflows/kit-ci.yml` (add steps beside the existing pytest step at :14-15 and the npm steps at :46-66), `.claude/kit.json` (`commands.lint`)
 **Non-goals**: no change to existing CI steps, triggers or the Postgres service; no other kit.json keys.
 **Acceptance tests**: none: CI config; Done-when runs every new check locally and greps the workflow for each step.
-**Done-when**: `venv/Scripts/python -m ruff check . && node scripts/check-unused-exports.mjs && node --test scripts/test/ && venv/Scripts/python -m pytest -q && (cd dashboard && npm test) && (cd health-mcp && npm test) && (cd notion-reporter && npm test) && (cd cloudflare-worker && npm test) && grep -q "ruff check" .github/workflows/kit-ci.yml && grep -q "check-unused-exports" .github/workflows/kit-ci.yml && grep -q "cloudflare-worker" .github/workflows/kit-ci.yml && grep -q "ruff" .claude/kit.json`
+**Done-when**: `venv/Scripts/python -m ruff check . && node scripts/check-unused-exports.mjs && node --test scripts/test/*.test.mjs && venv/Scripts/python -m pytest -q && (cd dashboard && npm test) && (cd health-mcp && npm test) && (cd notion-reporter && npm test) && (cd cloudflare-worker && npm test) && grep -q "ruff check" .github/workflows/kit-ci.yml && grep -q "check-unused-exports" .github/workflows/kit-ci.yml && grep -q "cloudflare-worker" .github/workflows/kit-ci.yml && grep -q "ruff" .claude/kit.json`
 **Decision rule**: Every tool a new CI step runs must be installed by the files that workflow installs from (ruff from `requirements.txt`; Node built-ins only). If ruff fails on a `T<n>-spec:` file, report needs-decision.
 **Notes**:
