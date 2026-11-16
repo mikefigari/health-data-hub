@@ -183,14 +183,15 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 **Notes**: Dropped `export` from names used in their own file; deleted unreferenced `fmtDeficit` (balance.mjs). Checker clean for dashboard/, npm test 210 pass.
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T15: Remove unused exports in health-mcp and notion-reporter [model: haiku] [risk: normal] [status: todo] [deps: T11, T13]
+### T15: Remove unused exports in health-mcp and notion-reporter [model: haiku] [risk: normal] [status: done] [deps: T11, T13]
 **Outcome**: `node scripts/check-unused-exports.mjs` exits 0 (nothing left anywhere), and the health-mcp, notion-reporter and cloudflare-worker unit tests pass.
 **Files**: `health-mcp/app.mjs`, `health-mcp/tools/nutrition/{common,edit,favorites,log-food,search,summary}.mjs`, `notion-reporter/src/utils/nutritionWeek.mjs`, `scripts/unused-exports.allow` (mechanical per A2)
 **Non-goals**: no change to MCP tool names, descriptions or schemas; `health-mcp/oauth.mjs` is not touched.
 **Acceptance tests**: none: the T11 checker and the existing suites are the check.
 **Done-when**: `node scripts/check-unused-exports.mjs && cd health-mcp && npm test && cd ../notion-reporter && npm test && cd ../cloudflare-worker && npm test`
 **Decision rule**: Same as T14. Tool `*_DESCRIPTION` constants used in their own file lose only `export`.
-**Notes**:
+**Notes**: Dropped `export` from 14 health-mcp names used in their own file; nutritionWeek.mjs needed nothing; no allowlist entries. Checker exits 0.
+Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ### T16: CI and kit run ruff, the unused-export check and cloudflare-worker tests [model: sonnet] [risk: high] [status: todo] [deps: T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15]
 **Outcome**: The CI workflow runs `python -m ruff check .`, `node scripts/check-unused-exports.mjs`, `node --test scripts/test/*.test.mjs` and `cloudflare-worker` `npm ci && npm test`; `.claude/kit.json` `commands.lint` runs ruff and the export check; every check passes on the branch.
