@@ -193,11 +193,13 @@ Metrics: attempts=1 fix=0 review=PASS blocked=none
 **Notes**: Dropped `export` from 14 health-mcp names used in their own file; nutritionWeek.mjs needed nothing; no allowlist entries. Checker exits 0.
 Metrics: attempts=1 fix=0 review=PASS blocked=none
 
-### T16: CI and kit run ruff, the unused-export check and cloudflare-worker tests [model: sonnet] [risk: high] [status: todo] [deps: T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15]
+### T16: CI and kit run ruff, the unused-export check and cloudflare-worker tests [model: sonnet] [risk: high] [status: done] [deps: T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15]
 **Outcome**: The CI workflow runs `python -m ruff check .`, `node scripts/check-unused-exports.mjs`, `node --test scripts/test/*.test.mjs` and `cloudflare-worker` `npm ci && npm test`; `.claude/kit.json` `commands.lint` runs ruff and the export check; every check passes on the branch.
 **Files**: `.github/workflows/kit-ci.yml` (add steps beside the existing pytest step at :14-15 and the npm steps at :46-66), `.claude/kit.json` (`commands.lint`)
 **Non-goals**: no change to existing CI steps, triggers or the Postgres service; no other kit.json keys.
 **Acceptance tests**: none: CI config; Done-when runs every new check locally and greps the workflow for each step.
 **Done-when**: `venv/Scripts/python -m ruff check . && node scripts/check-unused-exports.mjs && node --test scripts/test/*.test.mjs && venv/Scripts/python -m pytest -q && (cd dashboard && npm test) && (cd health-mcp && npm test) && (cd notion-reporter && npm test) && (cd cloudflare-worker && npm test) && grep -q "ruff check" .github/workflows/kit-ci.yml && grep -q "check-unused-exports" .github/workflows/kit-ci.yml && grep -q "cloudflare-worker" .github/workflows/kit-ci.yml && grep -q "ruff" .claude/kit.json`
 **Decision rule**: Every tool a new CI step runs must be installed by the files that workflow installs from (ruff from `requirements.txt`; Node built-ins only). If ruff fails on a `T<n>-spec:` file, report needs-decision.
-**Notes**:
+**Notes**: Deviation: cloudflare-worker step runs `npm test` without `npm ci` (no package-lock.json; tests use only node: built-ins). Ruff step follows pip install; script steps use working-directory overrides in the node job.
+Lesson: Before writing `npm ci` into a CI step, check that the directory has a package-lock.json, or the step fails. | applies: CI workflow tasks that add Node steps
+Metrics: attempts=1 fix=0 review=PASS blocked=none
