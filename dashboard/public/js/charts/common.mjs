@@ -2,7 +2,7 @@
 // Pure: never touches window/document, so node unit tests can import it.
 import { baseOption } from '../core.mjs';
 
-export const ANIMATION_MS = 750;
+const ANIMATION_MS = 750;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -67,7 +67,7 @@ export function grid(extra = {}) {
 // edge to edge on phones ("Oct 13Oct 17"), so the label positions are chosen here.
 const MAX_TIME_LABELS = 6;
 const DAY_STEPS = [1, 2, 3, 7, 14, 28];
-export function timeLabelValues(min, max, monthOnly = false) {
+function timeLabelValues(min, max, monthOnly = false) {
   if (!isNum(min) || !isNum(max) || max <= min) return undefined;
   // A label centered on the right edge is clipped ("Oct 3"), so keep labels off the last 4%.
   const keep = (v) => max - v >= (max - min) * 0.04;

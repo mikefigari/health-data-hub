@@ -15,7 +15,7 @@ import {
   withAlpha,
 } from './common.mjs';
 
-export const EMPTY_WEIGHT = 'Not enough weigh-ins yet';
+const EMPTY_WEIGHT = 'Not enough weigh-ins yet';
 const TAIL_DAYS = 14; // breathing room after the gentle end of the window
 const SHOWN_FUTURE_DAYS = 45; // when the goal is reached or unknown, still show a little future
 const fmtGoal = (kg) => (Number.isInteger(kg) ? String(kg) : kg.toFixed(1));
