@@ -173,7 +173,7 @@ Metrics: attempts=1 fix=0 review=none blocked=none
 Metrics: attempts=1 fix=0 review=none blocked=none
 
 
-### T14: Remove unused exports in dashboard [model: haiku] [risk: normal] [status: todo] [deps: T11, T12]
+### T14: Remove unused exports in dashboard [model: haiku] [risk: normal] [status: done] [deps: T11, T12]
 **Outcome**: `node scripts/check-unused-exports.mjs` reports nothing under `dashboard/`, and dashboard unit tests pass.
 **Files**: `dashboard/public/js/core.mjs`, `dashboard/public/js/charts/common.mjs`, `dashboard/public/js/charts/balance.mjs`, `dashboard/public/js/charts/ftp.mjs`, `dashboard/public/js/charts/nutrition.mjs`, `dashboard/public/js/charts/weight.mjs` (removing an `export` keyword is mechanical per A2)
 **Non-goals**: no rendering changes; no edits to `dashboard/src` beyond what the checker reports.
