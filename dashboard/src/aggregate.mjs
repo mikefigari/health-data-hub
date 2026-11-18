@@ -238,6 +238,7 @@ export function buildDashboard(inputs) {
   const weights = [...wmap.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([day, kg]) => ({ day, kg }));
   const trendSeries = smoothTrend(weights);
   const last = weights.at(-1) || null;
+  const prev = weights.length > 1 ? weights.at(-2) : null;
   const currentTrend = trendSeries.length ? trendSeries.at(-1).t : null;
   const trendInRange = trendSeries.filter((p) => p.day >= rangeStart && p.day <= today);
   const prior = last ? trendAt(trendSeries, addDays(last.day, -14))?.t : null;
@@ -301,6 +302,9 @@ export function buildDashboard(inputs) {
       current_kg: last ? r2(last.kg) : null,
       current_trend_kg: r2(currentTrend),
       last_weigh_in_day: last ? last.day : null,
+      prev_weigh_in_day: prev ? prev.day : null,
+      prev_kg: prev ? r2(prev.kg) : null,
+      change_vs_prev_kg: last && prev ? r2(last.kg - prev.kg) : null,
       days_since_weigh_in: last ? diffDays(today, last.day) : null,
       range_change_kg: r2(rangeChange),
       weekly_rate_kg: r2(weeklyRate),

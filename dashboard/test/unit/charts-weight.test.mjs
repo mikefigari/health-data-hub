@@ -10,7 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { TOKENS, fmtKg } from '../../public/js/core.mjs';
+import { TOKENS, fmtKg, fmtDay } from '../../public/js/core.mjs';
 import { buildDashboard } from '../../src/aggregate.mjs';
 import { demoInputs } from '../../src/demo.mjs';
 import { ringOption, ringLabel } from '../../public/js/charts/rings.mjs';
@@ -207,6 +207,72 @@ test('weightHero: live scale kg, with trend and range change in the caption', ()
   assert.ok(h.caption.includes(`Trend ${fmtKg(data.weight.current_trend_kg)}`), h.caption);
   assert.ok(h.caption.includes(`${MINUS}0.6 kg`), h.caption);
   assert.ok(h.caption.includes('30 days'), h.caption);
+});
+
+// ---------- weight card caption: weigh-in day + change line ----------
+function heroWith(over) {
+  const d = structuredClone(data);
+  Object.assign(d.weight, over);
+  return weightHero(d);
+}
+const TODAY_W = {
+  last_weigh_in_day: data.today,
+  days_since_weigh_in: 0,
+  prev_weigh_in_day: addDays(data.today, -1),
+  prev_kg: 100.4,
+  change_vs_prev_kg: -0.4,
+};
+
+test('weightHero caption: weigh-in today with a loss', () => {
+  const c = heroWith(TODAY_W).caption;
+  assert.ok(c.startsWith('Today'), c);
+  assert.ok(c.includes('▼ 0.4 kg vs yesterday'), c);
+  assert.ok(c.includes('Trend'), c);
+  assert.ok(c.includes('30 days'), c);
+});
+
+test('weightHero caption: older weigh-in names its age and date', () => {
+  const day = addDays(data.today, -3);
+  const c = heroWith({ ...TODAY_W, last_weigh_in_day: day, days_since_weigh_in: 3, prev_weigh_in_day: addDays(day, -1) }).caption;
+  assert.ok(c.startsWith(`3 days ago · ${fmtDay(day)}`), c);
+});
+
+test('weightHero caption: gain shows an up arrow', () => {
+  const c = heroWith({ ...TODAY_W, prev_kg: 100.0, change_vs_prev_kg: 0.3 }).caption;
+  assert.ok(c.includes('▲ 0.3 kg vs yesterday'), c);
+  assert.ok(!c.includes('▼'), c);
+});
+
+test('weightHero caption: change rounding to 0.0 reads No change, with no arrow', () => {
+  for (const delta of [0.04, -0.04, 0]) {
+    const c = heroWith({ ...TODAY_W, change_vs_prev_kg: delta }).caption;
+    assert.ok(c.includes('No change vs yesterday'), c);
+    assert.ok(!c.includes('▲') && !c.includes('▼'), c);
+  }
+});
+
+test('weightHero caption: previous reading not yesterday names its date after vs', () => {
+  const prev = addDays(data.today, -4);
+  const c = heroWith({ ...TODAY_W, prev_weigh_in_day: prev, change_vs_prev_kg: 0.3 }).caption;
+  assert.ok(c.includes(`vs ${fmtDay(prev)}`), c);
+  assert.ok(!c.includes('vs yesterday'), c);
+});
+
+test('weightHero caption: no previous reading omits the change line', () => {
+  const c = heroWith({ ...TODAY_W, prev_weigh_in_day: null, prev_kg: null, change_vs_prev_kg: null }).caption;
+  assert.ok(c.startsWith('Today'), c);
+  assert.ok(!c.includes(' vs '), c);
+  assert.ok(!c.includes('▲') && !c.includes('▼') && !c.includes('No change'), c);
+  assert.ok(c.includes('Trend'), c);
+});
+
+test('weightHero caption: no data keeps the Last N days fallback', () => {
+  const c = heroWith({
+    current_kg: null, current_trend_kg: null, range_change_kg: null,
+    last_weigh_in_day: null, days_since_weigh_in: null,
+    prev_weigh_in_day: null, prev_kg: null, change_vs_prev_kg: null,
+  }).caption;
+  assert.equal(c, 'Last 30 days');
 });
 
 // ---------- ftp ----------

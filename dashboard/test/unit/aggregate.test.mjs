@@ -248,6 +248,31 @@ describe('weight trend', () => {
     assert.equal(r.weight.current_trend_kg, 100.5);
   });
 
+  test('previous weigh-in: yesterday gives prev day, prev kg and the rounded change', () => {
+    const r = buildDashboard(base({
+      weights: [{ day: '2026-10-25', kg: 100.0 }, { day: '2026-10-26', kg: 99.6 }],
+    }));
+    assert.equal(r.weight.prev_weigh_in_day, '2026-10-25');
+    assert.equal(r.weight.prev_kg, 100.0);
+    assert.equal(r.weight.change_vs_prev_kg, -0.4);
+  });
+
+  test('previous weigh-in: a gap keeps the earlier day', () => {
+    const r = buildDashboard(base({
+      weights: [{ day: '2026-10-20', kg: 100.0 }, { day: '2026-10-23', kg: 100.3 }],
+    }));
+    assert.equal(r.weight.prev_weigh_in_day, '2026-10-20');
+    assert.equal(r.weight.prev_kg, 100.0);
+    assert.equal(r.weight.change_vs_prev_kg, 0.3);
+  });
+
+  test('previous weigh-in: a single weigh-in gives null for all three fields', () => {
+    const r = buildDashboard(base({ weights: [{ day: '2026-10-26', kg: 100 }] }));
+    assert.equal(r.weight.prev_weigh_in_day, null);
+    assert.equal(r.weight.prev_kg, null);
+    assert.equal(r.weight.change_vs_prev_kg, null);
+  });
+
   test('after a long gap the next reading takes over the trend', () => {
     const r = buildDashboard(base({
       rangeDays: 365,
