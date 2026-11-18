@@ -22,7 +22,7 @@ Branch: orch/weight-today
 - New fields go in the `weight` object returned by `buildDashboard`; the front end never recomputes dates.
 - Report needs-decision only for: user-visible behavior not covered above, data loss, security, cost, or a spec test that looks wrong.
 ## Tasks
-### T1: Weight card labels the weigh-in day and shows the change since the previous weigh-in [model: sonnet] [risk: normal] [review: tests] [status: todo] [deps: none]
+### T1: Weight card labels the weigh-in day and shows the change since the previous weigh-in [model: sonnet] [risk: normal] [review: tests] [status: done] [deps: none]
 **Outcome**: The Weight card caption starts with the weigh-in's day ("Today", "Yesterday", or "3 days ago · Nov 15") followed by a change line ("▼ 0.4 kg vs yesterday", "▲ 0.3 kg vs Nov 12", or "No change vs yesterday"), then the existing Trend and range-change text.
 **Files**: `dashboard/src/aggregate.mjs` (add `prev_weigh_in_day`, `prev_kg`, `change_vs_prev_kg` to the `weight` object near line 301, copying how `last_weigh_in_day` is computed at line 303), `dashboard/public/js/core.mjs` (extend `weightCaption` at line 184 and the `'weight'` case at line 275), `dashboard/test/unit/aggregate.test.mjs` (new cases beside line 246), `dashboard/test/unit/charts-weight.test.mjs` (new cases beside line 203)
 **Non-goals**: No SQL or `queries.mjs` change. No new tile on the Today view. No "new low" badge. No change to the chart, trend or roadmap maths.
@@ -30,3 +30,5 @@ Branch: orch/weight-today
 **Done-when**: `cd dashboard && npm test`
 **Decision rule**: If wording or symbols are ambiguous, copy the style of `fmtSigned` (`core.mjs:112`) and the `MINUS` glyph; log the choice in Notes.
 **Notes**:
+Caption day label and change line only when `weightCaption` gets `today` (Weight card only); "vs yesterday" only if previous weigh-in was the calendar day before today, else names the date.
+Metrics: attempts=1 fix=0 review=none blocked=none
