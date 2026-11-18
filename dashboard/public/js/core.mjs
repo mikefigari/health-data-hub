@@ -181,8 +181,18 @@ function sevenDayAvg(data) {
 }
 
 // Secondary line under the live weight: the smoothed trend and its change over the range.
-function weightCaption(w, range) {
+function weightCaption(w, range, today) {
   const parts = [];
+  if (today && w.last_weigh_in_day) {
+    const n = w.days_since_weigh_in;
+    parts.push(n === 0 ? 'Today' : n === 1 ? 'Yesterday' : `${n} days ago · ${fmtDay(w.last_weigh_in_day)}`);
+    if (isNum(w.change_vs_prev_kg) && w.prev_weigh_in_day) {
+      const ref = today && w.prev_weigh_in_day === addDays(today, -1) ? 'yesterday' : fmtDay(w.prev_weigh_in_day);
+      const d = w.change_vs_prev_kg;
+      const abs = Math.abs(d).toFixed(1);
+      parts.push(Number(abs) === 0 ? `No change vs ${ref}` : `${d < 0 ? '▼' : '▲'} ${abs} kg vs ${ref}`);
+    }
+  }
   if (isNum(w.current_trend_kg)) parts.push(`Trend ${fmtKg(w.current_trend_kg)}`);
   if (isNum(w.range_change_kg)) parts.push(`${fmtSigned(w.range_change_kg, 'kg')} in ${rangeLong(range)}`);
   return parts.join(' · ');
@@ -276,7 +286,7 @@ export function cardStat(view, data) {
       return {
         value: fmtKg(w.current_kg),
         unit: 'kg',
-        caption: weightCaption(w, range) || `Last ${rangeLong(range)}`,
+        caption: weightCaption(w, range, data?.today) || `Last ${rangeLong(range)}`,
       };
     case 'calories':
       return {
