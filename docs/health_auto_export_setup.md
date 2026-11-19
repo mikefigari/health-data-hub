@@ -43,7 +43,8 @@ You do not need to enable sleep or heart rate — those come from Oura.
 4. Under **Custom Headers**, add:
    - **Header name**: `X-Health-Token`
    - **Header value**: *(the token from `HEALTH_TOKEN` in prod.env)*
-5. Under **Data Range**, select **Last 7 days** (ensures missed days are backfilled)
+5. Under **Data Range**, select **Previous 7 days** (ensures missed days are backfilled;
+   it ends at yesterday, so it excludes today)
 
 > **Note:** The old setup used `http://<pi-hostname>:8765/health` on the local network.
 > The new endpoint is the public Cloudflare Worker URL and requires the auth token header.
@@ -123,11 +124,28 @@ This is a **separate** automation from the nutrition one above; the nutrition
 3. **Data types**: select only the body types —
    **Weight / Body Mass**, **Body Fat Percentage**, **Lean Body Mass**, **Body Mass Index**.
    Do not add nutrition or workout types here.
-4. **Data range**: **Last 7 days**. Overlapping payloads are fine; the Pi de-duplicates
-   on the weigh-in timestamp.
+4. **Data range**: **Previous 7 days**. This is a backfill only: it ends at *yesterday*
+   and never includes today's weigh-in. Overlapping payloads are fine; the Pi
+   de-duplicates on the weigh-in timestamp.
 5. **Aggregation**: individual samples if offered (daily aggregates also work — one
    weigh-in per day is assumed).
-6. **Schedule**: daily, any time after the usual morning weigh-in (more often is fine).
+6. **Schedule**: daily, any time.
+
+**Second automation: Hub – Body Today (required for same-day weight).** Duplicate
+Hub – Body (same URL, `X-Health-Token` header and body data types) and set:
+
+- **Date range**: **Today**
+- **Schedule**: a few times a day (the app's 5-minute sync cadence works too)
+
+Without it, a weigh-in only reaches the Pi the next day. The Health Auto Export app
+offers only Default, Since last sync, Today, Yesterday and Previous 7 days; there is no
+"last 7 days including today", so two automations are needed. Avoid *Since last sync*:
+a failed sync can skip readings with no backfill.
+
+When running an export by hand, use the manual export's own Start/End dates (Export
+History). In testing, running the *Hub – Body Today* automation manually sent the
+7-day window, while a manual export with Start and End both set to today sent only
+today's reading. Keep the phone unlocked: Health data can't be read while it is locked.
 
 **Full-history backfill (one-off).** Either run the Hub – Body automation once with the
 data range covering the whole history (the Pi ingests it automatically, as long as the
@@ -152,7 +170,7 @@ How it is stored:
 
 - `POST /health/body` stores each payload raw in KV under `body:<received_at>:<id>`
   (30-day expiry). `GET /health/body?since=YYYY-MM-DD` returns them.
-- `body_poller` (in `scheduler_all.py`, hourly at :20, 6 AM – 11 PM) parses the payloads,
+- `body_poller` (in `scheduler_all.py`, every 10 minutes, 6 AM – 11 PM Pacific) parses the payloads,
   converts lb to kg, and upserts one row per weigh-in into `body_measurements`.
 - The `body_weight_daily` view takes the first weigh-in of each day; the daily export and
   notion-reporter use it for `nutrition.weight_kg`.
@@ -166,12 +184,13 @@ iPhone (Health Auto Export)
   → nutrition automation: nightly POST at 9:30 PM
       → https://health.michaelfigari.com/health        (Cloudflare Worker)
       → stores nutrition:<date> in KV
-  → "Hub – Body" automation: daily POST
+  → "Hub – Body" automation (Previous 7 days, backfill) and
+    "Hub – Body Today" automation (Today): POSTs
       → https://health.michaelfigari.com/health/body   (Cloudflare Worker)
       → stores the raw payload as body:<received_at>:<id> in KV
 
 Pi (health-data-hub.service / scheduler_all.py)
-  → body_poller runs hourly at :20 (6am–11pm)
+  → body_poller runs every 10 minutes (6am–11pm)
       → GET https://health.michaelfigari.com/health/body?since=<10 days ago>
       → upserts into body_measurements; body_weight_daily view = first weigh-in per day
   → notion-reporter reads nutrition_daily + body_weight_daily each morning
