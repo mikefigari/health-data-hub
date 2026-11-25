@@ -27,7 +27,7 @@ Branch: orch/peloton-milestones
 - No new dependencies. No schema change or migration.
 - Report needs-decision only for: user-visible behavior not covered above, data loss, security, cost, or a spec test that looks wrong.
 ## Tasks
-### T1: Peloton ride number, countdown email and Notion number [model: sonnet] [risk: normal] [review: full] [status: todo] [deps: none]
+### T1: Peloton ride number, countdown email and Notion number [model: sonnet] [risk: normal] [review: full] [status: done] [deps: none]
 **Outcome**: Each new Peloton ride gets its Peloton ride number (DB count + 59) written to Notion `Peloton #`; rides 3, 2 and 1 short of a multiple of 100, and the multiple itself, also get `Peloton Milestone` text and one email; a CLI sets the number on the last N Peloton rides without emailing.
 **Files**:
 - `health_data_hub/integrations/notion/peloton_milestone.py` (new). Public interface:
@@ -52,7 +52,8 @@ Branch: orch/peloton-milestones
 (h) the existing `tests/test_notion_peloton_icon.py` still passes unchanged.
 **Done-when**: `venv/Scripts/python -m pytest -q && venv/Scripts/python -m ruff check health_data_hub tests`
 **Decision rule**: if the existing icon tests break because `upsert_workout` now queries the DB, patch `peloton_ride_number` in those tests' setup only by adding a fixture in the new test module, never by editing `tests/test_notion_peloton_icon.py`; if that is impossible, report needs-decision.
-**Notes**:
+**Notes**: `notion_strava_sync.py` imports `peloton_milestone` inside functions (no circular import). `backfill` takes an extra `dry_run` flag used by `--dry-run`.
+Metrics: attempts=1 fix=0 review=PASS blocked=none
 
 ## Live steps (planner, after merge — self-verified)
 1. In the Notion workouts database (`NOTION_WORKOUT_DB_ID`), add properties `Peloton #` (Number) and `Peloton Milestone` (Text). Check: fetch the database schema and confirm both exist.
