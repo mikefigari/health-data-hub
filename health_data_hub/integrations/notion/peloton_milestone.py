@@ -80,6 +80,11 @@ def milestone_countdown(n: int) -> tuple[int, int] | None:
     return None
 
 
+def milestone_progress(n: int) -> float:
+    """Progress (0..1] toward the next 100th ride; 1.0 on a multiple of 100."""
+    return ((n - 1) % 100 + 1) / 100
+
+
 def milestone_text(n: int) -> str | None:
     cd = milestone_countdown(n)
     if cd is None:
@@ -91,7 +96,10 @@ def milestone_text(n: int) -> str | None:
 
 
 def set_notion_ride_number(notion, page_id: str, n: int) -> None:
-    props: dict = {"Peloton #": {"number": n}}
+    props: dict = {
+        "Peloton #": {"number": n},
+        "Milestone progress": {"number": milestone_progress(n)},
+    }
     text = milestone_text(n)
     if text is not None:
         props["Peloton Milestone"] = {"rich_text": [{"text": {"content": text}}]}

@@ -257,7 +257,10 @@ def test_set_notion_ride_number_without_milestone(pm):
     pm.set_notion_ride_number(notion, "p1", 675)
     assert notion.pages.update.call_count == 1
     props = notion.pages.update.call_args.kwargs["properties"]
-    assert props == {"Peloton #": {"number": 675}}
+    assert props == {
+        "Peloton #": {"number": 675},
+        "Milestone progress": {"number": 0.75},
+    }
 
 
 # ---------------------------------------------------------------- (e)

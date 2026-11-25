@@ -19,3 +19,4 @@ One row per kit-run run. Written by kit-run; don't edit by hand.
 | 2026-11-16 19:58 | orch/peloton-notion-autofill | 2/2 | - | 100% | 0/0 | - | 9m | review PASS -> merge gate | https://github.com/mikefigari/health-data-hub/pull/12 |
 | 2026-11-18 22:50 | orch/weight-today | 1/1 | - | 100% | 0/0 | - | 3m | review PASS -> merge gate | https://github.com/mikefigari/health-data-hub/pull/13 |
 | 2026-11-25 04:14 | orch/peloton-milestones | 1/1 | - | 100% | 0/0 | - | 9m | review PASS -> merge gate | https://github.com/mikefigari/health-data-hub/pull/15 |
+| 2026-11-25 20:15 | orch/milestone-progress-bar | 1/1 | - | 100% | 0/0 | - | 7m | review PASS -> merge gate | https://github.com/mikefigari/health-data-hub/pull/16 |
