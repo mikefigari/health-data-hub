@@ -23,7 +23,7 @@ Branch: orch/milestone-progress-bar
 - Update the two existing tests that assert the exact `properties` dict, in the T1-spec commit.
 - Report needs-decision only for: user-visible behavior not covered above, data loss, security, cost, or a spec test that looks wrong.
 ## Tasks
-### T1: Write Milestone progress with the ride number [model: sonnet] [risk: normal] [review: tests] [status: todo] [deps: none]
+### T1: Write Milestone progress with the ride number [model: sonnet] [risk: normal] [review: tests] [status: done] [deps: none]
 **Outcome**: `set_notion_ride_number` also sends `"Milestone progress": {"number": <0..1>}` in the same update call, so every new Peloton ride and every backfilled ride carries its progress toward the next 100th ride.
 **Files**: `health_data_hub/integrations/notion/peloton_milestone.py` (add `milestone_progress(n)` beside `milestone_countdown` at `:74`; extend `props` in `set_notion_ride_number` at `:93`), `tests/test_peloton_milestone.py` (existing tests at `:244-260` assert the exact properties dict and must be updated in the T1-spec commit), `tests/test_milestone_progress.py` (new)
 **Non-goals**: no change to ride-number counting, the email, `notion_strava_sync.py` or the offset; no Notion property creation in code; no change to `backfill()` signature.
@@ -31,3 +31,6 @@ Branch: orch/milestone-progress-bar
 **Done-when**: `venv/Scripts/python -m pytest -q tests/test_milestone_progress.py tests/test_peloton_milestone.py tests/test_notion_peloton_icon.py && venv/Scripts/python -m ruff check .`
 **Decision rule**: if a float like 0.07 compares unequal, round to 2 decimals with `round(x, 2)` inside `milestone_progress` and test with that; follow D1 for the multiple of 100.
 **Notes**:
+Added `milestone_progress(n)` per D1, no rounding needed; sent in the same `pages.update`.
+Add the Notion `Milestone progress` property before the Pi runs this code.
+Metrics: attempts=1 fix=0 review=none blocked=none
