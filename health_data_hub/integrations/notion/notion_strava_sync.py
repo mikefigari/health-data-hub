@@ -478,6 +478,16 @@ def upsert_workout(notion: Client, database_id: str, row: dict):
         except Exception as exc:
             logger.warning(f"[Notion] Peloton icon failed for workout {workout_id}: {exc}")
 
+    if page_id and determine_tag(row) == "Peloton Bike" and _is_cycling_workout(row):
+        try:
+            from health_data_hub.integrations.notion import peloton_milestone as pm
+
+            ride_no = pm.peloton_ride_number(workout_id)
+            if ride_no is not None:
+                pm.set_notion_ride_number(notion, page_id, ride_no)
+        except Exception as exc:
+            logger.warning(f"[Notion] Peloton ride number failed for workout {workout_id}: {exc}")
+
     if page_id and _is_cycling_workout(row) and NOTION_POWERZONE_DB_ID:
         try:
             _link_powerzone_week(notion, page_id, row, existing)
@@ -566,6 +576,16 @@ def sync_specific_workout(workout_id: int):
     notion = Client(auth=NOTION_TOKEN, notion_version=NOTION_SDK_VERSION)
     upsert_workout(notion, NOTION_WORKOUT_DB_ID, row)
     logger.info(f"[Notion] Synced specific workout: {row.get('name')} (ID {workout_id})")
+
+    if determine_tag(row) == "Peloton Bike" and _is_cycling_workout(row):
+        try:
+            from health_data_hub.integrations.notion import peloton_milestone as pm
+
+            ride_no = pm.peloton_ride_number(workout_id)
+            if ride_no is not None:
+                pm.notify_milestone(ride_no)
+        except Exception as exc:
+            logger.warning(f"[Notion] Peloton milestone email failed for workout {workout_id}: {exc}")
 
 
 # -------------------------------------------------------------------
